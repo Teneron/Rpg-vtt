@@ -1,0 +1,82 @@
+.inventory-block {
+    background: var(--color-bg-tertiary);
+    padding: 15px;
+    border-radius: var(--radius-md);
+    min-height: 200px;
+    border: 1px solid var(--color-border);
+}
+
+.inventory-block h3 {
+    border-bottom: 1px solid var(--color-border);
+    padding-bottom: 5px;
+    margin-bottom: 15px;
+}
+
+.add-item {
+    display: flex;
+    margin-bottom: 15px;
+    gap: 5px;
+}
+
+.add-item input {
+    flex: 1;
+    padding: 8px;
+    background: var(--color-bg-primary);
+    border: 1px solid var(--color-border);
+    color: var(--color-text-primary);
+    border-radius: var(--radius-sm);
+}
+
+.add-item button {
+    padding: 8px 15px;
+    background: var(--color-accent);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+}
+
+.item-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.item-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px;
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-bg-secondary);
+    margin-bottom: 5px;
+    border-radius: var(--radius-sm);
+}
+
+.item-name {
+    color: var(--color-text-primary);
+}
+
+.item-qty {
+    color: var(--color-text-secondary);
+    margin-right: 10px;
+}
+
+.delete-btn {
+    background: none;
+    border: none;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    font-weight: bold;
+    padding: 0 5px;
+}
+
+.delete-btn:hover {
+    color: #ff4444;
+}
+
+.empty-msg {
+    text-align: center;
+    color: var(--color-text-secondary);
+    font-style: italic;
+    margin-top: 20px;
+}

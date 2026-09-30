@@ -1,0 +1,158 @@
+/* FeatsPanel.css */
+.feats-panel-book {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    font-family: 'Georgia', serif;
+    color: #1a1a1a;
+    position: relative;
+}
+
+.feats-list-book {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    overflow-y: auto;
+    padding: 5px;
+}
+
+.feat-card-book {
+    background-color: #fcfbf9;
+    border: 1px solid #dcdcdc;
+    border-radius: 4px;
+    /* Slightly more rounded than spells */
+    padding: 15px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.feat-card-book:hover {
+    background-color: #fff;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    border-color: #c5a059;
+}
+
+.feat-header-book {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 5px;
+}
+
+.feat-name-book {
+    font-family: 'MrEaves', sans-serif;
+    font-weight: bold;
+    font-size: 1.1rem;
+    color: #822000;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.feat-meta-book {
+    font-size: 0.8rem;
+    color: #777;
+    font-style: italic;
+}
+
+.feat-desc-book {
+    font-size: 0.95rem;
+    line-height: 1.5;
+    color: #444;
+}
+
+.feat-desc-book.short {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: #666;
+}
+
+.feat-desc-book.full {
+    text-align: justify;
+    margin-bottom: 15px;
+}
+
+.feat-actions-book {
+    display: flex;
+    justify-content: flex-end;
+}
+
+/* Modal */
+.book-modal-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+    backdrop-filter: blur(2px);
+    border-radius: 8px;
+    /* Assuming embedded in pannel */
+}
+
+.book-modal {
+    background: #fcfbf9;
+    width: 90%;
+    max-height: 90%;
+    display: flex;
+    flex-direction: column;
+    border: 2px solid #58180d;
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
+    border-radius: 4px;
+}
+
+.book-modal-header {
+    background: #58180d;
+    color: #f2eecb;
+    padding: 10px 15px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.book-modal-header h3 {
+    margin: 0;
+    font-family: 'MrEaves', sans-serif;
+    text-transform: uppercase;
+}
+
+.close-btn {
+    background: none;
+    border: none;
+    color: #fff;
+    font-size: 1.2rem;
+    cursor: pointer;
+}
+
+.book-modal-body {
+    overflow-y: auto;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.feat-select-item {
+    background: #fff;
+    border: 1px solid #ddd;
+    padding: 10px;
+    border-radius: 4px;
+}
+
+.fsi-header {
+    display: flex;
+    justify-content: space-between;
+    color: #822000;
+    margin-bottom: 5px;
+}
+
+.fsi-header small {
+    color: #666;
+}

@@ -1,0 +1,292 @@
+/* SpellsPanel.css - Guide/Homebrew Style */
+
+.spells-panel-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    gap: 15px;
+    font-family: 'Georgia', serif;
+    /* Classic book font feel */
+    color: #1a1a1a;
+}
+
+/* Search */
+.spells-search-bar {
+    margin-bottom: 5px;
+}
+
+.book-input {
+    width: 100%;
+    padding: 10px;
+    background-color: #fcfcfc;
+    /* Paper-like */
+    border: 1px solid #c9c7b8;
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: 1rem;
+    box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.05);
+}
+
+.book-input:focus {
+    border-color: #c5a059;
+    outline: none;
+}
+
+/* Tabs */
+.level-tabs {
+    display: flex;
+    gap: 5px;
+    overflow-x: auto;
+    border-bottom: 2px solid #58180d;
+    /* Dark Red Line consistent with 5e headers */
+    padding-bottom: 0;
+}
+
+.tab-btn {
+    background: none;
+    border: none;
+    padding: 8px 16px;
+    font-family: 'Georgia', serif;
+    font-weight: bold;
+    color: #58180d;
+    /* PHB Header Color */
+    cursor: pointer;
+    border-radius: 5px 5px 0 0;
+    opacity: 0.7;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+
+.tab-btn:hover {
+    background-color: rgba(88, 24, 13, 0.05);
+    opacity: 1;
+}
+
+.tab-btn.active {
+    background-color: #58180d;
+    color: #f2eecb;
+    /* Parchment text color */
+    opacity: 1;
+}
+
+/* Level Content */
+.level-content-book {
+    flex: 1;
+    overflow-y: auto;
+    /* Simulate parchment background if desired, or keep clear for global theme */
+    padding: 5px;
+}
+
+.level-header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.level-header-row h3 {
+    font-family: 'MrEaves', sans-serif;
+    /* Simulating 5e sans header */
+    text-transform: uppercase;
+    color: #58180d;
+    font-size: 1.2rem;
+    margin: 0;
+    border-bottom: 1px solid #c9c7b8;
+    flex: 1;
+}
+
+/* Slots */
+.slots-visualizer {
+    display: flex;
+    gap: 5px;
+    align-items: center;
+}
+
+.slots-label {
+    font-size: 0.85rem;
+    color: #666;
+    font-weight: bold;
+}
+
+.slot-checkbox {
+    width: 18px;
+    height: 18px;
+    border: 2px solid #58180d;
+    border-radius: 3px;
+    cursor: pointer;
+    background: transparent;
+}
+
+.slot-checkbox.used {
+    background-color: #58180d;
+    background-image: url('data:image/svg+xml;utf8,<svg fill="white" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>');
+    background-size: 80%;
+    background-position: center;
+    background-repeat: no-repeat;
+    opacity: 0.6;
+}
+
+/* Spell Cards (Book Style) */
+.spells-grid-book {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.spell-card-book {
+    background-color: #fdfaf6;
+    /* Very light parchment */
+    border: 1px solid #e0e0e0;
+    border-left: 4px solid #c5a059;
+    border-radius: 2px;
+    padding: 10px 15px;
+    cursor: pointer;
+    transition: all 0.2s;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.spell-card-book:hover {
+    box-shadow: 0 3px 6px rgba(0, 0, 0, 0.1);
+    background-color: #fff;
+}
+
+.spell-card-book.expanded {
+    background-color: #fff;
+    border-color: #c5a059;
+}
+
+.spell-header-book {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 5px;
+}
+
+.spell-name-book {
+    font-family: 'Georgia', serif;
+    font-weight: bold;
+    font-size: 1.1rem;
+    color: #822000;
+    /* Rust red */
+}
+
+.spell-meta-book {
+    font-size: 0.8rem;
+    font-style: italic;
+    color: #666;
+}
+
+.spell-mini-info {
+    display: flex;
+    gap: 15px;
+    font-size: 0.85rem;
+    color: #444;
+}
+
+/* Expanded Body */
+.spell-body-book {
+    margin-top: 15px;
+    border-top: 1px solid #eee;
+    padding-top: 15px;
+    color: #222;
+}
+
+.spell-stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 5px;
+    margin-bottom: 12px;
+    font-size: 0.9rem;
+}
+
+.stat-entry .label {
+    font-weight: bold;
+    color: #58180d;
+}
+
+.stat-entry .value {
+    margin-left: 5px;
+}
+
+.spell-description-book {
+    font-size: 0.95rem;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    margin-bottom: 15px;
+    text-align: justify;
+}
+
+.spell-actions-book {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+}
+
+.book-btn {
+    padding: 8px 16px;
+    border-radius: 4px;
+    font-weight: bold;
+    cursor: pointer;
+    border: none;
+    font-family: sans-serif;
+    transition: transform 0.1s;
+}
+
+.book-btn:active {
+    transform: translateY(1px);
+}
+
+.book-btn.simple {
+    background-color: #eee;
+    color: #333;
+}
+
+.book-btn.simple:hover {
+    background-color: #e0e0e0;
+}
+
+.book-btn.magic {
+    background: linear-gradient(135deg, #58180d, #822000);
+    color: #fff;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.book-btn.magic:hover {
+    background: linear-gradient(135deg, #6a1d10, #962500);
+}
+
+.empty-book-msg {
+    text-align: center;
+    color: #888;
+    padding: 20px;
+    font-style: italic;
+}
+
+/* Footer Stats */
+.spellbook-footer-stats {
+    display: flex;
+    justify-content: space-around;
+    background-color: #58180d;
+    padding: 10px;
+    border-radius: 4px;
+    margin-top: auto;
+}
+
+.footer-stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.fs-label {
+    color: #c9c7b8;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.fs-val {
+    color: #fff;
+    font-weight: bold;
+    font-size: 1.2rem;
+}

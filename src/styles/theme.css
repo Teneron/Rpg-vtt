@@ -1,0 +1,57 @@
+/* Dark Fantasy Theme */
+:root {
+    /* Colors */
+    --color-bg-primary: #1a1a1d;
+    --color-bg-secondary: #2c2c30;
+    --color-bg-tertiary: #3a3a3e;
+
+    --color-text-primary: #e0e0e0;
+    --color-text-secondary: #a0a0a0;
+    --color-text-accent: #ffd700;
+    /* Gold */
+
+    --color-accent: #950740;
+    /* Crimson Red */
+    --color-accent-hover: #c3073f;
+
+    --color-border: #4e4e50;
+
+    /* Spacing */
+    --spacing-sm: 8px;
+    --spacing-md: 16px;
+    --spacing-lg: 24px;
+
+    /* Border Radius */
+    --radius-sm: 4px;
+    --radius-md: 8px;
+
+    /* Shadows */
+    --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.4);
+    --shadow-glow: 0 0 10px rgba(149, 7, 64, 0.5);
+}
+
+body {
+    background-color: var(--color-bg-primary);
+    color: var(--color-text-primary);
+    font-family: 'Lato', sans-serif;
+    margin: 0;
+    padding: 0;
+    line-height: 1.6;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+    font-family: 'Cinzel', serif;
+    color: var(--color-text-accent);
+    margin-top: 0;
+}
+
+button {
+    font-family: 'Cinzel', serif;
+    transition: all 0.2s ease;
+}

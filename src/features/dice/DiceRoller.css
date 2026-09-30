@@ -1,0 +1,44 @@
+.dice-roller-container {
+    display: flex;
+    flex-direction: row;
+    padding: 30px;
+    background-color: var(--color-bg-secondary);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-md);
+    max-width: 900px;
+    margin: 0 auto;
+    border: 1px solid var(--color-border);
+}
+
+.dice-controls {
+    flex: 1;
+}
+
+.dice-controls h2 {
+    border-bottom: 2px solid var(--color-accent);
+    display: inline-block;
+    padding-bottom: 5px;
+    margin-bottom: 25px;
+}
+
+.dice-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+    gap: 15px;
+    margin-top: 20px;
+}
+
+@media (max-width: 600px) {
+    .dice-roller-container {
+        flex-direction: column;
+    }
+
+    .roll-history {
+        border-left: none;
+        border-top: 1px solid #ddd;
+        padding-left: 0;
+        padding-top: 20px;
+        margin-left: 0;
+        margin-top: 20px;
+    }
+}

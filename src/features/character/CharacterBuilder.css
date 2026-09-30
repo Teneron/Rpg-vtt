@@ -1,0 +1,415 @@
+/* Builder Modal Overlay */
+.char-builder-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.85);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 9999;
+    /* backdrop-filter: blur(8px); -- Disabled for performance */
+}
+
+.builder-content {
+    background: #1a1a1a;
+    border: 1px solid #444;
+    padding: 30px;
+    width: 900px;
+    max-width: 95%;
+    height: 85vh;
+    /* Fixed height for stepper layout */
+    display: flex;
+    /* Flex layout */
+    flex-direction: column;
+    border-radius: 8px;
+    box-shadow: 0 0 30px rgba(0, 0, 0, 0.7);
+    color: #e0e0e0;
+}
+
+.builder-content h2 {
+    margin-top: 0;
+    color: var(--color-accent, #c5a059);
+    padding-bottom: 15px;
+    font-family: var(--font-header, serif);
+    flex-shrink: 0;
+}
+
+/* Stepper Tabs */
+.builder-stepper {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+    border-bottom: 1px solid #444;
+    padding-bottom: 0;
+    flex-shrink: 0;
+}
+
+.step-btn {
+    background: transparent;
+    border: none;
+    color: #888;
+    padding: 10px 15px;
+    cursor: pointer;
+    font-size: 1rem;
+    font-weight: bold;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s;
+}
+
+.step-btn:hover {
+    color: #e0e0e0;
+}
+
+.step-btn.active {
+    color: var(--color-accent, #c5a059);
+    border-bottom-color: var(--color-accent, #c5a059);
+}
+
+/* Step Content Area - Scrollable */
+.step-content {
+    flex: 1;
+    overflow-y: auto;
+    padding-right: 10px;
+    /* Space for scrollbar */
+}
+
+/* Animations */
+.animate-fade {
+    animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(5px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* General Layout Utils */
+.builder-row {
+    display: flex;
+    gap: 30px;
+    margin: 20px 0;
+}
+
+.builder-col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.builder-col h3 {
+    margin: 0;
+    font-size: 1.1rem;
+    color: #aaa;
+}
+
+.builder-col select {
+    padding: 10px;
+    background: #252525;
+    border: 1px solid #444;
+    color: #fff;
+    font-size: 1rem;
+    border-radius: 4px;
+}
+
+.info-box {
+    background: #222;
+    padding: 15px;
+    border-radius: 4px;
+    font-size: 0.9rem;
+    line-height: 1.5;
+    border-left: 3px solid var(--color-accent, #c5a059);
+}
+
+.info-box p {
+    margin: 5px 0;
+}
+
+.builder-section {
+    margin-bottom: 25px;
+}
+
+/* POINT BUY STYLES */
+.point-buy-grid {
+    background: rgba(0, 0, 0, 0.2);
+    padding: 10px;
+    border-radius: 8px;
+}
+
+.point-buy span.success {
+    color: #66bb6a;
+}
+
+.point-buy span.warn {
+    color: #ffa726;
+    font-weight: bold;
+}
+
+.stat-picker {
+    background: #2a2a2a;
+    padding: 10px;
+    border-radius: 6px;
+    text-align: center;
+    border: 1px solid #333;
+    transition: border-color 0.2s;
+}
+
+.stat-picker:hover {
+    border-color: #555;
+}
+
+.stat-controls button {
+    background: #444;
+    border: none;
+    color: white;
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+}
+
+.stat-controls button:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+
+.stat-controls button:hover:not(:disabled) {
+    background: #666;
+}
+
+/* Skill Buttons */
+.skill-btn {
+    background: #333;
+    color: #aaa;
+    border: 1px solid #444;
+    padding: 8px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: all 0.2s;
+}
+
+.skill-btn:hover:not(:disabled) {
+    border-color: #888;
+    color: #fff;
+}
+
+.skill-btn.selected {
+    background: var(--color-accent, #c5a059);
+    color: #000;
+    border-color: var(--color-accent, #c5a059);
+    font-weight: bold;
+}
+
+.skill-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background: #222;
+}
+
+/* Spell Cards */
+.spells-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 15px;
+    margin-top: 15px;
+}
+
+.spell-card {
+    background: #252525;
+    border: 1px solid #444;
+    border-radius: 6px;
+    padding: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    position: relative;
+    overflow: hidden;
+}
+
+.spell-card:hover {
+    border-color: #888;
+    background: #333;
+    transform: translateY(-2px);
+}
+
+.spell-card.selected {
+    border-color: var(--color-accent, #c5a059);
+    background: rgba(197, 160, 89, 0.15);
+}
+
+.spell-card strong {
+    color: #fff;
+    font-size: 1rem;
+}
+
+.spell-card small {
+    color: #c5a059;
+    text-transform: uppercase;
+    font-size: 0.7rem;
+    letter-spacing: 0.5px;
+    font-weight: bold;
+}
+
+.spell-desc {
+    font-size: 0.85rem;
+    color: #ccc;
+    display: -webkit-box;
+    -webkit-line-clamp: 4;
+    line-clamp: 4;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    line-height: 1.4;
+    margin-top: 5px;
+}
+
+.builder-warning {
+    margin-top: 20px;
+    background: rgba(255, 170, 0, 0.1);
+    color: #ffaa00;
+    padding: 10px;
+    border-radius: 4px;
+    border: 1px solid #775500;
+    text-align: center;
+    font-size: 0.9rem;
+    flex-shrink: 0;
+}
+
+.builder-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 15px;
+    margin-top: 20px;
+    border-top: 1px solid #444;
+    padding-top: 20px;
+    flex-shrink: 0;
+}
+
+.builder-actions button {
+    padding: 10px 25px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+    border: none;
+    font-size: 1rem;
+    transition: all 0.2s;
+}
+
+.btn-cancel {
+    background: transparent;
+    color: #888;
+}
+
+.btn-cancel:hover {
+    color: #fff;
+    background: #333;
+}
+
+.btn-apply {
+    background: var(--color-accent, #c5a059);
+    color: #000;
+}
+
+.btn-apply:hover {
+    background: #d4b06a;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 10px rgba(197, 160, 89, 0.3);
+}
+
+/* MOBILE RESPONSIVENESS */
+@media (max-width: 768px) {
+    .char-builder-modal {
+        padding: 0;
+        background: #111;
+        align-items: flex-start;
+        overflow-y: auto;
+    }
+
+    .builder-content {
+        width: 100%;
+        height: 100%;
+        max-width: 100%;
+        border-radius: 0;
+        border: none;
+        padding: 15px;
+    }
+
+    .builder-stepper {
+        overflow-x: auto;
+        padding-bottom: 5px;
+        margin-bottom: 15px;
+    }
+
+    .step-btn {
+        padding: 8px 10px;
+        font-size: 0.9rem;
+        white-space: nowrap;
+    }
+
+    .builder-row {
+        flex-direction: column;
+        gap: 20px;
+    }
+
+    .point-buy-grid {
+        grid-template-columns: repeat(2, 1fr) !important;
+    }
+
+    .spells-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .skill-btn {
+        padding: 10px;
+        font-size: 1rem;
+        flex: 1 0 100% !important;
+    }
+
+    .builder-col select {
+        font-size: 1.1rem;
+        /* Better for touch */
+    }
+
+    .builder-content {
+        padding-bottom: 100px;
+        /* Ensure content clears fixed footer */
+    }
+
+    .builder-actions {
+        flex-direction: row;
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        background: #000;
+        /* Darker background for contrast */
+        padding: 15px;
+        border-top: 2px solid #c5a059;
+        /* Gold border to separate */
+        margin: 0;
+        z-index: 9999;
+        gap: 10px;
+        box-shadow: 0 -5px 20px rgba(0, 0, 0, 0.8);
+    }
+
+    .builder-actions button {
+        width: 100%;
+        padding: 15px;
+    }
+}

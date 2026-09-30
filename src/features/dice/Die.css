@@ -1,0 +1,110 @@
+.die {
+  background: transparent;
+  border: none;
+  padding: 10px;
+  margin: 5px;
+  width: auto;
+  height: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.2s;
+  box-shadow: none;
+  /* Shadow is on shape now */
+  color: #333;
+}
+
+.die:hover:not(:disabled) {
+  transform: translateY(-5px);
+  box-shadow: none;
+  border-color: transparent;
+}
+
+.die:active:not(:disabled) {
+  transform: translateY(2px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.die:disabled {
+  opacity: 0.8;
+  cursor: wait;
+  filter: grayscale(0.5);
+}
+
+.die.rolling {
+  animation: roll3d 0.5s linear infinite;
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-primary);
+  border-color: var(--color-accent);
+}
+
+.die.rolling .die-value,
+.die.rolling .die-label {
+  opacity: 0;
+  /* Hide text completely for better effect */
+}
+
+.die-label {
+  font-family: 'Cinzel', serif;
+  font-weight: bold;
+  font-size: 1.4rem;
+  color: #222;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+.die-value {
+  font-size: 1.8rem;
+  font-weight: bold;
+  color: var(--color-accent);
+  margin-top: 5px;
+  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.1);
+}
+
+@import './DiceShapes.css';
+
+@keyframes roll3d {
+  0% {
+    transform: rotate3d(1, 1, 1, 0deg) rotateZ(0deg);
+  }
+
+  25% {
+    transform: rotate3d(1, 2, 0, 90deg) rotateZ(45deg);
+  }
+
+  50% {
+    transform: rotate3d(0, 1, 0, 180deg) rotateZ(90deg);
+  }
+
+  75% {
+    transform: rotate3d(2, 0, 1, 270deg) rotateZ(135deg);
+  }
+
+  100% {
+    transform: rotate3d(1, 1, 1, 360deg) rotateZ(180deg);
+  }
+}
+
+.die {
+  /* ... existing styles ... */
+  transform-style: preserve-3d;
+  /* Enable 3D space */
+}
+
+/* Update rolling class to use 3D animation */
+.die.rolling {
+  animation: roll3d 0.6s linear infinite;
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-primary);
+  border-color: var(--color-accent);
+  box-shadow: 0 0 15px var(--color-accent);
+  /* Glow while rolling */
+}
+
+/* Hide value while rolling to simulate motion blur/speed */
+.die.rolling .die-value,
+.die.rolling .die-label {
+  opacity: 0.3;
+  filter: blur(2px);
+}

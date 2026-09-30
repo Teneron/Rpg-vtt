@@ -1,0 +1,114 @@
+:root {
+  --color-bg-primary: #121212;
+  --color-bg-secondary: #1e1e1e;
+  --color-text-primary: #e0e0e0;
+  --color-text-secondary: #a0a0a0;
+  --color-accent: #c5a059;
+  /* Gold */
+  --color-accent-hover: #d4b06a;
+  --color-border: #333;
+  --color-danger: #8b0000;
+  --color-success: #2e7d32;
+
+  --font-header: 'Cinzel', serif;
+  /* Se disponível, senão fallback */
+  --font-body: 'Segoe UI', sans-serif;
+
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.5);
+}
+
+body {
+  margin: 0;
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  font-family: var(--font-body);
+}
+
+.app-container {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Full Sheet Mode (Player Setup) */
+.full-sheet-mode {
+  padding: 20px;
+  background: radial-gradient(circle at center, #1e1e1e 0%, #000 100%);
+}
+
+.sheet-overlay {
+  max-width: 1200px;
+  margin: 0 auto;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.enter-game-btn {
+  align-self: flex-end;
+  background: var(--color-accent);
+  color: #000;
+  border: none;
+  padding: 10px 20px;
+  font-weight: bold;
+  font-family: var(--font-header);
+  font-size: 1.2rem;
+  cursor: pointer;
+  border-radius: 4px;
+  box-shadow: 0 0 10px rgba(197, 160, 89, 0.3);
+  transition: all 0.2s;
+}
+
+.enter-game-btn:hover {
+  background: var(--color-accent-hover);
+  transform: translateY(-2px);
+  box-shadow: 0 0 15px rgba(197, 160, 89, 0.5);
+}
+
+/* Main Layout (Game Mode) */
+.main-layout {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.sidebar {
+  width: 300px;
+  background: var(--color-bg-secondary);
+  border-right: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+}
+
+.map-area {
+  flex: 1;
+  position: relative;
+  background: #0f0f0f;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* App Header */
+.app-header {
+  height: 50px;
+  background: #000;
+  border-bottom: 1px solid var(--color-accent);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+}
+
+.app-header h1 {
+  font-family: var(--font-header);
+  color: var(--color-accent);
+  font-size: 1.5rem;
+  margin: 0;
+}
+
+button {
+  font-family: var(--font-body);
+}
