@@ -9,10 +9,10 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Server & Realtime Backend (SRV)
 
-- [ ] **SRV-01**: Servidor Node.js leve e independente com HTTP e Socket.io, configurado para escutar em porta configurável (`PORT` / 3001) com CORS flexível (permitindo Vercel, Netlify e localhost).
-- [ ] **SRV-02**: Protocolo de salas em memória (`roomId`): criação de sala pelo Mestre e entrada de jogadores com validação de nome e presença.
-- [ ] **SRV-03**: Retransmissão em tempo real de mensagens de jogo no padrão `PeerMessage` (`MAP_UPDATE`, `PLAYER_UPDATE`, `ROLL_RESULT`, `CHAT_MESSAGE`, `COMBAT_UPDATE`, `COMBAT_ACTION`, `EPHEMERAL_GESTURE`, `AUDIO_UPDATE`, `SFX_TRIGGER`).
-- [ ] **SRV-04**: Tratamento de desconexão e presença com notificação imediata aos demais membros da sala quando um jogador ou mestre desconectar.
+- [x] **SRV-01**: Servidor Node.js leve e independente com HTTP e Socket.io, configurado para escutar em porta configurável (`PORT` / 3001) com CORS flexível (permitindo Vercel, Netlify e localhost).
+- [x] **SRV-02**: Protocolo de salas em memória (`roomId`): criação de sala pelo Mestre e entrada de jogadores com validação de nome e presença.
+- [x] **SRV-03**: Retransmissão em tempo real de mensagens de jogo no padrão `PeerMessage` (`MAP_UPDATE`, `PLAYER_UPDATE`, `ROLL_RESULT`, `CHAT_MESSAGE`, `COMBAT_UPDATE`, `COMBAT_ACTION`, `EPHEMERAL_GESTURE`, `AUDIO_UPDATE`, `SFX_TRIGGER`).
+- [x] **SRV-04**: Tratamento de desconexão e presença com notificação imediata aos demais membros da sala quando um jogador ou mestre desconectar.
 
 ### Client Multiplayer & Firebase Removal (CLI)
 
@@ -54,10 +54,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SRV-01 | Phase 1 | Pending |
-| SRV-02 | Phase 1 | Pending |
-| SRV-03 | Phase 1 | Pending |
-| SRV-04 | Phase 1 | Pending |
+| SRV-01 | Phase 1 | Complete |
+| SRV-02 | Phase 1 | Complete |
+| SRV-03 | Phase 1 | Complete |
+| SRV-04 | Phase 1 | Complete |
 | CLI-01 | Phase 2 | Pending |
 | CLI-02 | Phase 2 | Pending |
 | CLI-03 | Phase 2 | Pending |

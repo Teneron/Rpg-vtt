@@ -6,7 +6,7 @@ Modernização da infraestrutura do VTT para eliminar a dependência do Firebase
 
 ## Phases
 
-- [ ] **Phase 1: Servidor Socket.io & Backend Realtime** - Servidor Node.js leve para gerenciamento de salas e troca de mensagens.
+- [x] **Phase 1: Servidor Socket.io & Backend Realtime** - Servidor Node.js leve para gerenciamento de salas e troca de mensagens.
 - [ ] **Phase 2: Integração Multiplayer do Cliente & Remoção do Firebase** - Adaptação do frontend ao Socket.io e eliminação do Firebase/PeerJS.
 - [ ] **Phase 3: Persistência IndexedDB & Migração do LocalStorage** - Eliminação do teto de 5MB migrando fichas e monstros para o Dexie com importação automática.
 - [ ] **Phase 4: Otimização de Performance e Code-Splitting** - Divisão de chunks no Vite para isolar Three.js/física e acelerar o carregamento.
@@ -26,7 +26,7 @@ Modernização da infraestrutura do VTT para eliminar a dependência do Firebase
 **Plans**: 1 plan
 
 Plans:
-- [ ] 01-01: Implementar servidor Node.js com Socket.io, handlers de sala e protocolo de eventos.
+- [x] 01-01: Implementar servidor Node.js com Socket.io, handlers de sala e protocolo de eventos.
 
 ### Phase 2: Integração Multiplayer do Cliente & Remoção do Firebase
 **Goal**: Conectar o frontend ao novo servidor Socket.io via `useMultiplayer`, adaptar contextos e desinstalar completamente pacotes e arquivos do Firebase.
@@ -76,7 +76,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Servidor Socket.io & Backend Realtime | 0/1 | Not started | - |
+| 1. Servidor Socket.io & Backend Realtime | 1/1 | Complete | 2026-09-30 |
 | 2. Integração Multiplayer & Remoção Firebase | 0/1 | Not started | - |
 | 3. Persistência IndexedDB & Migração LocalStorage | 0/1 | Not started | - |
 | 4. Otimização de Performance e Code-Splitting | 0/1 | Not started | - |
