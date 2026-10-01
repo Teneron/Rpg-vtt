@@ -1,18 +1,13 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, lazy, Suspense } from 'react'
 import './App.css'
 import './Layout.css'
-import { DiceOverlay, DiceSidebar } from './features/dice/DiceRoller'
 import { DiceProvider } from './features/dice/DiceContext'
-import { CharacterSheet } from './features/character/CharacterSheet'
 import { RollHistoryProvider } from './features/dice/RollHistoryContext'
 import { MultiplayerProvider, useMultiplayer as usePeer } from './features/multiplayer/SocketContext'
 import { ConnectionScreen } from './features/multiplayer/ConnectionScreen'
 import { BattleMap } from './features/map/BattleMap'
 import { MapHeaderControls } from './features/map/MapToolbar';
-import { GMScreen } from './features/gm/GMScreen';
 import { InitiativeTracker } from './features/combat/InitiativeTracker';
-import { BestiarySidebar } from './features/monsters/BestiarySidebar';
-import { CharacterSelection } from './features/character/CharacterSelection'
 import { AdventureProvider } from './features/adventure/AdventureContext'
 import { MapProvider } from './features/map/MapContext'
 import { SceneProvider } from './features/map/SceneContext'
@@ -23,8 +18,23 @@ import { ChatProvider } from './features/chat/ChatContext';
 import { AudioProvider } from './features/audio/AudioContext';
 import { MusicPlayer } from './features/audio/MusicPlayer';
 import { Soundboard } from './features/audio/Soundboard';
-import { PlayerRulebook } from './features/rules/PlayerRulebook';
-import { GMRulebook } from './features/rules/GMRulebook';
+
+// Lazy loaded heavy components to optimize initial bundle size & load on demand
+const DiceOverlay = lazy(() => import('./features/dice/DiceRoller').then(m => ({ default: m.DiceOverlay })));
+const DiceSidebar = lazy(() => import('./features/dice/DiceRoller').then(m => ({ default: m.DiceSidebar })));
+const CharacterSheet = lazy(() => import('./features/character/CharacterSheet').then(m => ({ default: m.CharacterSheet })));
+const CharacterSelection = lazy(() => import('./features/character/CharacterSelection').then(m => ({ default: m.CharacterSelection })));
+const GMScreen = lazy(() => import('./features/gm/GMScreen').then(m => ({ default: m.GMScreen })));
+const BestiarySidebar = lazy(() => import('./features/monsters/BestiarySidebar').then(m => ({ default: m.BestiarySidebar })));
+const PlayerRulebook = lazy(() => import('./features/rules/PlayerRulebook').then(m => ({ default: m.PlayerRulebook })));
+const GMRulebook = lazy(() => import('./features/rules/GMRulebook').then(m => ({ default: m.GMRulebook })));
+
+const LazyLoadingFallback = () => (
+  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: '100px', color: '#c5a059', gap: '8px' }}>
+    <span style={{ fontSize: '1.2rem' }}>⏳</span>
+    <span style={{ fontSize: '0.9rem' }}>Carregando módulo...</span>
+  </div>
+);
 
 type Tab = 'dice' | 'character' | 'map' | 'gm-screen' | 'combat' | 'bestiary' | 'rules-player' | 'rules-gm';
 
@@ -59,11 +69,10 @@ function AppContent() {
       }
     };
 
-    // Check on mount
+    window.addEventListener('hashchange', handleHashChange);
+    // Initial check on load
     handleHashChange();
 
-    // Listen for changes
-    window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, [viewMode]);
 
@@ -116,8 +125,10 @@ function AppContent() {
         >
           Voltar ao Menu
         </button>
-        {viewMode === 'rules-player' && <PlayerRulebook />}
-        {viewMode === 'rules-gm' && <GMRulebook />}
+        <Suspense fallback={<LazyLoadingFallback />}>
+          {viewMode === 'rules-player' && <PlayerRulebook />}
+          {viewMode === 'rules-gm' && <GMRulebook />}
+        </Suspense>
       </div>
     );
   }
@@ -137,11 +148,13 @@ function AppContent() {
   if (viewMode === 'character-setup') {
     return (
       <div style={{ width: '100vw', height: '100vh', background: 'var(--bg-deep)', overflow: 'hidden' }}>
-        <CharacterSelection onSelect={(charId) => {
-          setSelectedCharacterId(charId);
-          setActiveTab('character'); // Force tab switch
-          setViewMode('game');
-        }} />
+        <Suspense fallback={<LazyLoadingFallback />}>
+          <CharacterSelection onSelect={(charId) => {
+            setSelectedCharacterId(charId);
+            setActiveTab('character'); // Force tab switch
+            setViewMode('game');
+          }} />
+        </Suspense>
       </div>
     );
   }
@@ -206,69 +219,74 @@ function AppContent() {
             🚪 Sair
           </button>
         </div>
-      </header >
+      </header>
 
       {/* Main Layout */}
-      < div className="main-layout" >
+      <div className="main-layout">
 
         {/* SIDEBAR (Glass Panel) */}
-        < div className="sidebar-panel" >
+        <div className="sidebar-panel">
           <ErrorBoundary name="SidebarContent">
-            {activeTab === 'dice' && <DiceSidebar />}
+            <Suspense fallback={<LazyLoadingFallback />}>
+              {activeTab === 'dice' && <DiceSidebar />}
 
-            {/* Character Sheet MOVED to Central Modal */}
-            {activeTab === 'character' && (
-              <div style={{ padding: 20, color: '#aaa', textAlign: 'center', marginTop: '50px' }}>
-                <p>A ficha agora abre em modo de foco central.</p>
-                {!selectedCharacterId && isHost && (
-                  <p style={{ marginTop: '10px' }}>Selecione um token ou jogador para ver detalhes.</p>
-                )}
-                {!selectedCharacterId && !isHost && (
-                  <button
-                    onClick={() => setViewMode('character-setup')}
-                    style={{ marginTop: '20px', padding: '10px', background: '#333', color: '#fff', border: '1px solid #555', cursor: 'pointer' }}
-                  >
-                    Selecionar Personagem
-                  </button>
-                )}
-              </div>
-            )}
+              {/* Character Sheet MOVED to Central Modal */}
+              {activeTab === 'character' && (
+                <div style={{ padding: 20, color: '#aaa', textAlign: 'center', marginTop: '50px' }}>
+                  <p>A ficha agora abre em modo de foco central.</p>
+                  {!selectedCharacterId && isHost && (
+                    <p style={{ marginTop: '10px' }}>Selecione um token ou jogador para ver detalhes.</p>
+                  )}
+                  {!selectedCharacterId && !isHost && (
+                    <button
+                      onClick={() => setViewMode('character-setup')}
+                      style={{ marginTop: '20px', padding: '10px', background: '#333', color: '#fff', border: '1px solid #555', cursor: 'pointer' }}
+                    >
+                      Selecionar Personagem
+                    </button>
+                  )}
+                </div>
+              )}
 
-            {activeTab === 'combat' && <InitiativeTracker />}
+              {activeTab === 'combat' && <InitiativeTracker />}
 
-            {activeTab === 'bestiary' && isHost && <BestiarySidebar />}
+              {activeTab === 'bestiary' && isHost && <BestiarySidebar />}
 
-            {activeTab === 'gm-screen' && isHost && <GMScreen />}
+              {activeTab === 'gm-screen' && isHost && <GMScreen />}
+            </Suspense>
           </ErrorBoundary>
-        </div >
+        </div>
 
-        {/* MAP AREA - Optimized: Blur applied directly here instead of backdrop-filter on overlay */}
-        < div className="map-area" style={{
+        {/* MAP AREA */}
+        <div className="map-area" style={{
           transition: 'filter 0.3s ease',
           filter: (activeTab === 'character' && selectedCharacterId) ? 'blur(5px) brightness(0.4)' : 'none'
-        }
-        }>
+        }}>
           <ErrorBoundary name="BattleMap"><BattleMap /></ErrorBoundary>
-          <ErrorBoundary name="DiceOverlay"><DiceOverlay /></ErrorBoundary>
-        </div >
+          <ErrorBoundary name="DiceOverlay">
+            <Suspense fallback={null}>
+              <DiceOverlay />
+            </Suspense>
+          </ErrorBoundary>
+        </div>
 
         {/* CHAT WINDOW */}
-        < ChatWindow />
+        <ChatWindow />
 
         {/* --- CENTRAL CHARACTER SHEET MODAL --- */}
-        {
-          activeTab === 'character' && selectedCharacterId && (
-            <div className="modal-overlay" style={{
-              position: 'fixed', top: '50px', left: 0, width: '100vw', height: 'calc(100vh - 50px)',
-              background: 'rgba(0,0,0,0.2)', /* Lighter overlay since map is already darkened */
-              display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000
+        {activeTab === 'character' && selectedCharacterId && (
+          <div className="modal-overlay" style={{
+            position: 'fixed', top: '50px', left: 0, width: '100vw', height: 'calc(100vh - 50px)',
+            background: 'rgba(0,0,0,0.2)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000
+          }}>
+            <div className="glass-panel" style={{
+              width: '90%', maxWidth: '1200px', height: '90%',
+              overflow: 'hidden', display: 'flex', flexDirection: 'column',
+              boxShadow: '0 0 50px rgba(0,0,0,0.8)', border: '1px solid rgba(197, 160, 89, 0.3)',
+              background: 'rgba(20, 20, 20, 0.95)'
             }}>
-              <div className="glass-panel" style={{
-                width: '90%', maxWidth: '1200px', height: '90%',
-                overflow: 'hidden', display: 'flex', flexDirection: 'column',
-                boxShadow: '0 0 50px rgba(0,0,0,0.8)', border: '1px solid rgba(197, 160, 89, 0.3)',
-                background: 'rgba(20, 20, 20, 0.95)' /* Opaque background for reading */
-              }}>
+              <Suspense fallback={<LazyLoadingFallback />}>
                 <CharacterSheet
                   characterId={selectedCharacterId}
                   isGM={isHost}
@@ -280,44 +298,44 @@ function AppContent() {
                     }
                   }}
                 />
-              </div>
+              </Suspense>
             </div>
-          )
-        }
+          </div>
+        )}
 
         {/* --- RULEBOOKS MODAL --- */}
-        {
-          (activeTab === 'rules-player' || activeTab === 'rules-gm') && (
-            <div className="modal-overlay" style={{
-              position: 'fixed', top: '50px', left: 0, width: '100vw', height: 'calc(100vh - 50px)',
-              background: 'rgba(0,0,0,0.8)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000
+        {(activeTab === 'rules-player' || activeTab === 'rules-gm') && (
+          <div className="modal-overlay" style={{
+            position: 'fixed', top: '50px', left: 0, width: '100vw', height: 'calc(100vh - 50px)',
+            background: 'rgba(0,0,0,0.8)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000
+          }}>
+            <div className="glass-panel" style={{
+              width: '90%', maxWidth: '1200px', height: '90%',
+              overflow: 'hidden', display: 'flex', flexDirection: 'column',
+              boxShadow: '0 0 50px rgba(0,0,0,0.8)', border: '1px solid rgba(197, 160, 89, 0.3)',
+              background: 'var(--bg-secondary)',
+              position: 'relative'
             }}>
-              <div className="glass-panel" style={{
-                width: '90%', maxWidth: '1200px', height: '90%',
-                overflow: 'hidden', display: 'flex', flexDirection: 'column',
-                boxShadow: '0 0 50px rgba(0,0,0,0.8)', border: '1px solid rgba(197, 160, 89, 0.3)',
-                background: 'var(--bg-secondary)',
-                position: 'relative'
-              }}>
-                <button
-                  onClick={() => setActiveTab('dice')}
-                  style={{
-                    position: 'absolute', top: 20, right: 20,
-                    background: 'none', border: 'none', color: '#fff', fontSize: '1.5rem', cursor: 'pointer', zIndex: 10
-                  }}
-                >
-                  ✕
-                </button>
+              <button
+                onClick={() => setActiveTab('dice')}
+                style={{
+                  position: 'absolute', top: 20, right: 20,
+                  background: 'none', border: 'none', color: '#fff', fontSize: '1.5rem', cursor: 'pointer', zIndex: 10
+                }}
+              >
+                ✕
+              </button>
+              <Suspense fallback={<LazyLoadingFallback />}>
                 {activeTab === 'rules-player' && <PlayerRulebook />}
                 {activeTab === 'rules-gm' && <GMRulebook />}
-              </div>
+              </Suspense>
             </div>
-          )
-        }
+          </div>
+        )}
 
-      </div >
-    </div >
+      </div>
+    </div>
   )
 }
 
@@ -328,17 +346,17 @@ function App() {
         <CombatProvider>
           <MapProvider>
             <SceneProvider>
-              <ChatProvider>
-                <AudioProvider>
+              <AudioProvider>
+                <DiceProvider>
                   <RollHistoryProvider>
-                    <DiceProvider>
+                    <ChatProvider>
                       <AppContent />
                       <MusicPlayer />
                       <Soundboard />
-                    </DiceProvider>
+                    </ChatProvider>
                   </RollHistoryProvider>
-                </AudioProvider>
-              </ChatProvider>
+                </DiceProvider>
+              </AudioProvider>
             </SceneProvider>
           </MapProvider>
         </CombatProvider>

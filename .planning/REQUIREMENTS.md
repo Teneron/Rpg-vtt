@@ -28,8 +28,8 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Performance & Bundle Optimization (OPT)
 
-- [ ] **OPT-01**: Configuração de `manualChunks` no `vite.config.ts` para isolar Three.js e Cannon (`three`, `@react-three/fiber`, `@react-three/cannon`, `@react-three/drei`) em chunk próprio.
-- [ ] **OPT-02**: Carregamento sob demanda (*code-splitting* / lazy loading) dos componentes 3D e modais pesados, garantindo carregamento inicial ultrarrápido.
+- [x] **OPT-01**: Configuração de `manualChunks` no `vite.config.ts` para isolar Three.js e Cannon (`three`, `@react-three/fiber`, `@react-three/cannon`, `@react-three/drei`) em chunk próprio.
+- [x] **OPT-02**: Carregamento sob demanda (*code-splitting* / lazy loading) dos componentes 3D e modais pesados, garantindo carregamento inicial ultrarrápido.
 
 ## v2 Requirements
 
@@ -64,8 +64,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | STG-01 | Phase 3 | Complete |
 | STG-02 | Phase 3 | Complete |
 | STG-03 | Phase 3 | Complete |
-| OPT-01 | Phase 4 | Pending |
-| OPT-02 | Phase 4 | Pending |
+| OPT-01 | Phase 4 | Complete |
+| OPT-02 | Phase 4 | Complete |
 
 **Coverage:**
 - v1 requirements: 12 total
