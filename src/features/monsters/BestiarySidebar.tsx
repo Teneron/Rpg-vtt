@@ -30,6 +30,12 @@ export const BestiarySidebar: React.FC = () => {
             console.log("Monsters loaded:", data.length);
             setMonsters(data);
             setErrorMsg(null);
+
+            MonsterRepository.getAllAsync().then(asyncData => {
+                if (Array.isArray(asyncData)) {
+                    setMonsters(asyncData);
+                }
+            }).catch(console.error);
         } catch (e: any) {
             console.error("Critical: Failed to load monsters", e);
             setErrorMsg(e.message || "Unknown error loading monsters");

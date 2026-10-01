@@ -16,12 +16,12 @@ export const CharacterSelection: React.FC<CharacterSelectionProps> = ({ onSelect
         loadList();
     }, [username, currentAdventureId]);
 
-    const loadList = () => {
+    const loadList = async () => {
         if (username) {
             // "default" fallback is handled by Repo, but explicit is fine too
             const advId = currentAdventureId || 'default';
             console.log('[CharacterSelection] Loading list for:', username, 'scope:', advId);
-            const list = CharacterRepository.listAll(username, advId);
+            const list = await CharacterRepository.listAllAsync(username, advId);
             setCharacters(list);
 
             // Auto-create if empty (User Request: Open builder direct)
@@ -43,12 +43,12 @@ export const CharacterSelection: React.FC<CharacterSelectionProps> = ({ onSelect
         onSelect(newChar.id);
     };
 
-    const handleDelete = (e: React.MouseEvent, id: string) => {
+    const handleDelete = async (e: React.MouseEvent, id: string) => {
         e.stopPropagation();
         if (confirm('Tem certeza que deseja apagar este personagem para sempre?')) {
             const advId = currentAdventureId || 'default';
-            CharacterRepository.delete(id, username, advId);
-            loadList();
+            await CharacterRepository.deleteAsync(id, username, advId);
+            await loadList();
         }
     };
 

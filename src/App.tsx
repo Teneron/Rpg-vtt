@@ -72,8 +72,8 @@ function AppContent() {
   useEffect(() => {
     if (selectedCharacterId && isConnected) {
       // Dynamically load repo to avoid cyclic dependencies if any
-      import('./features/character/characterRepository').then(({ CharacterRepository }) => {
-        const char = CharacterRepository.load(selectedCharacterId);
+      import('./features/character/characterRepository').then(async ({ CharacterRepository }) => {
+        const char = await CharacterRepository.loadAsync(selectedCharacterId);
         if (char) {
           console.log("Auto-Syncing Character:", char.name);
           updateMyCharacter(char);

@@ -22,9 +22,9 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Storage & IndexedDB Migration (STG)
 
-- [ ] **STG-01**: Expansão do esquema do Dexie em `src/db/RPGDatabase.ts` para incluir tabelas de `characters`, `customMonsters` e `rollLogs`.
-- [ ] **STG-02**: Refatoração do `CharacterRepository` e `MonsterRepository` para persistir dados no Dexie (IndexedDB), superando a limitação de 5MB do `localStorage`.
-- [ ] **STG-03**: Rotina de migração automática e silenciosa na inicialização que transfere personagens e monstros já gravados no `localStorage` para o IndexedDB sem perda de dados.
+- [x] **STG-01**: Expansão do esquema do Dexie em `src/db/RPGDatabase.ts` para incluir tabelas de `characters`, `customMonsters` e `rollLogs`.
+- [x] **STG-02**: Refatoração do `CharacterRepository` e `MonsterRepository` para persistir dados no Dexie (IndexedDB), superando a limitação de 5MB do `localStorage`.
+- [x] **STG-03**: Rotina de migração automática e silenciosa na inicialização que transfere personagens e monstros já gravados no `localStorage` para o IndexedDB sem perda de dados.
 
 ### Performance & Bundle Optimization (OPT)
 
@@ -61,9 +61,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CLI-01 | Phase 2 | Complete |
 | CLI-02 | Phase 2 | Complete |
 | CLI-03 | Phase 2 | Complete |
-| STG-01 | Phase 3 | Pending |
-| STG-02 | Phase 3 | Pending |
-| STG-03 | Phase 3 | Pending |
+| STG-01 | Phase 3 | Complete |
+| STG-02 | Phase 3 | Complete |
+| STG-03 | Phase 3 | Complete |
 | OPT-01 | Phase 4 | Pending |
 | OPT-02 | Phase 4 | Pending |
 

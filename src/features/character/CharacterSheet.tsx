@@ -72,10 +72,11 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, isG
 
         // Local Load first (Non-GM)
         if (!isGM && character.id !== characterId && characterId) {
-            const loaded = CharacterRepository.load(characterId);
-            if (loaded) {
-                setCharacter(regenerateCharacterStats({ ...initialCharacter, ...loaded }));
-            }
+            CharacterRepository.loadAsync(characterId).then(loaded => {
+                if (loaded) {
+                    setCharacter(regenerateCharacterStats({ ...initialCharacter, ...loaded }));
+                }
+            });
         }
     }, [characterId, isGM]);
 

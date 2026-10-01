@@ -8,7 +8,7 @@ Modernização da infraestrutura do VTT para eliminar a dependência do Firebase
 
 - [x] **Phase 1: Servidor Socket.io & Backend Realtime** - Servidor Node.js leve para gerenciamento de salas e troca de mensagens.
 - [x] **Phase 2: Integração Multiplayer do Cliente & Remoção do Firebase** - Adaptação do frontend ao Socket.io e eliminação do Firebase/PeerJS.
-- [ ] **Phase 3: Persistência IndexedDB & Migração do LocalStorage** - Eliminação do teto de 5MB migrando fichas e monstros para o Dexie com importação automática.
+- [x] **Phase 3: Persistência IndexedDB & Migração do LocalStorage** - Eliminação do teto de 5MB migrando fichas e monstros para o Dexie com importação automática.
 - [ ] **Phase 4: Otimização de Performance e Code-Splitting** - Divisão de chunks no Vite para isolar Three.js/física e acelerar o carregamento.
 
 ## Phase Details
@@ -54,7 +54,7 @@ Plans:
 **Plans**: 1 plan
 
 Plans:
-- [ ] 03-01: Expandir schema do RPGDatabase e refatorar repositórios com auto-migração de dados.
+- [x] 03-01: Expandir schema do RPGDatabase e refatorar repositórios com auto-migração de dados.
 
 ### Phase 4: Otimização de Performance e Code-Splitting
 **Goal**: Otimizar a configuração do Vite e aplicar carregamento sob demanda para bibliotecas pesadas de 3D e física.
@@ -78,5 +78,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 |-------|----------------|--------|-----------|
 | 1. Servidor Socket.io & Backend Realtime | 1/1 | Complete | 2026-09-30 |
 | 2. Integração Multiplayer & Remoção Firebase | 1/1 | Complete | 2026-09-30 |
-| 3. Persistência IndexedDB & Migração LocalStorage | 0/1 | Not started | - |
+| 3. Persistência IndexedDB & Migração LocalStorage | 1/1 | Complete | 2026-09-30 |
 | 4. Otimização de Performance e Code-Splitting | 0/1 | Not started | - |

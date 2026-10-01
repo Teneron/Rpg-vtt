@@ -1,47 +1,137 @@
 import type { Monster } from './monsterTypes';
 import { MONSTERS_5E } from './data/monsters5e';
 import { MONSTERS_WITCHER } from './data/monstersWitcher';
+import { db } from '../../db/RPGDatabase';
+
+const STORAGE_KEY = 'rpg_custom_monsters';
+const MIGRATION_FLAG_KEY = 'rpg_monsters_migrated_v2';
+
+let customMonstersCache: Monster[] = [];
+let isInitialized = false;
+let initPromise: Promise<void> | null = null;
+
+// Synchronous bootstrap from localStorage so UI and Canvas have data immediately
+if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+        const stored = localStorage.getItem(STORAGE_KEY);
+        if (stored) {
+            const parsed = JSON.parse(stored);
+            if (Array.isArray(parsed)) {
+                customMonstersCache = parsed;
+            }
+        }
+    } catch (e) {
+        console.warn('[MonsterRepo] Synchronous cache pre-load skipped:', e);
+    }
+}
 
 export class MonsterRepository {
-    // Base monsters moved to getAll for safe lazy loading
+    /**
+     * Initializes the repository, migrates legacy localStorage custom monsters to Dexie,
+     * and hydrates the in-memory cache.
+     */
+    static async init(): Promise<void> {
+        if (isInitialized) return;
+        if (initPromise) return initPromise;
+
+        initPromise = (async () => {
+            try {
+                // 1. Transparent migration from localStorage
+                const hasMigrated = localStorage.getItem(MIGRATION_FLAG_KEY);
+                if (!hasMigrated) {
+                    console.log('[MonsterRepo] Checking for legacy custom monsters to migrate...');
+                    const legacyJson = localStorage.getItem(STORAGE_KEY);
+                    if (legacyJson) {
+                        try {
+                            const parsed: Monster[] = JSON.parse(legacyJson);
+                            if (Array.isArray(parsed) && parsed.length > 0) {
+                                await db.customMonsters.bulkPut(parsed);
+                                console.log(`[MonsterRepo] Successfully migrated ${parsed.length} custom monsters to Dexie.`);
+                            }
+                        } catch (parseErr) {
+                            console.warn('[MonsterRepo] Corrupted legacy monsters skipped:', parseErr);
+                        }
+                    }
+                    localStorage.setItem(MIGRATION_FLAG_KEY, 'true');
+                }
+
+                // 2. Hydrate cache from Dexie
+                const fromDb = await db.customMonsters.toArray();
+                customMonstersCache = fromDb;
+                isInitialized = true;
+            } catch (err) {
+                console.error('[MonsterRepo] Failed to initialize custom monsters from Dexie:', err);
+            }
+        })();
+
+        return initPromise;
+    }
 
     static getCustomMonsters(): Monster[] {
-        try {
-            const stored = localStorage.getItem('rpg_custom_monsters');
-            const parsed = stored ? JSON.parse(stored) : [];
-            return Array.isArray(parsed) ? parsed : [];
-        } catch (e) {
-            console.error('Failed to load custom monsters', e);
-            return [];
+        if (!isInitialized) {
+            this.init().catch(console.error);
         }
+        return customMonstersCache;
     }
 
     static saveCustomMonster(monster: Monster) {
-        const customs = this.getCustomMonsters();
-        const index = customs.findIndex(m => m.id === monster.id);
-
+        const index = customMonstersCache.findIndex(m => m.id === monster.id);
         if (index >= 0) {
-            customs[index] = monster;
+            customMonstersCache[index] = monster;
         } else {
-            customs.push(monster);
+            customMonstersCache.push(monster);
         }
 
-        localStorage.setItem('rpg_custom_monsters', JSON.stringify(customs));
+        // Persist to Dexie (IndexedDB)
+        db.customMonsters.put(monster).catch(err => {
+            console.error('[MonsterRepo] Failed to persist custom monster to Dexie:', err);
+        });
+
+        // LocalStorage fallback (swallowing quota errors)
+        try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(customMonstersCache));
+        } catch {
+            // Ignored if quota exceeded
+        }
+    }
+
+    static async saveCustomMonsterAsync(monster: Monster): Promise<void> {
+        this.saveCustomMonster(monster);
+        await db.customMonsters.put(monster);
     }
 
     static deleteCustomMonster(id: string) {
-        let customs = this.getCustomMonsters();
-        customs = customs.filter(m => m.id !== id);
-        localStorage.setItem('rpg_custom_monsters', JSON.stringify(customs));
+        customMonstersCache = customMonstersCache.filter(m => m.id !== id);
+
+        // Delete from Dexie
+        db.customMonsters.delete(id).catch(err => {
+            console.error('[MonsterRepo] Failed to delete custom monster from Dexie:', err);
+        });
+
+        // LocalStorage fallback
+        try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(customMonstersCache));
+        } catch {
+            // Ignored
+        }
+    }
+
+    static async deleteCustomMonsterAsync(id: string): Promise<void> {
+        this.deleteCustomMonster(id);
+        await db.customMonsters.delete(id);
     }
 
     static getAll(): Monster[] {
         const custom = this.getCustomMonsters();
-
         const base5e: Monster[] = MONSTERS_5E || [];
         const baseWitcher: Monster[] = MONSTERS_WITCHER || [];
 
         return [...base5e, ...baseWitcher, ...custom].sort((a, b) => a.name.localeCompare(b.name));
+    }
+
+    static async getAllAsync(): Promise<Monster[]> {
+        await this.init();
+        return this.getAll();
     }
 
     static getById(id: string): Monster | undefined {
@@ -55,16 +145,14 @@ export class MonsterRepository {
     static listSources(): string[] {
         return Array.from(new Set(this.getAll().map(m => m.source))).sort();
     }
+
     static getTokenUrl(monster: Monster): string {
         if (monster.imageUrl) return monster.imageUrl;
 
         const cat = (monster.category || '').toLowerCase();
         const name = monster.name.toLowerCase();
 
-        // Specific overrides for Famous Characters (Mental note: Generate these specific images next)
-        if (name.includes('geralt')) return '/tokens/token_witcher_geralt.png'; // Todo: Generate
-
-        // Category Fallbacks
+        if (name.includes('geralt')) return '/tokens/token_witcher_geralt.png';
         if (name.includes('witcher') || name.includes('bruxo') || cat.includes('bruxo')) return '/tokens/token_witcher.png';
         if (cat.includes('dragon') || cat.includes('dragão')) return '/tokens/token_dragon.png';
         if (cat.includes('undead') || cat.includes('morto-vivo') || cat.includes('espectro')) return '/tokens/token_undead.png';
@@ -73,4 +161,9 @@ export class MonsterRepository {
 
         return '/tokens/token_default.png';
     }
+}
+
+// Automatically initiate hydration on module load
+if (typeof window !== 'undefined') {
+    MonsterRepository.init().catch(console.error);
 }
