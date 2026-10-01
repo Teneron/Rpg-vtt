@@ -5,7 +5,7 @@ import { DiceOverlay, DiceSidebar } from './features/dice/DiceRoller'
 import { DiceProvider } from './features/dice/DiceContext'
 import { CharacterSheet } from './features/character/CharacterSheet'
 import { RollHistoryProvider } from './features/dice/RollHistoryContext'
-import { MultiplayerProvider, useMultiplayer as usePeer } from './features/multiplayer/FirebaseContext'
+import { MultiplayerProvider, useMultiplayer as usePeer } from './features/multiplayer/SocketContext'
 import { ConnectionScreen } from './features/multiplayer/ConnectionScreen'
 import { BattleMap } from './features/map/BattleMap'
 import { MapHeaderControls } from './features/map/MapToolbar';

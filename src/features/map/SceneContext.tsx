@@ -1,12 +1,9 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { initialMapConfig } from './mapTypes';
 import type { Scene } from './mapTypes';
-import { sanitizePayload } from '../../utils/firebaseUtils';
 import { usePeer } from '../multiplayer/FirebaseContext';
 import { useMap } from './MapContext';
 import { db } from '../../db/RPGDatabase';
-import { database } from '../../services/firebase';
-import { ref, set, onValue, remove } from 'firebase/database';
 
 interface SceneContextType {
     scenes: Scene[];
@@ -22,11 +19,10 @@ const SceneContext = createContext<SceneContextType | undefined>(undefined);
 
 export const SceneProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const { currentAdventureId, isHost } = usePeer();
-    const { config, tokens, walls, setFullState } = useMap() as any; // Cast to any until we update MapContext interface
+    const { config, tokens, walls, setFullState } = useMap() as any;
 
-    // Refs for Auto-Save to avoid stale closures in effects/listeners
     const mapStateRef = React.useRef({ config, tokens, walls });
-    const lastSavedStateRef = React.useRef<string>(''); // For Dirty Check
+    const lastSavedStateRef = React.useRef<string>('');
     useEffect(() => {
         mapStateRef.current = { config, tokens, walls };
     }, [config, tokens, walls]);
@@ -34,11 +30,10 @@ export const SceneProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const [scenes, setScenes] = useState<Scene[]>([]);
     const [activeSceneId, setActiveSceneId] = useState<string | null>(null);
 
-    // Load Scenes from Dexie AND Sync with Firebase
+    // Load Scenes from Dexie IndexedDB
     useEffect(() => {
         if (!currentAdventureId) return;
 
-        // 1. Load Local
         const loadScenes = async () => {
             try {
                 const savedScenes = await db.scenes.where('campaignId').equals(currentAdventureId).toArray();
@@ -48,61 +43,22 @@ export const SceneProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             }
         };
         loadScenes();
-
-        // 2. Listen to Firebase (Cloud Source of Truth)
-        const scenesRef = ref(database, `adventures/${currentAdventureId}/scenes`);
-        const unsub = onValue(scenesRef, async (snapshot) => {
-            const val = snapshot.val();
-            if (val) {
-                const cloudScenes: Scene[] = Object.values(val);
-                console.log('[SceneContext] Syncing from Cloud...', cloudScenes.length);
-
-                // Update Local DB (Dexie) with Cloud Data
-                await db.transaction('rw', db.scenes, async () => {
-                    for (const s of cloudScenes) {
-                        await db.scenes.put({ ...s, campaignId: currentAdventureId } as any);
-                    }
-                });
-
-                // Update State
-                setScenes(cloudScenes);
-            }
-        });
-
-        return () => unsub();
     }, [currentAdventureId]);
 
-    // Helper to persist scene changes
+    // Helper to persist scene changes to Dexie
     const persistScene = async (scene: Scene) => {
         if (!currentAdventureId) return;
         try {
-            // 1. Save to Local Dexie (Optimistic)
             await db.scenes.put({ ...scene, campaignId: currentAdventureId } as any);
-
-            // 2. Save to Firebase (Cloud Persistence)
-            // SAFETY CHECK: Verify payload size roughly
-            const jsonSize = JSON.stringify(scene).length;
-            if (jsonSize > 10000000) { // ~10MB safety limit (Firebase absolute max)
-                // Keeping silent as requested.
-            }
-
-            const sceneRef = ref(database, `adventures/${currentAdventureId}/scenes/${scene.id}`);
-            // SANITIZE: Remove undefined values to prevent Firebase rejection
-            const safeScene = sanitizePayload(scene);
-            await set(sceneRef, safeScene);
         } catch (e) {
             console.error("Error saving scene:", e);
         }
     };
 
-    // Helper to delete scene
+    // Helper to delete scene from Dexie
     const removeSceneFromDb = async (id: string) => {
         try {
             await db.scenes.delete(id);
-            if (currentAdventureId) {
-                const sceneRef = ref(database, `adventures/${currentAdventureId}/scenes/${id}`);
-                await remove(sceneRef);
-            }
         } catch (e) {
             console.error("Error deleting scene:", e);
         }
@@ -145,20 +101,6 @@ export const SceneProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         removeSceneFromDb(id);
         if (activeSceneId === id) setActiveSceneId(null);
     };
-
-    // 3. Listen to Active Scene ID (Global State) - JUST FOR UI/SYNC
-    useEffect(() => {
-        if (!currentAdventureId) return;
-        const activeRef = ref(database, `adventures/${currentAdventureId}/state/activeSceneId`);
-        const unsub = onValue(activeRef, (snapshot) => {
-            const cloudActiveId = snapshot.val();
-            if (cloudActiveId && cloudActiveId !== activeSceneId) {
-                // Just update the pointer, DO NOT RESET THE MAP
-                setActiveSceneId(cloudActiveId);
-            }
-        });
-        return () => unsub();
-    }, [currentAdventureId, activeSceneId]);
 
     // 4. AUTO-SAVE & SYNC:
 
@@ -245,12 +187,6 @@ export const SceneProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         // This overwrites the current live map with the Scene's stored data
         if (setFullState) {
             setFullState(scene.config, scene.tokens, scene.walls);
-        }
-
-        // 3. Persist Global Choice to Firebase
-        if (currentAdventureId) {
-            const activeRef = ref(database, `adventures/${currentAdventureId}/state/activeSceneId`);
-            set(activeRef, id);
         }
     };
 

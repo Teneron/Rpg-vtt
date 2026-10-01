@@ -84,40 +84,22 @@ export const MapSettingsModal: React.FC<MapSettingsModalProps> = ({ isOpen, onCl
                                                 try {
                                                     let result: string;
 
-                                                    // UPLOAD TO FIREBASE STORAGE if > 500KB
-                                                    if (file.size > 500000) {
-                                                        const { storage } = await import('../../services/firebase');
-                                                        const { ref, uploadBytes, getDownloadURL } = await import('firebase/storage');
-
-                                                        // unique path: maps/<timestamp>_<filename>
-                                                        const storageRef = ref(storage, `maps/${Date.now()}_${file.name}`);
-
-                                                        // Show simple alert/status (in a real app, use a loading state)
-                                                        alert("Arquivo grande detectado. Enviando para o Storage (Nuvem)... Aguarde.");
-
-                                                        const snapshot = await uploadBytes(storageRef, file);
-                                                        result = await getDownloadURL(snapshot.ref);
-                                                        console.log("Upload finished. URL:", result);
+                                                    // Process and compress image for local storage & broadcast
+                                                    if (isVideo) {
+                                                        result = await new Promise((resolve) => {
+                                                            const reader = new FileReader();
+                                                            reader.onload = (ev) => resolve(ev.target?.result as string);
+                                                            reader.readAsDataURL(file);
+                                                        });
                                                     } else {
-                                                        // Small file: Use Base64 (faster for instant preview)
-                                                        if (isVideo) {
-                                                            result = await new Promise((resolve) => {
-                                                                const reader = new FileReader();
-                                                                reader.onload = (ev) => resolve(ev.target?.result as string);
-                                                                reader.readAsDataURL(file);
-                                                            });
-                                                        } else {
-                                                            // Compress Image
-                                                            result = await compressImage(file, 2048, 0.7);
-                                                        }
+                                                        // Compress Image to fit smoothly in IndexedDB & Socket broadcast
+                                                        result = await compressImage(file, 2048, 0.75);
                                                     }
 
                                                     update({
                                                         backgroundImage: result,
                                                         backgroundImageType: isVideo ? 'video' : 'image'
                                                     });
-
-                                                    if (file.size > 500000) alert("Mapa enviado com sucesso!");
 
                                                 } catch (err) {
                                                     console.error("Erro ao processar imagem:", err);

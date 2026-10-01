@@ -16,9 +16,9 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Client Multiplayer & Firebase Removal (CLI)
 
-- [ ] **CLI-01**: Novo `SocketContext` no frontend conectando via `socket.io-client`, fornecendo uma interface de hook idêntica (`useMultiplayer`) para compatibilidade transparente com os componentes existentes.
-- [ ] **CLI-02**: Adaptação de `CombatContext`, `MapContext` e `SceneContext` para usar o barramento do `SocketContext` em vez de referências diretas ao Firebase Realtime Database.
-- [ ] **CLI-03**: Remoção completa dos pacotes `firebase` e `peerjs` do `package.json`, e exclusão dos arquivos `src/services/firebase.ts`, `src/utils/firebaseUtils.ts`, `firebase.json` e `cors.json`.
+- [x] **CLI-01**: Novo `SocketContext` no frontend conectando via `socket.io-client`, fornecendo uma interface de hook idêntica (`useMultiplayer`) para compatibilidade transparente com os componentes existentes.
+- [x] **CLI-02**: Adaptação de `CombatContext`, `MapContext` e `SceneContext` para usar o barramento do `SocketContext` em vez de referências diretas ao Firebase Realtime Database.
+- [x] **CLI-03**: Remoção completa dos pacotes `firebase` e `peerjs` do `package.json`, e exclusão dos arquivos `src/services/firebase.ts`, `src/utils/firebaseUtils.ts`, `firebase.json` e `cors.json`.
 
 ### Storage & IndexedDB Migration (STG)
 
@@ -58,9 +58,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SRV-02 | Phase 1 | Complete |
 | SRV-03 | Phase 1 | Complete |
 | SRV-04 | Phase 1 | Complete |
-| CLI-01 | Phase 2 | Pending |
-| CLI-02 | Phase 2 | Pending |
-| CLI-03 | Phase 2 | Pending |
+| CLI-01 | Phase 2 | Complete |
+| CLI-02 | Phase 2 | Complete |
+| CLI-03 | Phase 2 | Complete |
 | STG-01 | Phase 3 | Pending |
 | STG-02 | Phase 3 | Pending |
 | STG-03 | Phase 3 | Pending |

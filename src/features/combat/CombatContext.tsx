@@ -1,9 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { usePeer } from '../multiplayer/FirebaseContext';
 import type { CombatState, Combatant } from './combatTypes';
-import { database } from '../../services/firebase';
-import { ref, set, onValue } from 'firebase/database';
-
 interface CombatContextType {
     combatState: CombatState;
     addCombatant: (combatant: Combatant) => void;
@@ -21,8 +18,7 @@ interface CombatContextType {
 const CombatContext = createContext<CombatContextType | undefined>(undefined);
 
 export const CombatProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const { broadcast, isHost, currentAdventureId } = usePeer();
-    const safeAdventureId = currentAdventureId || 'default';
+    const { broadcast, isHost } = usePeer();
 
     const [combatState, setCombatState] = useState<CombatState>({
         isActive: false,
@@ -30,45 +26,6 @@ export const CombatProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         activeTurnId: null,
         combatants: []
     });
-
-    // Persistence: Cloud Combat (Source of Truth)
-    // Host writes to Firebase. Players listen to Firebase.
-
-    // Host: Save to Cloud (Debounced)
-    useEffect(() => {
-        if (!isHost || !safeAdventureId) return;
-
-        const timer = setTimeout(() => {
-            const combatRef = ref(database, `adventures/${safeAdventureId}/combat`);
-            const dataToSave = { ...combatState, lastUpdated: Date.now() };
-            set(combatRef, dataToSave).catch(err => console.error("Combat Cloud Save Error:", err));
-        }, 1000); // 1s Debounce
-
-        return () => clearTimeout(timer);
-    }, [combatState, isHost, safeAdventureId]);
-
-    // Players (and Host on load): Listen to Cloud
-    useEffect(() => {
-        if (!safeAdventureId) return;
-
-        console.log('[CombatContext] Subscribing to Cloud Combat...');
-        const combatRef = ref(database, `adventures/${safeAdventureId}/combat`);
-
-        const unsub = onValue(combatRef, (snapshot) => {
-            const val = snapshot.val();
-            if (val) {
-                // Strip metadata if needed, but CombatState is flexible enough or we destructure
-                const { lastUpdated, ...state } = val;
-
-                // Safety check for array existence
-                if (!state.combatants) state.combatants = [];
-
-                setCombatState(state as CombatState);
-            }
-        });
-
-        return () => unsub();
-    }, [safeAdventureId]);
 
     const broadcastUpdate = (newState: CombatState) => {
         broadcast({

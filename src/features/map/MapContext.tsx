@@ -4,9 +4,7 @@ import type { MapConfig, MapToken, Wall } from './mapTypes';
 import { usePeer } from '../multiplayer/FirebaseContext';
 import type { PeerMessage } from '../multiplayer/FirebaseContext';
 import { db } from '../../db/RPGDatabase'; // Import DB
-import { database } from '../../services/firebase';
-import { ref, set, onValue, get } from 'firebase/database';
-import { sanitizePayload } from '../../utils/firebaseUtils';
+// MapContext.tsx - Powered by Socket Multiplayer & Dexie IndexedDB
 
 interface MapContextType {
     config: MapConfig;
@@ -42,29 +40,21 @@ export const MapProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const [walls, setWalls] = useState<Wall[]>([]);
     const [interactionMode, setInteractionMode] = useState<'select' | 'measure' | 'draw' | 'wall' | 'fog'>('select');
 
-    // Safety Latch: Prevent saving empty state over cloud state
-    // We track WHICH adventure ID is currently loaded in memory.
-    // We only save if loadedAdventureId === safeAdventureId.
     const [loadedAdventureId, setLoadedAdventureId] = useState<string | null>(null);
-
-    // DB ID for the current map (to update the same entry)
     const mapDbId = useRef<number | null>(null);
 
-    // Load Data from DB (or Cloud if DB empty)
+    // Load Data from Dexie IndexedDB
     useEffect(() => {
         const loadMapData = async () => {
             if (!safeAdventureId) return;
 
-            // Reset loaded state when ID changes to prevent leaking old state
             if (loadedAdventureId !== safeAdventureId) {
                 setLoadedAdventureId(null);
             }
 
             try {
-                // 1. Try Local DB first
                 const mapEntry = await db.maps.where('campaignId').equals(safeAdventureId).first();
 
-                // Double check race condition: if adventureId changed while awaiting, abort
                 if (currentAdventureId && safeAdventureId !== currentAdventureId && safeAdventureId !== 'default') return;
 
                 if (mapEntry) {
@@ -75,111 +65,26 @@ export const MapProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                     console.log(`[MapContext] Loaded map from DB for: ${safeAdventureId}`);
                     setLoadedAdventureId(safeAdventureId);
                 } else {
-                    // 2. If no Local DB, check Cloud
-                    console.log(`[MapContext] No local DB map. Checking Cloud for: ${safeAdventureId}`);
-                    const mapRef = ref(database, `adventures/${safeAdventureId}/map`);
-                    const snapshot = await get(mapRef);
-
-                    if (snapshot.exists()) {
-                        const val = snapshot.val();
-                        setLocalConfig(val.config || initialMapConfig);
-                        setTokens(val.tokens || []);
-                        setWalls(val.walls || []);
-                        console.log(`[MapContext] Restored map from Cloud.`);
-                    } else {
-                        // 3. Really new map
-                        console.log(`[MapContext] No Cloud map either. Using defaults.`);
-                        setLocalConfig(initialMapConfig);
-                        setTokens([]);
-                        setWalls([]);
-                    }
+                    setLocalConfig(initialMapConfig);
+                    setTokens([]);
+                    setWalls([]);
                     mapDbId.current = null;
                     setLoadedAdventureId(safeAdventureId);
                 }
             } catch (e) {
-                console.error("Error loading map", e);
+                console.error("Error loading map from IndexedDB", e);
             }
         };
 
         loadMapData();
     }, [safeAdventureId]);
 
-    // 4. Persistence: Cloud Map (Source of Truth)
-    // Host writes to Firebase. Players listen to Firebase.
-    // This ensures state recovery on refresh for everyone.
-
-    // 4. Persistence: Cloud Map (Source of Truth) -> SPLIT into 3 Effects
-
-    // Host: Save CONFIG (Rare, Heavy)
+    // Request initial sync when client connects
     useEffect(() => {
-        if (!isHost || !safeAdventureId || loadedAdventureId !== safeAdventureId) return;
-        const timer = setTimeout(() => {
-            const refConfig = ref(database, `adventures/${safeAdventureId}/map/config`);
-            const payload = sanitizePayload(config);
-            set(refConfig, payload).catch(e => console.error("Map Config Save Error:", e));
-        }, 1000);
-        return () => clearTimeout(timer);
-    }, [config, isHost, safeAdventureId, loadedAdventureId]);
-
-    // Host: Save TOKENS (Frequent, Light)
-    useEffect(() => {
-        if (!isHost || !safeAdventureId || loadedAdventureId !== safeAdventureId) return;
-
-        // Use a shorter debounce for tokens to feel more responsive, 
-        // or just rely on the fact that writes are cheap.
-        const timer = setTimeout(() => {
-            const refTokens = ref(database, `adventures/${safeAdventureId}/map/tokens`);
-            // Sanitize list
-            const payload = sanitizePayload(tokens);
-            set(refTokens, payload).catch(e => console.error("Map Tokens Save Error:", e));
-        }, 500); // 500ms debounce
-        return () => clearTimeout(timer);
-    }, [tokens, isHost, safeAdventureId, loadedAdventureId]);
-
-    // Host: Save WALLS (Occasional)
-    useEffect(() => {
-        if (!isHost || !safeAdventureId || loadedAdventureId !== safeAdventureId) return;
-        const timer = setTimeout(() => {
-            const refWalls = ref(database, `adventures/${safeAdventureId}/map/walls`);
-            const payload = sanitizePayload(walls);
-            set(refWalls, payload).catch(e => console.error("Map Walls Save Error:", e));
-        }, 1000);
-        return () => clearTimeout(timer);
-    }, [walls, isHost, safeAdventureId, loadedAdventureId]);
-
-    // Players: Listen to Cloud -> SPLIT into 3 Listeners
-    useEffect(() => {
-        if (isHost || !safeAdventureId) return;
-
-        console.log('[MapContext] Subscribing to Cloud Map Channels...');
-
-        // 1. Config Channel
-        const refConfig = ref(database, `adventures/${safeAdventureId}/map/config`);
-        const unsubConfig = onValue(refConfig, (snap) => {
-            const val = snap.val();
-            if (val) setLocalConfig(val);
-        });
-
-        // 2. Tokens Channel
-        const refTokens = ref(database, `adventures/${safeAdventureId}/map/tokens`);
-        const unsubTokens = onValue(refTokens, (snap) => {
-            const val = snap.val();
-            setTokens(val || []); // Handle null as empty array
-        });
-
-        // 3. Walls Channel
-        const refWalls = ref(database, `adventures/${safeAdventureId}/map/walls`);
-        const unsubWalls = onValue(refWalls, (snap) => {
-            const val = snap.val();
-            setWalls(val || []);
-        });
-
-        return () => {
-            unsubConfig();
-            unsubTokens();
-            unsubWalls();
-        };
-    }, [isHost, safeAdventureId]);
+        if (!isHost && isConnected) {
+            broadcast({ type: 'SYNC_REQUEST', payload: { target: 'MAP' } });
+        }
+    }, [isHost, isConnected]);
 
     // Local DB Persistence (Backup/Offline optimized)
     // (We keep this for good measure, but Cloud is now Primary for Sync)
