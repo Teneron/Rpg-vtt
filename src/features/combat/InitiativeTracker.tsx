@@ -1,20 +1,31 @@
 import React, { useState } from 'react';
 import { useCombat } from './CombatContext';
 import { usePeer } from '../multiplayer/FirebaseContext';
+import { rollInitiative } from './combatUtils';
+import type { TacticalStatus } from './combatTypes';
 import './InitiativeTracker.css';
 
 export const InitiativeTracker: React.FC = () => {
-    const { combatState, nextTurn, previousTurn, addCombatant, removeCombatant, updateCombatant, sortCombatants, resetRound, startCombat, endCombat } = useCombat();
-    const { isHost } = usePeer();
+    const {
+        combatState,
+        nextTurn,
+        previousTurn,
+        addCombatant,
+        removeCombatant,
+        updateCombatant,
+        sortCombatants,
+        resetRound,
+        startCombat,
+        endCombat,
+        setTarget
+    } = useCombat();
+    const { isHost, myCharacter } = usePeer();
 
     const [npcName, setNpcName] = useState('');
     const [npcInit, setNpcInit] = useState('');
 
-    const { myCharacter } = usePeer();
-
     // Check if my character is already in combat
     const isMyCharacter = !!myCharacter;
-    // Safety check
     const safeCombatants = combatState.combatants || [];
 
     // Find "My" Participation
@@ -44,25 +55,23 @@ export const InitiativeTracker: React.FC = () => {
     const handleRollInitiative = () => {
         if (!myCharacter) return;
 
-        const dex = myCharacter.attributes.dex.value;
-        const mod = Math.floor((dex - 10) / 2);
-        const roll = Math.floor(Math.random() * 20) + 1;
-        const total = roll + mod;
+        // Agnostic initiative calculation (supports 5e, Witcher, generic sheets safely)
+        const { bonus, roll, total, formula } = rollInitiative(myCharacter);
 
-        // Broadcast Roll (Still good to have in DiceHistory, even if we don't spam Chat with "Turns")
+        // Broadcast Roll for 3D dice, chat and history sync
         const event = new CustomEvent('rpg_broadcast_roll', {
             detail: {
-                formula: '1d20 + DEX',
+                formula,
                 total,
                 rolls: [roll],
-                modifier: mod,
+                modifier: bonus,
                 reason: 'Iniciativa'
             }
         });
         window.dispatchEvent(event);
 
         if (myCombatant) {
-            updateCombatant(myCombatant.id, { initiative: total, roll, bonus: mod });
+            updateCombatant(myCombatant.id, { initiative: total, roll, bonus });
         } else {
             addCombatant({
                 id: myCharacter.id,
@@ -70,7 +79,7 @@ export const InitiativeTracker: React.FC = () => {
                 name: myCharacter.name,
                 initiative: total,
                 roll,
-                bonus: mod,
+                bonus,
                 isNPC: false,
                 status: 'normal',
                 imageUrl: myCharacter.imageUrl
@@ -78,23 +87,20 @@ export const InitiativeTracker: React.FC = () => {
         }
     };
 
-    const handleAction = (action: 'dodge' | 'dash' | 'hide' | 'help' | 'ready') => {
+    const handleAction = (action: 'dodge' | 'dash' | 'hide' | 'help' | 'ready' | 'defending') => {
         if (!myCombatant) return;
 
-        const statusMap = {
+        const statusMap: Record<string, TacticalStatus> = {
             dodge: 'dodging',
             dash: 'dashing',
             hide: 'hiding',
             help: 'help',
-            ready: 'ready'
+            ready: 'ready',
+            defending: 'defending'
         };
 
-        // Update my status
-        updateCombatant(myCombatant.id, { status: statusMap[action] as any });
+        updateCombatant(myCombatant.id, { status: statusMap[action] || 'normal' });
     };
-
-
-
 
     // --- RENDER INACTIVE ---
     if (!combatState.isActive) {
@@ -118,7 +124,7 @@ export const InitiativeTracker: React.FC = () => {
     }
 
     // --- RENDER ACTIVE ---
-    // STRICT PRIVACY: Players only see themselves. Host sees everyone.
+    // Privacy: Players only see themselves. Host sees everyone.
     const viewList = isHost
         ? safeCombatants
         : safeCombatants.filter(c => myCharacter && (c.id === myCharacter.id || c.characterId === myCharacter.id));
@@ -130,22 +136,11 @@ export const InitiativeTracker: React.FC = () => {
                 <span className="round-counter">Round {combatState.round}</span>
             </div>
 
-            {/* ACTIVE TURN BANNER with Privacy */}
+            {/* ACTIVE TURN BANNER */}
             {activeCombatant && (
                 <div className="turn-banner">
-                    {/* If Host: Show Name. If Me: Show "SEU TURNO!". If Other: Show "Turno de: [Generic]" depending on desire, 
-                        BUT User said "nao enxergar quem esta no combate". 
-                        Maybe "Turno de: Outro Combatente"? Or just keep "Turno de: [Name]"?
-                        Actually, "Quem está no combate" usually refers to the roster. 
-                        Knowing WHO makes the move is crucial (narrative).
-                        Let's keep the name for now, as "Who is acting" is public info usually.
-                        Wait, if "não enxergar quem está", maybe even the name is hidden?
-                        Let's default to "Turno em Andamento" if not me/host?
-                        Let's stick to showing name unless instructed otherwise, strict privacy usually means just the list/stats.
-                        But I will respect "apenas a propria iniciativa".
-                    */}
                     {activeCombatant.id === myCombatant?.id
-                        ? "SEU TURNO!"
+                        ? 'SEU TURNO!'
                         : (isHost ? `Turno de: ${activeCombatant.name}` : `Turno: ${activeCombatant.isNPC ? 'Inimigo/NPC' : activeCombatant.name}`)}
                 </div>
             )}
@@ -154,9 +149,10 @@ export const InitiativeTracker: React.FC = () => {
                 {viewList.map(c => {
                     const isMe = myCharacter && (c.id === myCharacter.id || c.characterId === myCharacter.id);
                     const isActive = combatState.activeTurnId === c.id;
+                    const isTargeted = combatState.currentTargetId === c.id;
 
                     return (
-                        <li key={c.id} className={`combatant-item ${isActive ? 'active' : ''} ${isMe ? 'is-me' : ''}`}>
+                        <li key={c.id} className={`combatant-item ${isActive ? 'active' : ''} ${isMe ? 'is-me' : ''} ${isTargeted ? 'targeted' : ''}`}>
                             {isHost ? (
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                     <input
@@ -171,7 +167,7 @@ export const InitiativeTracker: React.FC = () => {
                                         onClick={(e) => {
                                             e.stopPropagation();
                                             const roll = Math.floor(Math.random() * 20) + 1;
-                                            updateCombatant(c.id, { initiative: roll });
+                                            updateCombatant(c.id, { initiative: roll, roll, bonus: c.bonus || 0 });
                                         }}
                                     >
                                         🎲
@@ -191,8 +187,26 @@ export const InitiativeTracker: React.FC = () => {
                                     {c.status === 'dodging' && <span className="status-tag dodging">Esquiva</span>}
                                     {c.status === 'dashing' && <span className="status-tag dashing">Disparada</span>}
                                     {c.status === 'hiding' && <span className="status-tag hiding">Escondido</span>}
+                                    {c.status === 'ready' && <span className="status-tag ready">Preparado</span>}
+                                    {c.status === 'defending' && <span className="status-tag defending">Defesa</span>}
                                 </div>
                             </div>
+
+                            <button
+                                type="button"
+                                style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    cursor: 'pointer',
+                                    fontSize: '1rem',
+                                    opacity: isTargeted ? 1 : 0.4,
+                                    marginRight: '6px'
+                                }}
+                                title={isTargeted ? 'Remover mira' : 'Mirar neste alvo'}
+                                onClick={() => setTarget(isTargeted ? null : c.id)}
+                            >
+                                🎯
+                            </button>
 
                             {isHost && (
                                 <button className="remove-btn" onClick={() => removeCombatant(c.id)}>×</button>
@@ -202,7 +216,7 @@ export const InitiativeTracker: React.FC = () => {
                 })}
             </ul>
 
-            {/* PLAYER CONTROLS (ACTIONS) */}
+            {/* PLAYER CONTROLS (ACTIONS & END TURN) */}
             {isMyTurn && (
                 <div className="tracker-controls">
                     <label style={{ color: '#c5a059', fontSize: '0.8rem', textTransform: 'uppercase' }}>Ações de Combate</label>
@@ -212,7 +226,14 @@ export const InitiativeTracker: React.FC = () => {
                         <button className="control-btn" onClick={() => handleAction('hide')}>👁️ Esconder</button>
                         <button className="control-btn" onClick={() => handleAction('help')}>🤝 Ajudar</button>
                     </div>
-                    {/* Add End Turn button for player? Usually GM controls flow, but nice to notify "Done" */}
+                    <button
+                        className="control-btn primary"
+                        style={{ marginTop: '8px', width: '100%', background: '#2c5e3b', borderColor: '#438a56' }}
+                        onClick={nextTurn}
+                        title="Passar vez para o próximo combatente"
+                    >
+                        ⏭️ Encerrar Meu Turno
+                    </button>
                 </div>
             )}
 

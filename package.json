@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "server": "node server/server.js",
+    "test": "node test-combat-engine.mjs && node test-storage-dexie.mjs && node server/test-client.js",
+    "test:combat": "node test-combat-engine.mjs",
     "test:server": "node server/test-client.js",
     "test:storage": "node test-storage-dexie.mjs",
     "build": "tsc -b && vite build",

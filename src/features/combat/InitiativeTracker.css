@@ -156,6 +156,21 @@
     border-style: dashed;
 }
 
+.status-tag.ready {
+    color: #a8ff78;
+    border-color: #a8ff78;
+}
+
+.status-tag.defending {
+    color: #4a9eff;
+    border-color: #4a9eff;
+}
+
+.combatant-item.targeted {
+    border-color: #ff4444;
+    box-shadow: 0 0 8px rgba(255, 68, 68, 0.4);
+}
+
 /* Control Buttons */
 .remove-btn {
     background: transparent;

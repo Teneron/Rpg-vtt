@@ -185,6 +185,12 @@ export const BattleMap: React.FC = () => {
 
         if (e.button !== 0 || interactionMode === 'wall' || interactionMode === 'fog') return;
 
+        if (e.shiftKey) {
+            e.stopPropagation();
+            setTarget(combatState.currentTargetId === token.id ? null : token.id);
+            return;
+        }
+
         setSelectedTokenId(token.id); // Select on click
 
         const isOwner = myCharacter?.id === token.characterId;
@@ -267,7 +273,7 @@ export const BattleMap: React.FC = () => {
         e.dataTransfer.dropEffect = 'copy';
     };
 
-    const { addCombatant } = useCombat();
+    const { addCombatant, combatState, setTarget } = useCombat();
 
     const handleDrop = (e: React.DragEvent) => {
         e.preventDefault();
@@ -380,13 +386,14 @@ export const BattleMap: React.FC = () => {
     // Helper to render a single token (so we don't inline the function in JSX)
     const renderToken = (displayToken: any) => {
         const isOwner = myCharacter?.id === displayToken.characterId;
-        const combatState = useCombat().combatState;
         const isActiveTurn = combatState.isActive && (
             combatState.activeTurnId === displayToken.id ||
             combatState.activeTurnId === displayToken.combatantId ||
             (displayToken.characterId && combatState.activeTurnId === displayToken.characterId)
         );
-        const isTargeted = combatState.currentTargetId === displayToken.id;
+        const isTargeted = combatState.currentTargetId === displayToken.id ||
+            (displayToken.characterId && combatState.currentTargetId === displayToken.characterId) ||
+            (displayToken.combatantId && combatState.currentTargetId === displayToken.combatantId);
 
         return (
             <div
