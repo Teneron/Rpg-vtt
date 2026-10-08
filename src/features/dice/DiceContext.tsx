@@ -222,6 +222,15 @@ export const DiceProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
 export const useDice = () => {
     const context = useContext(DiceContext);
-    if (!context) throw new Error('useDice must be used within a DiceProvider');
+    if (!context) {
+        return {
+            rollingDice: [],
+            rollResult: null,
+            isRolling: false,
+            triggerRoll: () => {},
+            finishRoll: () => {},
+            clearDice: () => {}
+        };
+    }
     return context;
 };

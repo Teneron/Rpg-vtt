@@ -9,8 +9,19 @@ console.log(`Starting/verifying test server on ${SERVER_URL}...`);
 async function runTests() {
     // If not already listening, start server on TEST_PORT
     if (!server.listening) {
-        await new Promise((resolve) => server.listen(TEST_PORT, resolve));
-        console.log(`✓ Test server started on port ${TEST_PORT}`);
+        await new Promise((resolve) => {
+            const onError = (err) => {
+                if (err.code === 'EADDRINUSE') {
+                    resolve();
+                }
+            };
+            server.once('error', onError);
+            server.listen(TEST_PORT, () => {
+                server.removeListener('error', onError);
+                resolve();
+            });
+        });
+        console.log(`✓ Test server ready on port ${TEST_PORT}`);
     }
 
     return new Promise((resolve, reject) => {

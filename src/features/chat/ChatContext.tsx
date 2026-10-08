@@ -122,7 +122,15 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
 export const useChat = () => {
     const context = useContext(ChatContext);
     if (!context) {
-        throw new Error('useChat must be used within a ChatProvider');
+        return {
+            messages: [],
+            sendMessage: () => {},
+            sendSystemMessage: () => {},
+            clearChat: () => {},
+            isOpen: false,
+            toggleChat: () => {},
+            unreadCount: 0
+        };
     }
     return context;
 };

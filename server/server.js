@@ -204,6 +204,14 @@ function handleSocketLeaveRoom(socket, roomId) {
 
 // Start server listening
 if (process.env.NODE_ENV !== 'test') {
+    server.on('error', (err) => {
+        if (err.code === 'EADDRINUSE') {
+            console.log(`Port ${PORT} is already in use by an active server instance.`);
+        } else {
+            console.error('Server error:', err);
+        }
+    });
+
     server.listen(PORT, () => {
         console.log(`===============================================`);
         console.log(`🚀 RPG Tabletop Server listening on port ${PORT}`);

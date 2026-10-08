@@ -364,15 +364,15 @@ function App() {
           <MapProvider>
             <SceneProvider>
               <AudioProvider>
-                <DiceProvider>
+                <ChatProvider>
                   <RollHistoryProvider>
-                    <ChatProvider>
+                    <DiceProvider>
                       <AppContent />
                       <MusicPlayer />
                       <Soundboard />
-                    </ChatProvider>
+                    </DiceProvider>
                   </RollHistoryProvider>
-                </DiceProvider>
+                </ChatProvider>
               </AudioProvider>
             </SceneProvider>
           </MapProvider>

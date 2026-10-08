@@ -89,7 +89,11 @@ export const RollHistoryProvider: React.FC<{ children: ReactNode }> = ({ childre
 export const useRollHistory = () => {
     const context = useContext(RollHistoryContext);
     if (!context) {
-        throw new Error('useRollHistory must be used within a RollHistoryProvider');
+        return {
+            history: [],
+            addRoll: () => {},
+            clearHistory: () => {}
+        };
     }
     return context;
 };
