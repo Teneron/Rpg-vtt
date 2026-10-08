@@ -1,86 +1,136 @@
 // LightingSystem.ts
-// Wall type used implicitly through geometry types or not needed for basic calculation
+// Raycasting 2D visibility polygon generator with spatial culling and vertex validation
 
 interface Point { x: number; y: number; }
 interface Segment { a: Point; b: Point; }
 
 export class LightingSystem {
 
-    static calculateVisibilityPolygon(origin: Point, walls: { a: Point, b: Point }[], widthCanvas: number, heightCanvas: number): Point[] {
-        // 1. Collect all unique points (endpoints of walls) and map boundaries
+    /**
+     * Computes the 2D visibility polygon from a light/vision origin against blocking walls.
+     * 
+     * @param origin Point where the light or vision originates (in canvas pixels)
+     * @param walls Array of line segments blocking light
+     * @param widthCanvas Full width of the map canvas
+     * @param heightCanvas Full height of the map canvas
+     * @param maxRadius Optional vision/light radius for spatial culling (huge performance gain)
+     */
+    static calculateVisibilityPolygon(
+        origin: Point,
+        walls: { a: Point; b: Point }[],
+        widthCanvas: number,
+        heightCanvas: number,
+        maxRadius?: number
+    ): Point[] {
+        if (!origin || !isFinite(origin.x) || !isFinite(origin.y)) {
+            return [];
+        }
+
+        // 1. Sanitize walls (filter out degenerate or invalid coordinates)
+        let relevantWalls = (walls || []).filter(w =>
+            w && w.a && w.b &&
+            isFinite(w.a.x) && isFinite(w.a.y) &&
+            isFinite(w.b.x) && isFinite(w.b.y) &&
+            (w.a.x !== w.b.x || w.a.y !== w.b.y)
+        );
+
+        // 2. Spatial Culling by bounding box if maxRadius is provided
+        const hasRadius = typeof maxRadius === 'number' && maxRadius > 0 && isFinite(maxRadius);
+        const effectiveRadius = hasRadius ? maxRadius * 1.05 : null;
+
+        const bMinX = effectiveRadius ? Math.max(0, origin.x - effectiveRadius) : 0;
+        const bMaxX = effectiveRadius ? Math.min(widthCanvas, origin.x + effectiveRadius) : widthCanvas;
+        const bMinY = effectiveRadius ? Math.max(0, origin.y - effectiveRadius) : 0;
+        const bMaxY = effectiveRadius ? Math.min(heightCanvas, origin.y + effectiveRadius) : heightCanvas;
+
+        if (effectiveRadius) {
+            relevantWalls = relevantWalls.filter(w => {
+                const segMinX = Math.min(w.a.x, w.b.x);
+                const segMaxX = Math.max(w.a.x, w.b.x);
+                const segMinY = Math.min(w.a.y, w.b.y);
+                const segMaxY = Math.max(w.a.y, w.b.y);
+
+                return !(segMinX > bMaxX || segMaxX < bMinX || segMinY > bMaxY || segMaxY < bMinY);
+            });
+        }
+
+        // 3. Collect unique endpoints and boundary corners
         const points: Point[] = [];
         const uniquePointsStr = new Set<string>();
 
         const addPoint = (p: Point) => {
-            const s = `${p.x.toFixed(2)},${p.y.toFixed(2)}`;
+            const cx = Math.max(bMinX, Math.min(bMaxX, p.x));
+            const cy = Math.max(bMinY, Math.min(bMaxY, p.y));
+            const s = `${cx.toFixed(1)},${cy.toFixed(1)}`;
             if (!uniquePointsStr.has(s)) {
                 uniquePointsStr.add(s);
-                points.push(p);
+                points.push({ x: cx, y: cy });
             }
         };
 
-        // Add Wall Endpoints
-        walls.forEach(w => {
+        relevantWalls.forEach(w => {
             addPoint(w.a);
             addPoint(w.b);
         });
 
-        // Add Canvas Corners (to ensure light doesn't clip weirdly at infinity)
-        addPoint({ x: 0, y: 0 });
-        addPoint({ x: widthCanvas, y: 0 });
-        addPoint({ x: widthCanvas, y: heightCanvas });
-        addPoint({ x: 0, y: heightCanvas });
+        // Add Local Bounding Box Corners
+        addPoint({ x: bMinX, y: bMinY });
+        addPoint({ x: bMaxX, y: bMinY });
+        addPoint({ x: bMaxX, y: bMaxY });
+        addPoint({ x: bMinX, y: bMaxY });
 
-        // 2. Cast Rays to all points (+/- small epsilon angle)
+        // 4. Cast rays to all points (+/- epsilon angles)
         const angles: number[] = [];
         points.forEach(p => {
             const angle = Math.atan2(p.y - origin.y, p.x - origin.x);
-            angles.push(angle - 0.00001, angle, angle + 0.00001);
+            if (isFinite(angle)) {
+                angles.push(angle - 0.00001, angle, angle + 0.00001);
+            }
         });
 
-        // 3. For each angle, find closest intersection
-        const polygonPoints: Point[] = [];
-
-        // Include boundaries as segments for intersection checks
-        const allSegments = [
-            ...walls,
-            { a: { x: 0, y: 0 }, b: { x: widthCanvas, y: 0 } },
-            { a: { x: widthCanvas, y: 0 }, b: { x: widthCanvas, y: heightCanvas } },
-            { a: { x: widthCanvas, y: heightCanvas }, b: { x: 0, y: heightCanvas } },
-            { a: { x: 0, y: heightCanvas }, b: { x: 0, y: 0 } }
+        const allSegments: Segment[] = [
+            ...relevantWalls,
+            { a: { x: bMinX, y: bMinY }, b: { x: bMaxX, y: bMinY } },
+            { a: { x: bMaxX, y: bMinY }, b: { x: bMaxX, y: bMaxY } },
+            { a: { x: bMaxX, y: bMaxY }, b: { x: bMinX, y: bMaxY } },
+            { a: { x: bMinX, y: bMaxY }, b: { x: bMinX, y: bMinY } }
         ];
 
-        // Sort angles to draw polygon in order
         angles.sort((a, b) => a - b);
 
+        const polygonPoints: Point[] = [];
+
         for (const angle of angles) {
-            // Ray: Origin + Vector(cos, sin) * HUGE_DISTANCE
             const dx = Math.cos(angle);
             const dy = Math.sin(angle);
 
-            // Find closest intersection
             let closestDist = Infinity;
             let closestPoint: Point | null = null;
 
             for (const seg of allSegments) {
                 const intersect = this.getRaySegmentIntersection(origin, { dx, dy }, seg);
-                if (intersect) {
-                    if (intersect.param < closestDist) {
-                        closestDist = intersect.param;
-                        closestPoint = intersect.point;
-                    }
+                if (intersect && intersect.param < closestDist) {
+                    closestDist = intersect.param;
+                    closestPoint = intersect.point;
                 }
             }
 
-            if (closestPoint) {
-                polygonPoints.push(closestPoint);
+            if (closestPoint && isFinite(closestPoint.x) && isFinite(closestPoint.y)) {
+                polygonPoints.push({
+                    x: Math.max(0, Math.min(widthCanvas, closestPoint.x)),
+                    y: Math.max(0, Math.min(heightCanvas, closestPoint.y))
+                });
             }
         }
 
         return polygonPoints;
     }
 
-    private static getRaySegmentIntersection(rayOrigin: Point, rayDir: { dx: number, dy: number }, segment: Segment): { point: Point, param: number } | null {
+    private static getRaySegmentIntersection(
+        rayOrigin: Point,
+        rayDir: { dx: number; dy: number },
+        segment: Segment
+    ): { point: Point; param: number } | null {
         const r_px = rayOrigin.x;
         const r_py = rayOrigin.y;
         const r_dx = rayDir.dx;
@@ -91,17 +141,12 @@ export class LightingSystem {
         const s_dx = segment.b.x - segment.a.x;
         const s_dy = segment.b.y - segment.a.y;
 
-        // r_px + r_dx * T1 = s_px + s_dx * T2
-        // r_py + r_dy * T1 = s_py + s_dy * T2
-
         const mag = s_dx * r_dy - s_dy * r_dx;
-        if (Math.abs(mag) < 0.000001) return null; // Parallel
+        if (Math.abs(mag) < 0.000001) return null; // Parallel or degenerate
 
         const t2 = (r_dx * (s_py - r_py) + r_dy * (r_px - s_px)) / mag;
 
-        // Check if T1 > 0 (Ray forward) and 0 <= T2 <= 1 (Segment bounds)
-        // Need to robustly calc T1.
-        let t1_robust;
+        let t1_robust: number;
         if (Math.abs(r_dx) > Math.abs(r_dy)) {
             t1_robust = (s_px + s_dx * t2 - r_px) / r_dx;
         } else {
@@ -109,14 +154,17 @@ export class LightingSystem {
         }
 
         if (t1_robust > 0 && t2 >= 0 && t2 <= 1) {
-            return {
-                point: {
-                    x: r_px + r_dx * t1_robust,
-                    y: r_py + r_dy * t1_robust
-                },
-                param: t1_robust
-            };
+            const ix = r_px + r_dx * t1_robust;
+            const iy = r_py + r_dy * t1_robust;
+
+            if (isFinite(ix) && isFinite(iy)) {
+                return {
+                    point: { x: ix, y: iy },
+                    param: t1_robust
+                };
+            }
         }
+
         return null;
     }
 }

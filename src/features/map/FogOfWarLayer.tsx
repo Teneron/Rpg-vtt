@@ -58,45 +58,50 @@ export const FogOfWarLayer: React.FC<FogOfWarLayerProps> = ({ selectedTokenId, p
         // --- Cortar Buracos (Visão/Luz) ---
         ctx.globalCompositeOperation = 'destination-out';
 
-        // Prepare Wall Segments for Raycasting
-        const wallSegments = (walls || []).map(w => ({
-            a: { x: w.start.x * config.gridSize, y: w.start.y * config.gridSize },
-            b: { x: w.end.x * config.gridSize, y: w.end.y * config.gridSize }
-        }));
+        // Prepare Wall Segments for Raycasting (sanitized and filtered)
+        const wallSegments = (walls || [])
+            .filter(w => w && w.start && w.end &&
+                Number.isFinite(w.start.x) && Number.isFinite(w.start.y) &&
+                Number.isFinite(w.end.x) && Number.isFinite(w.end.y) &&
+                (w.start.x !== w.end.x || w.start.y !== w.end.y)
+            )
+            .map(w => ({
+                a: { x: w.start.x * config.gridSize, y: w.start.y * config.gridSize },
+                b: { x: w.end.x * config.gridSize, y: w.end.y * config.gridSize }
+            }));
 
         // 1. Fontes de Luz de TODOS os tokens (Universal)
         (tokens || []).forEach(token => {
-            // DEBUG: Log why this token is emitting light
-            // if (token.lightRadius > 0) console.log(`Token ${token.name} Light: Radius=${token.lightRadius}, Enabled=${token.lightEnabled}`);
-
             if (token.lightRadius && token.lightRadius > 0 && token.lightEnabled !== false) {
                 const px = (token.position.x + token.size / 2) * config.gridSize;
                 const py = (token.position.y + token.size / 2) * config.gridSize;
                 const radiusPx = (token.lightRadius / 1.5) * config.gridSize;
+
+                if (!Number.isFinite(px) || !Number.isFinite(py) || !Number.isFinite(radiusPx) || radiusPx <= 0) return;
 
                 // Soft Light Gradient
                 const gradient = ctx.createRadialGradient(px, py, radiusPx * 0.2, px, py, radiusPx);
                 gradient.addColorStop(0, 'rgba(0, 0, 0, 1)');
                 gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
 
-                // Calculate Polygon
-                const polygon = LightingSystem.calculateVisibilityPolygon({ x: px, y: py }, wallSegments, width, height);
+                // Calculate Polygon with spatial culling (radiusPx)
+                const polygon = LightingSystem.calculateVisibilityPolygon({ x: px, y: py }, wallSegments, width, height, radiusPx);
 
-                ctx.save();
-                ctx.beginPath();
-                if (polygon.length > 0) {
+                if (polygon.length >= 3) {
+                    ctx.save();
+                    ctx.beginPath();
                     ctx.moveTo(polygon[0].x, polygon[0].y);
                     for (let i = 1; i < polygon.length; i++) ctx.lineTo(polygon[i].x, polygon[i].y);
                     ctx.closePath();
+                    ctx.clip(); // Restrict light to walls
+
+                    ctx.fillStyle = gradient;
+                    ctx.beginPath();
+                    ctx.arc(px, py, radiusPx, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    ctx.restore();
                 }
-                ctx.clip(); // Restrict light to walls
-
-                ctx.fillStyle = gradient;
-                ctx.beginPath();
-                ctx.arc(px, py, radiusPx, 0, Math.PI * 2);
-                ctx.fill();
-
-                ctx.restore();
             }
         });
 
@@ -147,27 +152,29 @@ export const FogOfWarLayer: React.FC<FogOfWarLayerProps> = ({ selectedTokenId, p
                 const py = (token.position.y + token.size / 2) * config.gridSize;
                 const radiusPx = (vision / 1.5) * config.gridSize;
 
+                if (!Number.isFinite(px) || !Number.isFinite(py) || !Number.isFinite(radiusPx) || radiusPx <= 0) return;
+
                 const gradient = ctx.createRadialGradient(px, py, radiusPx * 0.4, px, py, radiusPx);
                 gradient.addColorStop(0, 'rgba(0, 0, 0, 1)');
                 gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
 
-                const polygon = LightingSystem.calculateVisibilityPolygon({ x: px, y: py }, wallSegments, width, height);
+                const polygon = LightingSystem.calculateVisibilityPolygon({ x: px, y: py }, wallSegments, width, height, radiusPx);
 
-                ctx.save();
-                ctx.beginPath();
-                if (polygon.length > 0) {
+                if (polygon.length >= 3) {
+                    ctx.save();
+                    ctx.beginPath();
                     ctx.moveTo(polygon[0].x, polygon[0].y);
                     for (let i = 1; i < polygon.length; i++) ctx.lineTo(polygon[i].x, polygon[i].y);
                     ctx.closePath();
+                    ctx.clip();
+
+                    ctx.fillStyle = gradient;
+                    ctx.beginPath();
+                    ctx.arc(px, py, radiusPx, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    ctx.restore();
                 }
-                ctx.clip();
-
-                ctx.fillStyle = gradient;
-                ctx.beginPath();
-                ctx.arc(px, py, radiusPx, 0, Math.PI * 2);
-                ctx.fill();
-
-                ctx.restore();
             }
 
             // Body always visible (Personal)

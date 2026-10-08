@@ -27,6 +27,8 @@ interface MapContextType {
     setFullState?: (config: MapConfig, tokens: MapToken[], walls: Wall[]) => void;
 }
 
+import { isValidCoord, sanitizeWall, sanitizeToken } from './mapUtils';
+
 const MapContext = createContext<MapContextType | undefined>(undefined);
 
 export const MapProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -58,9 +60,12 @@ export const MapProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 if (currentAdventureId && safeAdventureId !== currentAdventureId && safeAdventureId !== 'default') return;
 
                 if (mapEntry) {
-                    setLocalConfig(mapEntry.config);
-                    setTokens(mapEntry.tokens || []);
-                    setWalls(mapEntry.walls || []);
+                    const cfg = mapEntry.config || initialMapConfig;
+                    setLocalConfig(cfg);
+                    const validTokens = (mapEntry.tokens || []).map((t: any) => sanitizeToken(t, cfg.width, cfg.height)).filter((t: any): t is MapToken => t !== null);
+                    const validWalls = (mapEntry.walls || []).map(sanitizeWall).filter((w: any): w is Wall => w !== null);
+                    setTokens(validTokens);
+                    setWalls(validWalls);
                     mapDbId.current = mapEntry.id!;
                     console.log(`[MapContext] Loaded map from DB for: ${safeAdventureId}`);
                     setLoadedAdventureId(safeAdventureId);
@@ -150,13 +155,24 @@ export const MapProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     const addToken = (token: MapToken) => {
-        setTokens(prev => [...(prev || []), token]);
-        sendUpdate({ type: 'add', data: token });
+        const safe = sanitizeToken(token, config.width, config.height);
+        if (!safe) return;
+        setTokens(prev => [...(prev || []), safe]);
+        sendUpdate({ type: 'add', data: safe });
     };
 
     const updateTokenPosition = (id: string, x: number, y: number) => {
-        setTokens(prev => (prev || []).map(t => t.id === id ? { ...t, position: { x, y } } : t));
-        sendUpdate({ type: 'move', data: { id, x, y } });
+        if (!id || !isValidCoord(x) || !isValidCoord(y)) return;
+        setTokens(prev => {
+            const list = prev || [];
+            const target = list.find(t => t.id === id);
+            const tokenSize = target?.size || 1;
+            const safeX = Math.max(0, Math.min(Math.round(x), Math.max(0, config.width - tokenSize)));
+            const safeY = Math.max(0, Math.min(Math.round(y), Math.max(0, config.height - tokenSize)));
+
+            sendUpdate({ type: 'move', data: { id, x: safeX, y: safeY } });
+            return list.map(t => t.id === id ? { ...t, position: { x: safeX, y: safeY } } : t);
+        });
     };
 
     const updateToken = (id: string, updates: Partial<MapToken>) => {
@@ -171,8 +187,10 @@ export const MapProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // --- Wall Operations ---
     const addWall = (wall: Wall) => {
-        setWalls(prev => [...prev, wall]);
-        sendUpdate({ type: 'add_wall', data: wall });
+        const safe = sanitizeWall(wall);
+        if (!safe) return;
+        setWalls(prev => (prev || []).some(w => w.id === safe.id) ? prev : [...(prev || []), safe]);
+        sendUpdate({ type: 'add_wall', data: safe });
     };
 
     const updateWall = (id: string, updates: Partial<Wall>) => {
@@ -193,26 +211,43 @@ export const MapProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 const { type, data } = e.detail.payload;
 
                 switch (type) {
-                    case 'add':
-                        setTokens(prev => {
-                            if ((prev || []).some(t => t.id === data.id)) return prev; // Dedup
-                            return [...(prev || []), data];
-                        });
+                    case 'add': {
+                        const safe = sanitizeToken(data, config.width, config.height);
+                        if (safe) {
+                            setTokens(prev => {
+                                if ((prev || []).some(t => t.id === safe.id)) return prev;
+                                return [...(prev || []), safe];
+                            });
+                        }
                         break;
+                    }
                     case 'move':
-                        setTokens(prev => (prev || []).map(t => t.id === data.id ? { ...t, position: { x: data.x, y: data.y } } : t));
+                        if (data && data.id && isValidCoord(data.x) && isValidCoord(data.y)) {
+                            setTokens(prev => {
+                                const list = prev || [];
+                                const target = list.find(t => t.id === data.id);
+                                const tokenSize = target?.size || 1;
+                                const safeX = Math.max(0, Math.min(Math.round(data.x), Math.max(0, config.width - tokenSize)));
+                                const safeY = Math.max(0, Math.min(Math.round(data.y), Math.max(0, config.height - tokenSize)));
+                                return list.map(t => t.id === data.id ? { ...t, position: { x: safeX, y: safeY } } : t);
+                            });
+                        }
                         break;
                     case 'update_token':
                         setTokens(prev => (prev || []).map(t => t.id === data.id ? { ...t, ...data.updates } : t));
                         break;
                     case 'remove':
-                        setTokens(prev => prev.filter(t => t.id !== data.id));
+                        setTokens(prev => (prev || []).filter(t => t.id !== data.id));
                         break;
 
                     // Walls
-                    case 'add_wall':
-                        setWalls(prev => [...prev, data]);
+                    case 'add_wall': {
+                        const safe = sanitizeWall(data);
+                        if (safe) {
+                            setWalls(prev => (prev || []).some(w => w.id === safe.id) ? prev : [...(prev || []), safe]);
+                        }
                         break;
+                    }
                     case 'update_wall':
                         setWalls(prev => (prev || []).map(w => w.id === data.id ? { ...w, ...data.updates } : w));
                         break;
@@ -223,12 +258,24 @@ export const MapProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                     case 'config':
                         setLocalConfig(data);
                         break;
-                    case 'full_sync':
+                    case 'full_sync': {
                         console.log('[MapContext] Received Full Sync');
-                        setLocalConfig(data.config);
-                        setTokens(data.tokens);
-                        if (data.walls) setWalls(data.walls);
+                        const syncConfig = data.config || initialMapConfig;
+                        setLocalConfig(syncConfig);
+                        if (Array.isArray(data.tokens)) {
+                            const sanitizedTokens = data.tokens
+                                .map((t: any) => sanitizeToken(t, syncConfig.width, syncConfig.height))
+                                .filter((t: any): t is MapToken => t !== null);
+                            setTokens(sanitizedTokens);
+                        }
+                        if (Array.isArray(data.walls)) {
+                            const sanitizedWalls = data.walls
+                                .map(sanitizeWall)
+                                .filter((w: any): w is Wall => w !== null);
+                            setWalls(sanitizedWalls);
+                        }
                         break;
+                    }
                 }
             } else if (e.detail.type === 'SYNC_REQUEST' && isHost) {
                 const req = e.detail.payload;
@@ -256,16 +303,24 @@ export const MapProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     const setFullState = (newConfig: MapConfig, newTokens: MapToken[], newWalls: Wall[]) => {
-        setLocalConfig(newConfig || initialMapConfig);
-        setTokens(newTokens || []);
-        setWalls(newWalls || []);
+        const validConfig = newConfig || initialMapConfig;
+        const validTokens = (newTokens || [])
+            .map(t => sanitizeToken(t, validConfig.width, validConfig.height))
+            .filter((t): t is MapToken => t !== null);
+        const validWalls = (newWalls || [])
+            .map(sanitizeWall)
+            .filter((w): w is Wall => w !== null);
+
+        setLocalConfig(validConfig);
+        setTokens(validTokens);
+        setWalls(validWalls);
 
         // Broadcast to players
         broadcast({
             type: 'MAP_UPDATE',
             payload: {
                 type: 'full_sync',
-                data: { config: newConfig, tokens: newTokens, walls: newWalls }
+                data: { config: validConfig, tokens: validTokens, walls: validWalls }
             }
         });
     };
