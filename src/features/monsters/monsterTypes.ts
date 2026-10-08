@@ -17,7 +17,9 @@ export interface Monster {
     id: string;
     name: string;
     category: string; // e.g. "Necrophage", "Humanoid"
-    source: 'DnD5e' | 'Witcher' | 'Custom';
+    source: 'DnD5e' | 'Witcher' | 'Custom' | (string & {});
+    campaignId?: string; // Optional: Scope monster to a specific adventure
+    system?: string; // Optional: System tag (e.g. "dnd5e", "witcher", "cyberpunk")
     description?: string;
     size?: string; // "Medium", "Large", "Huge", etc.
 

@@ -12,6 +12,8 @@ export interface Campaign {
     createdAt: number;
     updatedAt: number;
     logs: RollEvent[]; // Chat/Roll logs stored here
+    system?: string; // Rule system (e.g. "dnd5e", "witcher", "cyberpunk", "custom")
+    description?: string;
 }
 
 export interface MapData {
@@ -65,6 +67,16 @@ export class RPGDatabase extends Dexie {
             assets: '++id, campaignId, type',
             characters: 'id, name, owner, adventureId, lastModified',
             customMonsters: 'id, name, category, source, cr',
+            rollLogs: 'id, campaignId, timestamp, playerName'
+        });
+
+        this.version(3).stores({
+            campaigns: 'id, name, system, createdAt, updatedAt',
+            maps: '++id, campaignId',
+            scenes: 'id, campaignId',
+            assets: '++id, campaignId, type',
+            characters: 'id, name, owner, adventureId, lastModified',
+            customMonsters: 'id, name, category, source, cr, campaignId, system',
             rollLogs: 'id, campaignId, timestamp, playerName'
         });
     }

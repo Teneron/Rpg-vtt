@@ -172,6 +172,7 @@ export interface Character {
     };
     pendingLevelUp?: boolean;
     lastModified?: number; // Timestamp for Conflict Resolution
+    system?: string; // Optional game system identifier (e.g. "dnd5e", "witcher", "cyberpunk")
 }
 
 export const calculateModifier = (value: number): number => {

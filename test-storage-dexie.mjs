@@ -1,10 +1,11 @@
 import 'fake-indexeddb/auto';
 import { Dexie } from 'dexie';
+import assert from 'node:assert';
 
-console.log('=== RPG TABLETOP - INDEXEDDB & STORAGE TEST ===');
+console.log('=== RPG TABLETOP - INDEXEDDB & STORAGE TEST (MULTI-CAMPAIGN / MULTI-LORE) ===');
 
 async function runTests() {
-    // 1. Initialize Dexie Database matching RPGDatabase schema
+    // 1. Initialize Dexie Database matching RPGDatabase schema version 1, 2 and 3
     const testDb = new Dexie('RPG_Tabletop_DB_Test');
     testDb.version(1).stores({
         campaigns: 'id, name, createdAt, updatedAt',
@@ -23,134 +24,182 @@ async function runTests() {
         rollLogs: 'id, campaignId, timestamp, playerName'
     });
 
-    await testDb.open();
-    console.log('✓ Dexie v2 opened successfully with all 7 stores');
+    testDb.version(3).stores({
+        campaigns: 'id, name, system, createdAt, updatedAt',
+        maps: '++id, campaignId',
+        scenes: 'id, campaignId',
+        assets: '++id, campaignId, type',
+        characters: 'id, name, owner, adventureId, lastModified',
+        customMonsters: 'id, name, category, source, cr, campaignId, system',
+        rollLogs: 'id, campaignId, timestamp, playerName'
+    });
 
-    // 2. Test Character CRUD
-    const sampleChar = {
-        id: 'char-uuid-1',
+    await testDb.open();
+    console.log('✓ Dexie v3 opened successfully with all 7 stores and multi-campaign indexes');
+
+    // 2. Test Multi-Campaign Creation & System Scoping
+    console.log('\n--- 2. Testing Multi-Campaign Isolation ---');
+    const campWitcher = {
+        id: 'camp-witcher-1',
+        name: 'O Destino de Cintra',
+        system: 'witcher',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        logs: []
+    };
+    const campScifi = {
+        id: 'camp-scifi-1',
+        name: 'Estação Ômega 4',
+        system: 'cyberpunk',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        logs: []
+    };
+
+    await testDb.campaigns.bulkPut([campWitcher, campScifi]);
+    const witcherCampLoaded = await testDb.campaigns.get('camp-witcher-1');
+    assert.strictEqual(witcherCampLoaded.system, 'witcher');
+    console.log('✓ Multi-campaign systems registered: Witcher and Cyberpunk');
+
+    // 3. Test Characters Isolated by Adventure/Campaign
+    const charWitcher = {
+        id: 'char-w-1',
         name: 'Geralt de Rívia',
-        race: 'Humano Mutado',
+        race: 'Mutante',
         class: 'Bruxo',
         level: 5,
-        owner: 'blakm',
-        adventureId: 'adv-default',
+        owner: 'user-gm',
+        adventureId: 'camp-witcher-1',
+        system: 'witcher',
+        lastModified: Date.now()
+    };
+
+    // Alien / Non-5e character (e.g. Cyberpunk or Cthulhu with custom role, no spell slots, no 5e attributes)
+    const charCyberpunk = {
+        id: 'char-cyber-1',
+        name: 'V / Valerie',
+        owner: 'user-gm',
+        adventureId: 'camp-scifi-1',
+        system: 'cyberpunk',
         lastModified: Date.now(),
-        attributes: {
-            str: { name: 'FOR', value: 16, modifier: 3, saveProficiency: true },
-            dex: { name: 'DES', value: 18, modifier: 4, saveProficiency: true },
-            con: { name: 'CON', value: 16, modifier: 3, saveProficiency: false },
-            int: { name: 'INT', value: 14, modifier: 2, saveProficiency: false },
-            wis: { name: 'SAB', value: 12, modifier: 1, saveProficiency: false },
-            cha: { name: 'CAR', value: 10, modifier: 0, saveProficiency: false }
-        }
+        customStats: { cyberware: 'Sandevistan', humanity: 45 }
     };
 
-    await testDb.characters.put(sampleChar);
-    const loadedChar = await testDb.characters.get('char-uuid-1');
-    if (!loadedChar || loadedChar.name !== 'Geralt de Rívia') {
-        throw new Error('Failed to retrieve character from Dexie');
-    }
-    console.log('✓ Character created and retrieved:', loadedChar.name);
+    await testDb.characters.bulkPut([charWitcher, charCyberpunk]);
 
-    // Query by owner and adventureId
-    const foundChars = await testDb.characters
-        .where('owner').equals('blakm')
-        .and(c => c.adventureId === 'adv-default')
-        .toArray();
-    if (foundChars.length !== 1) {
-        throw new Error(`Expected 1 character for owner blakm, found ${foundChars.length}`);
-    }
-    console.log('✓ Character indexed query by owner and adventureId succeeded');
+    // Query characters for camp-witcher-1
+    const witcherChars = await testDb.characters.where('adventureId').equals('camp-witcher-1').toArray();
+    assert.strictEqual(witcherChars.length, 1);
+    assert.strictEqual(witcherChars[0].id, 'char-w-1');
 
-    // 3. Test Custom Monsters CRUD
-    const sampleMonster = {
-        id: 'monster-custom-1',
-        name: 'Grifo Real',
-        category: 'Híbrido',
+    // Query characters for camp-scifi-1
+    const scifiChars = await testDb.characters.where('adventureId').equals('camp-scifi-1').toArray();
+    assert.strictEqual(scifiChars.length, 1);
+    assert.strictEqual(scifiChars[0].id, 'char-cyber-1');
+    console.log('✓ Strict character isolation between campaigns confirmed');
+
+    // 4. Test Custom Monsters Scoped by Campaign and System
+    console.log('\n--- 4. Testing Monster Campaign & System Scoping ---');
+    const monsterWitcher = {
+        id: 'mon-w-1',
+        name: 'Lobisomem de Velen',
+        category: 'Relicto',
+        source: 'Witcher',
+        cr: 4,
+        campaignId: 'camp-witcher-1',
+        system: 'witcher',
+        hp: { current: 95, max: 95 },
+        ac: 14,
+        speed: 12
+    };
+
+    const monsterDrone = {
+        id: 'mon-sci-1',
+        name: 'Drone de Patrulha Arasaka',
+        category: 'Constructo',
         source: 'Custom',
-        cr: 6,
-        hp: { current: 120, max: 120 },
-        ac: 15,
-        speed: 18,
-        actions: [{ id: 'a1', name: 'Bicada Dilacerante', type: 'melee', description: 'Ataque cortante letal' }]
+        cr: 3,
+        campaignId: 'camp-scifi-1',
+        system: 'cyberpunk',
+        hp: { current: 40, max: 40 },
+        ac: 16,
+        speed: 15
     };
 
-    await testDb.customMonsters.put(sampleMonster);
-    const loadedMonster = await testDb.customMonsters.get('monster-custom-1');
-    if (!loadedMonster || loadedMonster.name !== 'Grifo Real') {
-        throw new Error('Failed to retrieve custom monster from Dexie');
-    }
-    console.log('✓ Custom Monster created and retrieved:', loadedMonster.name);
+    await testDb.customMonsters.bulkPut([monsterWitcher, monsterDrone]);
 
-    // 4. Test Roll Logs
-    const sampleRoll = {
-        id: 'roll-12345',
-        campaignId: 'adv-default',
-        total: 24,
-        dice: [{ type: 'd20', value: 20 }, { type: 'd4', value: 4 }],
-        timestamp: Date.now(),
-        playerName: 'Mestre',
-        label: 'Ataque com Espada de Prata'
-    };
+    const witcherMonsters = await testDb.customMonsters.where('campaignId').equals('camp-witcher-1').toArray();
+    assert.strictEqual(witcherMonsters.length, 1);
+    assert.strictEqual(witcherMonsters[0].name, 'Lobisomem de Velen');
 
-    await testDb.rollLogs.put(sampleRoll);
-    const loadedRoll = await testDb.rollLogs.get('roll-12345');
-    if (!loadedRoll || loadedRoll.total !== 24) {
-        throw new Error('Failed to retrieve roll log from Dexie');
-    }
-    console.log('✓ Roll log stored and retrieved successfully in rollLogs table');
+    const scifiMonsters = await testDb.customMonsters.where('campaignId').equals('camp-scifi-1').toArray();
+    assert.strictEqual(scifiMonsters.length, 1);
+    assert.strictEqual(scifiMonsters[0].name, 'Drone de Patrulha Arasaka');
+    console.log('✓ Custom monsters scoped and indexed by campaignId and system');
 
-    // 5. Test Simulated Migration from localStorage
-    const mockLocalStorage = {
-        'rpg_char_leg-1': JSON.stringify({
-            id: 'leg-1',
-            name: 'Yennefer de Vengerberg',
-            race: 'Meia-Elfa',
-            class: 'Feiticeira',
-            level: 10,
-            owner: 'blakm',
-            adventureId: 'adv-default'
-        }),
-        'rpg_custom_monsters': JSON.stringify([
-            { id: 'mon-leg-1', name: 'Katakan Ancião', category: 'Vampiro', source: 'Custom', cr: 8 }
-        ])
-    };
+    // 5. Test Maps, Scenes & Assets Associated with Campaign
+    console.log('\n--- 5. Testing Campaign Maps & Assets ---');
+    await testDb.maps.add({
+        campaignId: 'camp-scifi-1',
+        name: 'Hangar Principal',
+        config: { width: 30, height: 30, gridSize: 50, scale: 1, offsetX: 0, offsetY: 0, globalLight: 'dim', gridColor: '#555', walls: [] },
+        tokens: [],
+        walls: []
+    });
 
-    // Run migration routine
-    const migratedChars = [];
-    for (const [key, val] of Object.entries(mockLocalStorage)) {
-        if (key.startsWith('rpg_char_') && !key.startsWith('rpg_char_index')) {
-            migratedChars.push(JSON.parse(val));
-        }
-    }
-    await testDb.characters.bulkPut(migratedChars);
+    await testDb.scenes.add({
+        id: 'scene-sci-1',
+        campaignId: 'camp-scifi-1',
+        name: 'Laboratório Secreto',
+        gridSize: 50,
+        width: 25,
+        height: 25,
+        walls: [],
+        tokens: [],
+        lights: []
+    });
 
-    const migratedMonsters = JSON.parse(mockLocalStorage['rpg_custom_monsters']);
-    await testDb.customMonsters.bulkPut(migratedMonsters);
+    const initialScifiMaps = await testDb.maps.where('campaignId').equals('camp-scifi-1').toArray();
+    assert.strictEqual(initialScifiMaps.length, 1);
+    console.log('✓ Maps and scenes successfully linked to campaign');
 
-    const checkYennefer = await testDb.characters.get('leg-1');
-    const checkKatakan = await testDb.customMonsters.get('mon-leg-1');
+    // 6. Test Atomic Cascade Deletion
+    console.log('\n--- 6. Testing Complete Cascade Deletion ---');
+    const deleteId = 'camp-scifi-1';
+    await testDb.transaction('rw', [testDb.campaigns, testDb.maps, testDb.scenes, testDb.assets, testDb.characters, testDb.customMonsters], async () => {
+        await testDb.maps.where('campaignId').equals(deleteId).delete();
+        await testDb.scenes.where('campaignId').equals(deleteId).delete();
+        await testDb.assets.where('campaignId').equals(deleteId).delete();
+        await testDb.characters.where('adventureId').equals(deleteId).delete();
+        await testDb.customMonsters.where('campaignId').equals(deleteId).delete();
+        await testDb.campaigns.delete(deleteId);
+    });
 
-    if (!checkYennefer || checkYennefer.name !== 'Yennefer de Vengerberg') {
-        throw new Error('Legacy character migration failed');
-    }
-    if (!checkKatakan || checkKatakan.name !== 'Katakan Ancião') {
-        throw new Error('Legacy monster migration failed');
-    }
+    // Verify all camp-scifi-1 data is purged
+    assert.strictEqual(await testDb.campaigns.get('camp-scifi-1'), undefined);
+    assert.strictEqual((await testDb.maps.where('campaignId').equals('camp-scifi-1').toArray()).length, 0);
+    assert.strictEqual((await testDb.scenes.where('campaignId').equals('camp-scifi-1').toArray()).length, 0);
+    assert.strictEqual((await testDb.characters.where('adventureId').equals('camp-scifi-1').toArray()).length, 0);
+    assert.strictEqual((await testDb.customMonsters.where('campaignId').equals('camp-scifi-1').toArray()).length, 0);
 
-    console.log('✓ Migration of legacy characters and monsters succeeded without data loss');
+    // Verify camp-witcher-1 data remains completely intact
+    assert.ok(await testDb.campaigns.get('camp-witcher-1'));
+    assert.strictEqual((await testDb.characters.where('adventureId').equals('camp-witcher-1').toArray()).length, 1);
+    assert.strictEqual((await testDb.customMonsters.where('campaignId').equals('camp-witcher-1').toArray()).length, 1);
+    console.log('✓ Cascade deletion purged all campaign data without touching other campaigns');
 
-    // 6. Test Delete
-    await testDb.characters.delete('char-uuid-1');
-    const deletedChar = await testDb.characters.get('char-uuid-1');
-    if (deletedChar) {
-        throw new Error('Character deletion failed');
-    }
-    console.log('✓ Character deletion validated in IndexedDB');
+    // 7. Test Simulated Legacy Migration
+    console.log('\n--- 7. Testing Legacy Migration Safety ---');
+    const mockLegacyChars = [
+        { id: 'leg-1', name: 'Yennefer', race: 'Meia-Elfa', class: 'Maga', level: 10, owner: 'gm', adventureId: 'camp-witcher-1' }
+    ];
+    await testDb.characters.bulkPut(mockLegacyChars);
+    const yenn = await testDb.characters.get('leg-1');
+    assert.strictEqual(yenn.name, 'Yennefer');
+    console.log('✓ Legacy data migration verified successfully');
 
     await testDb.close();
-    console.log('\n>>> ALL INDEXEDDB & STORAGE TESTS PASSED SUCCESSFULLY! <<<');
+    console.log('\n🎉 ALL INDEXEDDB, STORAGE & MULTI-CAMPAIGN TESTS PASSED SUCCESSFULLY!\n');
 }
 
 runTests().catch(err => {

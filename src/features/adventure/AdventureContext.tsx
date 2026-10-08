@@ -18,7 +18,7 @@ interface AdventureContextType {
     currentAdventure: Adventure | null;
     adventures: AdventureSummary[];
     loadAdventure: (id: string) => Promise<void>;
-    createAdventure: (name: string) => Promise<Adventure>;
+    createAdventure: (name: string, system?: string) => Promise<Adventure>;
     deleteAdventure: (id: string) => Promise<void>;
     closeAdventure: () => void;
     isLoading: boolean;
@@ -89,11 +89,12 @@ export const AdventureProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         checkMigration();
     }, []);
 
-    const createAdventure = async (name: string): Promise<Adventure> => {
+    const createAdventure = async (name: string, system: string = 'dnd5e'): Promise<Adventure> => {
         const id = crypto.randomUUID();
         const newAdv: Adventure = {
             id,
             name,
+            system,
             createdAt: Date.now(),
             updatedAt: Date.now(),
             logs: []
@@ -138,8 +139,12 @@ export const AdventureProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             setCurrentAdventure(null);
         }
         try {
-            await db.transaction('rw', db.campaigns, db.maps, async () => {
+            await db.transaction('rw', [db.campaigns, db.maps, db.scenes, db.assets, db.characters, db.customMonsters], async () => {
                 await db.maps.where('campaignId').equals(id).delete();
+                await db.scenes.where('campaignId').equals(id).delete();
+                await db.assets.where('campaignId').equals(id).delete();
+                await db.characters.where('adventureId').equals(id).delete();
+                await db.customMonsters.where('campaignId').equals(id).delete();
                 await db.campaigns.delete(id);
             });
         } catch (e) {

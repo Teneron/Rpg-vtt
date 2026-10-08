@@ -8,10 +8,11 @@ const MIGRATION_FLAG_KEY = 'rpg_char_migrated_v2';
 export interface CharacterSummary {
     id: string;
     name: string;
-    race: string;
-    class: string;
-    level: number;
+    race?: string;
+    class?: string;
+    level?: number;
     adventureId?: string;
+    system?: string;
 }
 
 // In-memory write-through cache for instant synchronous access (critical for UI and canvas)
@@ -113,10 +114,11 @@ export const CharacterRepository = {
                 summaries.push({
                     id: char.id,
                     name: char.name || 'Sem Nome',
-                    race: char.race,
-                    class: char.class,
-                    level: char.level,
-                    adventureId: cAdvId
+                    race: char.race || '',
+                    class: char.class || '',
+                    level: typeof char.level === 'number' && Number.isFinite(char.level) ? char.level : 1,
+                    adventureId: cAdvId,
+                    system: char.system
                 });
             }
         }
@@ -223,7 +225,7 @@ export const CharacterRepository = {
     /**
      * Create a new character for owner/adventure.
      */
-    create(owner: string, adventureId: string = 'default'): Character {
+    create(owner: string, adventureId: string = 'default', system: string = 'dnd5e'): Character {
         const generateUUID = () => {
             if (typeof crypto !== 'undefined' && crypto.randomUUID) {
                 return crypto.randomUUID();
@@ -241,6 +243,7 @@ export const CharacterRepository = {
             id: generateUUID(),
             owner: owner || 'default',
             adventureId: adventureId || 'default',
+            system,
             lastModified: Date.now()
         };
 

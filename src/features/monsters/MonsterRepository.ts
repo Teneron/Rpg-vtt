@@ -67,9 +67,12 @@ export class MonsterRepository {
         return initPromise;
     }
 
-    static getCustomMonsters(): Monster[] {
+    static getCustomMonsters(campaignId?: string): Monster[] {
         if (!isInitialized) {
             this.init().catch(console.error);
+        }
+        if (campaignId) {
+            return customMonstersCache.filter(m => !m.campaignId || m.campaignId === campaignId);
         }
         return customMonstersCache;
     }
@@ -121,17 +124,33 @@ export class MonsterRepository {
         await db.customMonsters.delete(id);
     }
 
-    static getAll(): Monster[] {
-        const custom = this.getCustomMonsters();
-        const base5e: Monster[] = MONSTERS_5E || [];
-        const baseWitcher: Monster[] = MONSTERS_WITCHER || [];
+    static getAll(filter?: { source?: string; campaignId?: string; system?: string }): Monster[] {
+        const custom = this.getCustomMonsters(filter?.campaignId);
+        let base5e: Monster[] = MONSTERS_5E || [];
+        let baseWitcher: Monster[] = MONSTERS_WITCHER || [];
 
-        return [...base5e, ...baseWitcher, ...custom].sort((a, b) => a.name.localeCompare(b.name));
+        if (filter?.source) {
+            if (filter.source === 'DnD5e') {
+                baseWitcher = [];
+            } else if (filter.source === 'Witcher') {
+                base5e = [];
+            }
+        }
+
+        let all = [...base5e, ...baseWitcher, ...custom];
+        if (filter?.source) {
+            all = all.filter(m => m.source === filter.source);
+        }
+        if (filter?.system) {
+            all = all.filter(m => !m.system || m.system === filter.system);
+        }
+
+        return all.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
     }
 
-    static async getAllAsync(): Promise<Monster[]> {
+    static async getAllAsync(filter?: { source?: string; campaignId?: string; system?: string }): Promise<Monster[]> {
         await this.init();
-        return this.getAll();
+        return this.getAll(filter);
     }
 
     static getById(id: string): Monster | undefined {
