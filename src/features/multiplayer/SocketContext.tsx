@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
 import type { Character } from '../character/characterTypes';
 
@@ -96,6 +96,15 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
     const myCharacterRef = useRef<Character | null>(null);
     useEffect(() => { myCharacterRef.current = myCharacter; }, [myCharacter]);
 
+    const usernameRef = useRef(username);
+    useEffect(() => { usernameRef.current = username; }, [username]);
+
+    const isHostRef = useRef(isHost);
+    useEffect(() => { isHostRef.current = isHost; }, [isHost]);
+
+    const currentAdventureIdRef = useRef(currentAdventureId);
+    useEffect(() => { currentAdventureIdRef.current = currentAdventureId; }, [currentAdventureId]);
+
     const messageListenersRef = useRef<Set<(data: PeerMessage) => void>>(new Set());
 
     const connections = Object.values(connectedPlayersData)
@@ -107,6 +116,75 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
     const hostConnection = !isHost && isConnected ? { open: true } : null;
 
+    // Dispatch message locally to both the CustomEvent DOM bus and registered onMessage callbacks
+    const dispatchPeerMessageLocally = useCallback((msg: PeerMessage) => {
+        window.dispatchEvent(new CustomEvent('rpg_peer_event', { detail: msg }));
+        messageListenersRef.current.forEach(callback => {
+            try {
+                callback(msg);
+            } catch (e) {
+                console.error('[Socket] Error in onMessage listener:', e);
+            }
+        });
+    }, []);
+
+    // Apply remote game state (map, combat, chat history) to local contexts
+    const applyGameState = useCallback((gameState: any) => {
+        if (!gameState) return;
+
+        if (gameState.map) {
+            console.log('[Socket] Applying initial map gameState');
+            dispatchPeerMessageLocally({
+                type: 'MAP_UPDATE',
+                payload: { type: 'full_sync', data: gameState.map }
+            });
+        }
+
+        if (gameState.combat) {
+            console.log('[Socket] Applying initial combat gameState');
+            dispatchPeerMessageLocally({
+                type: 'COMBAT_UPDATE',
+                payload: gameState.combat
+            });
+        }
+
+        if (Array.isArray(gameState.chatHistory) && gameState.chatHistory.length > 0) {
+            console.log('[Socket] Applying initial chat history:', gameState.chatHistory.length, 'messages');
+            gameState.chatHistory.forEach((chatMsg: any) => {
+                dispatchPeerMessageLocally({
+                    type: 'CHAT_MESSAGE',
+                    payload: chatMsg
+                });
+            });
+        }
+    }, [dispatchPeerMessageLocally]);
+
+    // Handle full room state update (members + gameState)
+    const handleRoomState = useCallback((state: any) => {
+        if (!state) return;
+
+        if (state.members && Array.isArray(state.members)) {
+            const mapped: Record<string, any> = {};
+            state.members.forEach((m: any) => {
+                mapped[m.userId] = {
+                    name: m.playerName,
+                    character: m.character,
+                    peerId: m.userId,
+                    isOnline: m.isOnline
+                };
+            });
+            setConnectedPlayersData(mapped);
+
+            if (mapped[myId]?.character && !myCharacterRef.current) {
+                setMyCharacter(mapped[myId].character);
+            }
+        }
+
+        if (state.gameState) {
+            applyGameState(state.gameState);
+        }
+    }, [myId, applyGameState]);
+
     // Disconnect cleanup on unmount
     useEffect(() => {
         return () => {
@@ -116,14 +194,18 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
         };
     }, []);
 
-    const initSocket = (url: string): Socket => {
-        if (socketRef.current && socketRef.current.connected) {
+    const initSocket = useCallback((url: string): Socket => {
+        if (socketRef.current) {
+            if (socketRef.current.connected) {
+                return socketRef.current;
+            }
+            socketRef.current.connect();
             return socketRef.current;
         }
 
         const socket = io(url, {
             transports: ['websocket', 'polling'],
-            reconnectionAttempts: 5,
+            reconnectionAttempts: 10,
             reconnectionDelay: 1000,
             timeout: 10000
         });
@@ -133,6 +215,29 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
         socket.on('connect', () => {
             console.log('[Socket] Connected to server:', url, 'Socket ID:', socket.id);
             setPeerError(null);
+
+            // Transparent re-join if reconnecting with an existing room session
+            const activeRoomId = currentAdventureIdRef.current;
+            const activeUsername = usernameRef.current;
+            if (activeRoomId && activeUsername) {
+                console.log('[Socket] Re-joining room after reconnect:', activeRoomId);
+                socket.emit('join_room', {
+                    roomId: activeRoomId,
+                    playerName: activeUsername,
+                    isHost: isHostRef.current,
+                    character: myCharacterRef.current,
+                    userId: myId
+                }, (response: any) => {
+                    if (response?.success) {
+                        setIsConnected(true);
+                        setIsConnecting(false);
+                        handleRoomState(response);
+                        console.log('[Socket] Successfully rejoined room after reconnect:', activeRoomId);
+                    } else {
+                        console.warn('[Socket] Reconnect join_room failed:', response?.error);
+                    }
+                });
+            }
         });
 
         socket.on('connect_error', (err) => {
@@ -174,36 +279,36 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
         });
 
         socket.on('room_state', (state) => {
-            if (!state || !state.members) return;
-            const mapped: Record<string, any> = {};
-            state.members.forEach((m: any) => {
-                mapped[m.userId] = {
-                    name: m.playerName,
-                    character: m.character,
-                    peerId: m.userId,
-                    isOnline: m.isOnline
-                };
-            });
-            setConnectedPlayersData(mapped);
-
-            if (mapped[myId]?.character && !myCharacterRef.current) {
-                setMyCharacter(mapped[myId].character);
-            }
+            handleRoomState(state);
         });
 
         socket.on('peer_message', (msg: PeerMessage) => {
-            // Dispatch locally to custom event bus
-            window.dispatchEvent(new CustomEvent('rpg_peer_event', { detail: msg }));
+            dispatchPeerMessageLocally(msg);
 
-            // Invoke registered onMessage listeners
-            messageListenersRef.current.forEach(callback => {
-                try { callback(msg); } catch (e) { console.error('Error in onMessage listener', e); }
-            });
-
-            // Handle PLAYER_UPDATE targeting me
+            // Handle PLAYER_UPDATE: update connectedPlayersData and local myCharacter if targeted
             if (msg.type === 'PLAYER_UPDATE') {
-                const isForMe = msg.payload.peerId === myId || (myCharacterRef.current && msg.payload.character?.id === myCharacterRef.current.id);
-                if (isForMe && msg.payload.peerId !== myId) {
+                const targetPeerId = msg.payload.peerId;
+
+                // 1. Update list of player data for GM and peers
+                setConnectedPlayersData(prev => {
+                    const existing = prev[targetPeerId];
+                    if (existing) {
+                        return {
+                            ...prev,
+                            [targetPeerId]: {
+                                ...existing,
+                                character: msg.payload.character,
+                                name: msg.payload.playerName || existing.name
+                            }
+                        };
+                    }
+                    return prev;
+                });
+
+                // 2. Update myCharacter if this update was aimed at me (e.g. GM updated player sheet)
+                const isForMe = targetPeerId === myId || (myCharacterRef.current && msg.payload.character?.id === myCharacterRef.current.id);
+                if (isForMe) {
+                    console.log('[Socket] Updating local character from remote PLAYER_UPDATE:', msg.payload.character?.name);
                     setMyCharacter(msg.payload.character);
                 }
             }
@@ -215,7 +320,77 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
         });
 
         return socket;
-    };
+    }, [myId, handleRoomState, dispatchPeerMessageLocally]);
+
+    // Listen to local 3D and combat dice rolls and broadcast ROLL_RESULT to all peers
+    useEffect(() => {
+        const handleBroadcastRoll = (event: Event) => {
+            const customEvent = event as CustomEvent;
+            const rollData = customEvent.detail;
+            if (!rollData) return;
+
+            const senderName = usernameRef.current || myCharacterRef.current?.name || 'Jogador';
+            console.log('[Socket] Broadcasting roll to peers:', senderName, rollData);
+
+            const roomId = currentAdventureIdRef.current;
+            if (roomId && socketRef.current) {
+                socketRef.current.emit('peer_message', {
+                    roomId,
+                    message: {
+                        type: 'ROLL_RESULT',
+                        payload: {
+                            playerName: senderName,
+                            roll: rollData
+                        }
+                    }
+                });
+            }
+        };
+
+        window.addEventListener('rpg_broadcast_roll', handleBroadcastRoll);
+        return () => window.removeEventListener('rpg_broadcast_roll', handleBroadcastRoll);
+    }, []);
+
+    // Session auto-recovery on mount
+    useEffect(() => {
+        const savedSession = localStorage.getItem('rpg_session');
+        if (!savedSession) return;
+
+        try {
+            const session = JSON.parse(savedSession);
+            if (session?.adventureId && session?.username) {
+                console.log('[Socket] Restoring session from localStorage:', session);
+                setUsername(session.username);
+                setIsHost(!!session.isHost);
+                setCurrentAdventureId(session.adventureId);
+                setCurrentAdventureName(session.adventureName || null);
+                setIsConnecting(true);
+
+                const socket = initSocket(serverUrl);
+                socket.emit('join_room', {
+                    roomId: session.adventureId,
+                    playerName: session.username,
+                    isHost: !!session.isHost,
+                    character: null,
+                    userId: myId
+                }, (response: any) => {
+                    setIsConnecting(false);
+                    if (response?.success) {
+                        setIsConnected(true);
+                        handleRoomState(response);
+                        console.log('[Socket] Session restored successfully for room:', session.adventureId);
+                    } else {
+                        console.warn('[Socket] Session recovery failed on server:', response?.error);
+                        localStorage.removeItem('rpg_session');
+                        setIsConnected(false);
+                    }
+                });
+            }
+        } catch (e) {
+            console.error('[Socket] Failed to parse saved session:', e);
+            localStorage.removeItem('rpg_session');
+        }
+    }, [myId, serverUrl, initSocket, handleRoomState]);
 
     const startHosting = async (hostName: string, _initialAdventureId = 'default', initialAdventureName = 'Aventura Padrão') => {
         if (isConnecting || isConnected) return;
@@ -240,6 +415,7 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
                 setIsConnecting(false);
                 if (response?.success) {
                     setIsConnected(true);
+                    handleRoomState(response);
                     console.log('[Socket] Hosting room successfully:', roomId);
                     localStorage.setItem('rpg_session', JSON.stringify({
                         adventureId: roomId,
@@ -279,6 +455,7 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
                 setIsConnecting(false);
                 if (response?.success) {
                     setIsConnected(true);
+                    handleRoomState(response);
                     setCurrentAdventureName(response.hostName ? `Mesa de ${response.hostName}` : 'Aventura');
                     console.log('[Socket] Connected to host room successfully:', targetId);
                     localStorage.setItem('rpg_session', JSON.stringify({
@@ -298,34 +475,52 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
         }
     };
 
-    const broadcast = (msg: PeerMessage) => {
-        if (!currentAdventureId || !socketRef.current) return;
+    const broadcast = useCallback((msg: PeerMessage) => {
+        const roomId = currentAdventureIdRef.current;
+        if (!roomId || !socketRef.current) return;
         const safeMsg = JSON.parse(JSON.stringify(msg));
         socketRef.current.emit('peer_message', {
-            roomId: currentAdventureId,
+            roomId,
             message: safeMsg
         });
-    };
+    }, []);
 
-    const broadcastCharacterUpdate = (character: Character) => {
+    const broadcastCharacterUpdate = useCallback((character: Character) => {
         setMyCharacter(character);
-        if (!currentAdventureId || !socketRef.current) return;
+        const roomId = currentAdventureIdRef.current;
+        if (!roomId || !socketRef.current) return;
         const safeChar = JSON.parse(JSON.stringify(character));
         broadcast({
             type: 'PLAYER_UPDATE',
             payload: {
-                playerName: username || character.name,
+                playerName: usernameRef.current || character.name,
                 character: safeChar,
                 peerId: myId
             }
         });
-    };
+    }, [broadcast, myId]);
 
-    const updateMyCharacter = (char: Character) => {
+    const updateMyCharacter = useCallback((char: Character) => {
         setMyCharacter(char);
-    };
+    }, []);
 
-    const updateRemotePlayerCharacter = (targetPeerId: string, char: Character) => {
+    const updateRemotePlayerCharacter = useCallback((targetPeerId: string, char: Character) => {
+        // Also update GM local state immediately
+        setConnectedPlayersData(prev => {
+            const existing = prev[targetPeerId];
+            if (existing) {
+                return {
+                    ...prev,
+                    [targetPeerId]: {
+                        ...existing,
+                        character: char,
+                        name: char.name || existing.name
+                    }
+                };
+            }
+            return prev;
+        });
+
         broadcast({
             type: 'PLAYER_UPDATE',
             payload: {
@@ -334,35 +529,38 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
                 peerId: targetPeerId
             }
         });
-    };
+    }, [broadcast]);
 
-    const removePlayer = async (targetPeerId: string) => {
-        if (!socketRef.current || !currentAdventureId) return;
+    const removePlayer = useCallback(async (targetPeerId: string) => {
+        const roomId = currentAdventureIdRef.current;
+        if (!socketRef.current || !roomId) return;
         socketRef.current.emit('room_broadcast', {
-            roomId: currentAdventureId,
+            roomId,
             event: 'player_left',
             data: { userId: targetPeerId },
             includeSender: true
         });
-    };
+    }, []);
 
-    const triggerForceRefresh = async () => {
-        if (!socketRef.current || !currentAdventureId) return;
+    const triggerForceRefresh = useCallback(async () => {
+        const roomId = currentAdventureIdRef.current;
+        if (!socketRef.current || !roomId) return;
         socketRef.current.emit('room_broadcast', {
-            roomId: currentAdventureId,
+            roomId,
             event: 'force_refresh',
             data: {},
             includeSender: false
         });
-    };
+    }, []);
 
     const hostAdventureId = (_id: string) => {
         // Compatibility method
     };
 
-    const disconnect = () => {
-        if (socketRef.current && currentAdventureId) {
-            socketRef.current.emit('leave_room', { roomId: currentAdventureId });
+    const disconnect = useCallback(() => {
+        const roomId = currentAdventureIdRef.current;
+        if (socketRef.current && roomId) {
+            socketRef.current.emit('leave_room', { roomId });
             socketRef.current.disconnect();
             socketRef.current = null;
         }
@@ -370,19 +568,26 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
         setIsConnecting(false);
         setCurrentAdventureId(null);
         setConnectedPlayersData({});
-    };
+        localStorage.removeItem('rpg_session');
+    }, []);
 
-    const onMessage = (callback: (data: PeerMessage) => void) => {
+    const onMessage = useCallback((callback: (data: PeerMessage) => void) => {
         messageListenersRef.current.add(callback);
         return () => {
             messageListenersRef.current.delete(callback);
         };
-    };
+    }, []);
 
-    const handleSetServerUrl = (url: string) => {
-        setServerUrl(url);
-        localStorage.setItem('rpg_server_url', url);
-    };
+    const handleSetServerUrl = useCallback((url: string) => {
+        const trimmed = url.trim();
+        setServerUrl(trimmed);
+        localStorage.setItem('rpg_server_url', trimmed);
+        if (socketRef.current) {
+            socketRef.current.disconnect();
+            socketRef.current = null;
+        }
+        setIsConnected(false);
+    }, []);
 
     return (
         <MultiplayerContext.Provider value={{

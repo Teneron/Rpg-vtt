@@ -42,16 +42,31 @@ function AppContent() {
   const { isConnected, isHost, disconnect } = usePeer();
   const [activeTab, setActiveTab] = useState<Tab>('character');
   const [viewMode, setViewMode] = useState<'connection' | 'game' | 'character-setup' | 'rules-player' | 'rules-gm'>('connection');
-  const [selectedCharacterId, setSelectedCharacterId] = useState<string | null>(null);
+  const [selectedCharacterId, setSelectedCharacterId] = useState<string | null>(() => {
+    return localStorage.getItem('rpg_selected_char_id') || null;
+  });
 
-  // Ao conectar, decidir para onde vai
+  // Ao conectar ou reconectar, decidir para onde vai
   useEffect(() => {
-    console.log("AppContent Mounted/Updated. Mode:", viewMode);
+    console.log("AppContent Mounted/Updated. Mode:", viewMode, "isConnected:", isConnected, "isHost:", isHost);
 
-    // Se for PLAYER e conectar, vai para setup
+    // Se for HOST e conectar/restaurar sessão na tela inicial, vai direto para o jogo
+    if (isConnected && isHost && viewMode === 'connection') {
+      console.log("Host connected/restored, switching to game view...");
+      setViewMode('game');
+    }
+
+    // Se for PLAYER e conectar/restaurar
     if (isConnected && !isHost && viewMode === 'connection') {
-      console.log("Player connected, switching to character setup...");
-      setViewMode('character-setup');
+      const savedCharId = localStorage.getItem('rpg_selected_char_id');
+      if (savedCharId) {
+        console.log("Player reconnected with saved character, going to game...");
+        setSelectedCharacterId(savedCharId);
+        setViewMode('game');
+      } else {
+        console.log("Player connected, switching to character setup...");
+        setViewMode('character-setup');
+      }
     }
   }, [isConnected, isHost, viewMode]);
 
@@ -151,6 +166,7 @@ function AppContent() {
         <Suspense fallback={<LazyLoadingFallback />}>
           <CharacterSelection onSelect={(charId) => {
             setSelectedCharacterId(charId);
+            localStorage.setItem('rpg_selected_char_id', charId);
             setActiveTab('character'); // Force tab switch
             setViewMode('game');
           }} />
@@ -206,6 +222,7 @@ function AppContent() {
           <button
             onClick={() => {
               if (confirm("Sair da sessão?")) {
+                localStorage.removeItem('rpg_selected_char_id');
                 disconnect();
                 setViewMode('connection');
               }
