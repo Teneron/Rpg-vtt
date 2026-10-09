@@ -42,7 +42,7 @@ app.get('/health', (req, res) => {
 if (fs.existsSync(distPath)) {
     console.log(`[Server] Serving production frontend build from: ${distPath}`);
     app.use(express.static(distPath));
-    app.get('*', (req, res, next) => {
+    app.use((req, res, next) => {
         if (req.path.startsWith('/socket.io') || req.path === '/health') return next();
         res.sendFile(path.join(distPath, 'index.html'));
     });
