@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import type { Character } from '../characterTypes';
 import type { Feat } from '../data/feats';
 import { useChat } from '../../chat/ChatContext';
+import { Scroll } from 'lucide-react';
 import './FeatsPanel.css';
 
 
@@ -52,8 +53,9 @@ export const FeatsPanel: React.FC<FeatsPanelProps> = ({ character }) => {
                             <div className="feat-body-book animate-slide-down" onClick={e => e.stopPropagation()}>
                                 <p className="feat-desc-book full">{feat.descriptionFull || feat.description}</p>
                                 <div className="feat-actions-book">
-                                    <button className="book-btn simple" onClick={() => handleAnnounce(feat)}>
-                                        📜 Anunciar
+                                    <button className="book-btn simple" onClick={() => handleAnnounce(feat)} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                        <Scroll size={13} />
+                                        <span>Anunciar</span>
                                     </button>
                                 </div>
                             </div>

@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useMap } from './MapContext';
+import { Upload } from 'lucide-react';
 
 interface AddAssetModalProps {
     isOpen: boolean;
@@ -168,7 +169,10 @@ export const AddAssetModal: React.FC<AddAssetModalProps> = ({ isOpen, onClose })
                     </div>
 
                     <div style={{ background: 'rgba(255,255,255,0.05)', padding: '10px', borderRadius: '6px', border: '1px dashed #555' }}>
-                        <label className="label-text" style={{ marginBottom: '8px', display: 'block' }}>📁 Upload de Arquivo Local</label>
+                        <label className="label-text" style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <Upload size={14} />
+                            <span>Upload de Arquivo Local</span>
+                        </label>
                         <input
                             type="file"
                             accept="image/*"

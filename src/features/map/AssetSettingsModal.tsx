@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useMap } from './MapContext';
 import type { MapToken } from './mapTypes';
+import { Box, X, Lightbulb, Trash2 } from 'lucide-react';
 import '../../Layout.css';
 
 interface AssetSettingsModalProps {
@@ -58,9 +59,14 @@ export const AssetSettingsModal: React.FC<AssetSettingsModalProps> = ({ tokenId,
             display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3000
         }}>
             <div className="glass-panel" style={{ width: '400px', maxHeight: '90vh', overflowY: 'auto', flexDirection: 'column', gap: '20px', padding: '25px' }}>
-                <h2 style={{ borderBottom: '1px solid var(--glass-border)', paddingBottom: '10px', display: 'flex', justifyContent: 'space-between', color: '#ffcc00' }}>
-                    🖼️ Editar Asset/Prop
-                    <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer' }}>✕</button>
+                <h2 style={{ borderBottom: '1px solid var(--glass-border)', paddingBottom: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#ffcc00' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Box size={18} color="#ffcc00" />
+                        <span>Editar Asset / Prop</span>
+                    </span>
+                    <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                        <X size={18} />
+                    </button>
                 </h2>
 
                 <div className="form-group">
@@ -181,7 +187,10 @@ export const AssetSettingsModal: React.FC<AssetSettingsModalProps> = ({ tokenId,
                                 });
                             }}
                         />
-                        <span>💡 Emitir Luz (Iluminação)</span>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <Lightbulb size={15} color="#ffd700" />
+                            <span>Emitir Luz (Iluminação)</span>
+                        </span>
                     </label>
 
                     {(asset.lightEnabled !== false) && (
@@ -232,7 +241,10 @@ export const AssetSettingsModal: React.FC<AssetSettingsModalProps> = ({ tokenId,
                 </div>
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '10px', borderTop: '1px solid var(--glass-border)', paddingTop: '15px' }}>
-                    <button className="glass-button" style={{ color: '#ff4444', borderColor: '#ff4444' }} onClick={handleDelete}>🗑️ Deletar</button>
+                    <button className="glass-button" style={{ color: '#ff4444', borderColor: '#ff4444', display: 'flex', alignItems: 'center', gap: '6px' }} onClick={handleDelete}>
+                        <Trash2 size={14} />
+                        <span>Deletar</span>
+                    </button>
                     <div style={{ display: 'flex', gap: '10px' }}>
                         <button className="glass-button" onClick={onClose}>Cancelar</button>
                         <button className="glass-button active" onClick={handleSave}>Salvar</button>

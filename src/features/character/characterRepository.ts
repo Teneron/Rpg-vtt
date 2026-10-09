@@ -1,4 +1,5 @@
 import { type Character, initialCharacter } from './characterTypes';
+import type { CharacterPreset } from './data/characterPresets';
 import { db } from '../../db/RPGDatabase';
 
 const STORAGE_KEY_PREFIX = 'rpg_char_';
@@ -244,6 +245,40 @@ export const CharacterRepository = {
             owner: owner || 'default',
             adventureId: adventureId || 'default',
             system,
+            lastModified: Date.now()
+        };
+
+        this.save(newChar);
+        return newChar;
+    },
+
+    /**
+     * Create a character from an official system preset template.
+     */
+    createFromPreset(preset: CharacterPreset, owner: string, adventureId: string = 'default'): Character {
+        const generateUUID = () => {
+            if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+                return crypto.randomUUID();
+            }
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+                const r = Math.random() * 16 | 0;
+                const v = c === 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+        };
+
+        const clone: any = JSON.parse(JSON.stringify(preset));
+        delete clone.presetId;
+        delete clone.systemName;
+        delete clone.badgeIcon;
+        delete clone.roleDescription;
+        delete clone.quote;
+
+        const newChar: Character = {
+            ...clone,
+            id: generateUUID(),
+            owner: owner || 'default',
+            adventureId: adventureId || 'default',
             lastModified: Date.now()
         };
 

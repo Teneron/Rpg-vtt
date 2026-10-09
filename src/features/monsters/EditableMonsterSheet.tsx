@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import type { Monster } from './monsterTypes';
 import { useMap } from '../map/MapContext';
 import { useCombat } from '../combat/CombatContext';
+import { X, RefreshCw, Edit2 } from 'lucide-react';
 
 interface EditableMonsterSheetProps {
     tokenId: string;
@@ -121,11 +122,11 @@ export const EditableMonsterSheet: React.FC<EditableMonsterSheetProps> = ({ toke
             <button
                 onClick={onClose}
                 style={{
-                    position: 'absolute', top: '5px', right: '5px',
-                    background: 'none', border: 'none', color: '#fff', fontSize: '1.2rem', cursor: 'pointer'
+                    position: 'absolute', top: '8px', right: '8px',
+                    background: 'none', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center'
                 }}
             >
-                ✕
+                <X size={18} />
             </button>
 
             {/* Header */}
@@ -187,8 +188,18 @@ export const EditableMonsterSheet: React.FC<EditableMonsterSheetProps> = ({ toke
             </div>
 
             {/* Sync Indicator */}
-            <div style={{ fontSize: '0.8rem', color: '#666', textAlign: 'center', fontStyle: 'italic' }}>
-                {combatant ? "🔄 Sincronizado com Combate" : "📝 Editando Token (Fora de Combate)"}
+            <div style={{ fontSize: '0.8rem', color: '#888', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                {combatant ? (
+                    <>
+                        <RefreshCw size={12} color="#4caf50" />
+                        <span>Sincronizado com Combate</span>
+                    </>
+                ) : (
+                    <>
+                        <Edit2 size={12} color="#aaa" />
+                        <span>Editando Token (Fora de Combate)</span>
+                    </>
+                )}
             </div>
 
             <hr style={{ borderColor: '#333', margin: '15px 0' }} />

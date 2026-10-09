@@ -25,3 +25,7 @@ dist-ssr
 
 # Firebase cache
 .firebase
+
+# Scratch extraction dumps
+extracted_*.json
+find_emojis.py

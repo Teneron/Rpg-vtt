@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAudio } from './AudioContext';
 import type { AudioTrack } from './AudioContext';
 import { usePeer } from '../multiplayer/FirebaseContext';
-import { Play, Pause, Square, Music, Volume2, Trash2 } from 'lucide-react';
+import { Play, Pause, Square, Music, Volume2, Trash2, VolumeX, Upload, ChevronDown } from 'lucide-react';
 import { AudioRepository } from './AudioRepository';
 
 const DEFAULT_MUSIC: AudioTrack[] = [
@@ -70,9 +70,10 @@ export const MusicPlayer: React.FC = () => {
                 </span>
                 <button
                     onClick={() => setIsExpanded(false)}
-                    style={{ background: 'none', border: 'none', color: '#aaa', cursor: 'pointer' }}
+                    style={{ background: 'none', border: 'none', color: '#aaa', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                    title="Minimizar"
                 >
-                    ▼
+                    <ChevronDown size={16} />
                 </button>
             </div>
 
@@ -93,10 +94,12 @@ export const MusicPlayer: React.FC = () => {
                     style={{
                         background: '#ff4444', color: 'white', border: 'none',
                         padding: '10px', borderRadius: '5px', fontWeight: 'bold',
-                        cursor: 'pointer', animation: 'pulse 1s infinite'
+                        cursor: 'pointer', animation: 'pulse 1s infinite',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
                     }}
                 >
-                    🔇 Áudio Bloqueado - Clique para Ativar
+                    <VolumeX size={16} />
+                    <span>Áudio Bloqueado - Clique para Ativar</span>
                 </button>
             )}
 
@@ -139,7 +142,7 @@ export const MusicPlayer: React.FC = () => {
                             cursor: 'pointer', color: '#fff', fontSize: '0.8rem',
                             justifyContent: 'center'
                         }}>
-                            <span style={{ fontSize: '1.2rem' }}>📂</span>
+                            <Upload size={16} />
                             <span>Escolher Arquivo (MP3/OGG/WAV)</span>
                             <input
                                 type="file"

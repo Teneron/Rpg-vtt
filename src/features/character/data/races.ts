@@ -16,180 +16,363 @@ export interface RaceData {
     bonus: Partial<Record<keyof CharacterAttributes, number>>;
     traits: RaceTrait[]; // Detailed traits object
     languages: string[]; // Fixed languages (e.g. ['Comum', 'Élfico'])
-    languageChoices?: { count: number; options?: string[] }; // Optional choice (e.g. Human chooses 1)
+    languageChoices?: { count: number; options?: string[] }; // Optional choice
     cantripChoices?: {
         count: number;
         classList?: string; // e.g. 'wizard'
+        options?: string[]; // Specific cantrip IDs
         ability: string;
     };
+    system?: 'dnd55e' | 'witcher';
 }
 
 export const RACES: RaceData[] = [
-    // --- COMMON RACES ---
+    // ==========================================
+    // D&D 5.5e (OFICIAL) ESPÉCIES
+    // ==========================================
     {
         id: 'human',
         name: 'Humano',
-        description: "Os humanos são, de longe, a raça mais jovem, versátil e comum no multiverso. Eles são inovadores, impulsionados pela ambição e conhecidos por sua capacidade de adaptação. Embora suas vidas sejam curtas em comparação com anões e elfos, os humanos constroem instituições duradouras, reinos vastos e deixam um legado que perdura por milênios.",
-        age: "Humanos chegam à idade adulta no final da adolescência e vivem menos de um século.",
+        system: 'dnd55e',
+        description: "Os humanos são versáteis, ambiciosos e cheios de determinação. Destacam-se pela capacidade incomparável de adaptação cultural, recebendo inspiração contínua e talentos de origem extras que ampliam suas capacidades desde o início da jornada.",
+        age: "Humanos chegam à maturidade no final da adolescência e vivem menos de um século.",
         size: "Médio",
         speed: 9,
-        alignment: "Humanos não possuem tendência inata, variando do melhor ao pior.",
+        alignment: "Humanos não possuem tendência inata, abrangendo todos os espectros morais.",
         bonus: { str: 1, dex: 1, con: 1, int: 1, wis: 1, cha: 1 },
         languages: ['Comum'],
         languageChoices: { count: 1 },
         traits: [
-            { name: "Versatilidade Humana", description: "Seus valores de habilidade aumentam em 1." },
-            { name: "Idiomas", description: "Você sabe falar, ler e escrever Comum e um idioma adicional à sua escolha." }
+            {
+                name: "Inspiração Heroica Recorrente",
+                description: "Sua determinação inabalável lhe dá ânimo renovado. Sempre que terminar um Descanso Longo, você adquire Inspiração Heroica se ainda não a possuir."
+            },
+            {
+                name: "Versátil (Talento de Origem Extra)",
+                description: "Você ganha proficiência em uma perícia à sua escolha e recebe um Talento de Origem adicional de 1º nível à sua escolha."
+            }
         ]
     },
     {
-        id: 'elf_high',
-        name: 'Elfo (Alto)',
-        description: "Como um alto elfo, você possui uma mente afiada e um domínio da magia básica. Em muitos mundos de D&D, existem dois tipos de altos elfos. Um tipo (que inclui os elfos cinzentos e os elfos do vale de Greyhawk, os Silvanesti de Dragonlance e os elfos do sol de Forgotten Realms) é altivo e recluso, acreditando ser superior aos não-elfos e até mesmo a outros elfos. O outro tipo (incluindo os altos elfos de Greyhawk, os Qualinesti de Dragonlance e os elfos da lua de Forgotten Realms) é mais comum e mais amigável, e muitas vezes encontrado entre humanos e outras raças.",
-        age: "Embora atinjam a maturidade física na mesma idade que os humanos, a compreensão élfica da idade adulta vai além do crescimento físico, abrangendo a experiência do mundo. Tipicamente, reivindicam a idade adulta e um nome adulto por volta dos 100 anos e podem viver 750 anos.",
+        id: 'aasimar',
+        name: 'Aasimar',
+        system: 'dnd55e',
+        description: "Mortais tocados pela graça dos Planos Superiores. Descendentes de seres celestiais ou agraciados por bênçãos divinas, os aasimars trazem luz purificadora, cura e asas espectrais para combater a escuridão.",
+        age: "Aasimars amadurecem no mesmo ritmo que os humanos, mas vivem até cerca de 160 anos.",
         size: "Médio",
         speed: 9,
-        alignment: "Elfos amam a liberdade, variedade e autoexpressão, então eles inclinam-se fortemente para características gentis do caos.",
-        bonus: { dex: 2, int: 1 },
-        languages: ['Comum', 'Língua Antiga'],
-        languageChoices: { count: 1 },
-        cantripChoices: {
-            count: 1,
-            classList: 'wizard',
-            ability: 'int'
-        },
+        alignment: "Inclinam-se frequentemente para o Bem e a Ordem, embora renegados possam cair na corrupção.",
+        bonus: { cha: 2, wis: 1 },
+        languages: ['Comum', 'Celestial'],
+        cantripChoices: { count: 1, options: ['light'], ability: 'cha' },
         traits: [
-            { name: "Visão no Escuro", description: "Acostumado às florestas crepusculares e ao céu noturno, você possui uma visão superior no escuro e na penumbra." },
-            { name: "Sentidos Aguçados", description: "Você tem proficiência na perícia Percepção." },
-            { name: "Ancestralidade Feérica", description: "Você tem vantagem nos testes de resistência para resistir a ser enfeitiçado e a magia não pode colocá-lo para dormir." },
-            { name: "Transe", description: "Elfos não precisam dormir. Em vez disso, meditam profundamente, permanecendo semiconscientes, durante 4 horas por dia." },
-            { name: "Treinamento Élfico com Armas", description: "Você tem proficiência com espadas curtas, espadas longas, arcos curtos e arcos longos." },
-            { name: "Truque", description: "Você conhece um truque à sua escolha da lista de magias de mago. Inteligência é a sua habilidade usada para conjurar este truque." },
-            { name: "Idioma Extra", description: "Você sabe falar, ler e escrever um idioma adicional à sua escolha." }
+            {
+                name: "Visão no Escuro (18m)",
+                description: "Você enxerga na penumbra a até 18 metros como se fosse luz plena e na escuridão como se fosse penumbra."
+            },
+            {
+                name: "Resistência Celestial",
+                description: "Você possui Resistência a dano Necrótico e a dano Radiante."
+            },
+            {
+                name: "Mãos Curativas",
+                description: "Como uma ação Usar Magia, você toca uma criatura e restaura um número de d4s igual ao seu Bônus de Proficiência em PV. Recupera após um Descanso Longo."
+            },
+            {
+                name: "Portador da Luz",
+                description: "Você conhece o truque Luz. Carisma é o seu atributo de conjuração para este truque."
+            },
+            {
+                name: "Revelação Celestial (Nível 3+)",
+                description: "Com uma Ação Bônus, você se transforma por 1 minuto (1/Descanso Longo). Uma vez em cada turno ao causar dano a um alvo, você causa dano extra igual ao seu Bônus de Proficiência (Necrótico ou Radiante). Escolha: Asas Celestiais (voo 9m), Manto Necrótico (asas sombrias e inimigos a até 3m salvam CAR CD 8+CAR+PB ou ficam Amedrontados) ou Transfiguração Radiante (luz 3m e queima inimigos adjacentes no fim do seu turno)."
+            }
         ]
     },
     {
-        id: 'elf_wood',
-        name: 'Elfo (Floresta)',
-        description: "Como um elfo da floresta, você tem sentidos aguçados e intuição. Seus pés ligeiros carregam-no rápida e furtivamente através de suas florestas nativas. Esta categoria inclui os elfos selvagens (grugach) de Greyhawk e os Kagonesti de Dragonlance, bem como as raças chamadas de elfos da floresta em Greyhawk e Forgotten Realms.",
-        age: "Idêntico aos Altos Elfos.",
+        id: 'dragonborn',
+        name: 'Draconato',
+        system: 'dnd55e',
+        description: "Orgulhosos descendentes de dragões com escamas reluzentes e baforadas elementais devastadoras. Sua arma de sopro substitui um único ataque e ganham a habilidade de manifestar asas e voar a partir do 5º nível.",
+        age: "Draconatos crescem rapidamente, atingindo a maturidade aos 15 anos e vivendo cerca de 80 anos.",
+        size: "Médio",
+        speed: 9,
+        alignment: "Tendem aos extremos: guerreiros leais e honrados da justiça ou tiranos implacáveis.",
+        bonus: { str: 2, cha: 1 },
+        languages: ['Comum', 'Dracônico'],
+        traits: [
+            {
+                name: "Visão no Escuro (18m)",
+                description: "Você enxerga na escuridão a até 18 metros."
+            },
+            {
+                name: "Ancestralidade Dracônica & Resistência",
+                description: "Escolha sua linhagem (Negro/Cobre: Ácido; Azul/Bronze: Eletricidade; Latão/Ouro/Vermelho: Fogo; Verde: Veneno; Prata/Branco: Frio). Você possui Resistência a este tipo de dano."
+            },
+            {
+                name: "Arma de Sopro",
+                description: "Quando executa a ação Atacar, você pode substituir um ataque por uma baforada (cone de 4,5m ou linha de 9m × 1,5m). Inimigos sofrem 1d10 de dano do seu elemento (2d10 no 5º nv, 3d10 no 11º nv, 4d10 no 17º nv) ou metade se passarem na salvaguarda de DES ou CON (CD 8 + mod. CON + PB). Usos iguais ao Bônus de Proficiência por Descanso Longo."
+            },
+            {
+                name: "Voo Dracônico (Nível 5+)",
+                description: "Com uma Ação Bônus, você projeta asas draconianas espectrais por 10 minutos, ganhando Deslocamento de Voo igual ao seu deslocamento de caminhada (1/Descanso Longo)."
+            }
+        ]
+    },
+    {
+        id: 'dwarf',
+        name: 'Anão',
+        system: 'dnd55e',
+        description: "Mestres da pedra, forja e clãs subterrâneos. Possuem velocidade completa de 9 metros, Visão no Escuro superior de 36m, Sentido Sísmico através de rocha e pontos de vida adicionais a cada nível.",
+        age: "Tornam-se adultos por volta dos 50 anos e vivem até cerca de 350 anos.",
+        size: "Médio",
+        speed: 9,
+        alignment: "A maioria é leal e voltada para a ordem de seus clãs e a honra de suas tradições.",
+        bonus: { con: 2, str: 1 },
+        languages: ['Comum', 'Anão'],
+        traits: [
+            {
+                name: "Visão no Escuro Superior (36m / 120ft)",
+                description: "Acostumado às profundezas do subterrâneo, você enxerga no escuro a até 36 metros."
+            },
+            {
+                name: "Resiliência Anã",
+                description: "Você tem Vantagem em salvaguardas contra ser Envenenado e Resistência a dano Venenoso."
+            },
+            {
+                name: "Tenacidade Anã",
+                description: "Seus Pontos de Vida máximos aumentam em 1 e aumentam em +1 a cada nível subsequente."
+            },
+            {
+                name: "Especialização em Rochas (Sentido Sísmico)",
+                description: "Como Ação Bônus enquanto estiver sobre pedra ou rocha, ganhe Sentido Sísmico de 18 metros durante 10 minutos. Usos iguais ao Bônus de Proficiência por Descanso Longo."
+            }
+        ]
+    },
+    {
+        id: 'elf',
+        name: 'Elfo',
+        system: 'dnd55e',
+        description: "Seres graciosos ligados ao Reino Feérico e à longevidade ancestral. Não precisam dormir, meditando em transe por 4 horas, e possuem linhagens que concedem truques e magias inatas conforme sobem de nível.",
+        age: "Reivindicam a idade adulta por volta dos 100 anos e podem viver 750 anos.",
+        size: "Médio",
+        speed: 9,
+        alignment: "Valorizam a liberdade, arte e expressão, inclinando-se para o Caótico e Bondoso.",
+        bonus: { dex: 2, int: 1 },
+        languages: ['Comum', 'Élfico'],
+        cantripChoices: { count: 1, classList: 'wizard', ability: 'int' },
+        traits: [
+            {
+                name: "Visão no Escuro (18m)",
+                description: "Enxerga na penumbra e escuridão a até 18 metros (36m para Drow)."
+            },
+            {
+                name: "Sentidos Aguçados",
+                description: "Proficiência garantida na perícia Percepção."
+            },
+            {
+                name: "Ancestralidade Feérica",
+                description: "Vantagem em salvaguardas para evitar ou encerrar a condição Enfeitiçado. Magia não pode colocá-lo para dormir."
+            },
+            {
+                name: "Transe",
+                description: "Você não precisa dormir. Medita semiconsciente durante 4 horas para receber todos os benefícios de um Descanso Longo."
+            },
+            {
+                name: "Linhagem Élfica (Alto Elfo, Floresta ou Drow)",
+                description: "Alto Elfo: Truque de Mago à escolha + Detecção de Magia (nv 3) e Passo Nebuloso (nv 5). Elfo da Floresta: Deslocamento 10,5m + Artimanha + Passos Sem Pegadas (nv 5). Drow: Visão no Escuro 36m + Globos de Luz + Fogo das Fadas (nv 3) e Escuridão (nv 5)."
+            }
+        ]
+    },
+    {
+        id: 'gnome',
+        name: 'Gnomo',
+        system: 'dnd55e',
+        description: "Pequenos inovadores cheios de curiosidade e engenhosidade arcana. Sua Astúcia Gnômica lhes concede proteção mágica inabalável em todas as salvaguardas mentais (Inteligência, Sabedoria e Carisma).",
+        age: "Amadurecem aos 20 anos e vivem cerca de 350 a 500 anos.",
+        size: "Pequeno",
+        speed: 9,
+        alignment: "Curiosos, benevolentes e brincalhões, pendendo para Neutro e Bom.",
+        bonus: { int: 2, dex: 1 },
+        languages: ['Comum', 'Gnômico'],
+        cantripChoices: { count: 1, classList: 'wizard', ability: 'int' },
+        traits: [
+            {
+                name: "Visão no Escuro (18m)",
+                description: "Você enxerga na escuridão a até 18 metros."
+            },
+            {
+                name: "Astúcia Gnômica",
+                description: "Você possui Vantagem em todas as salvaguardas de Inteligência, Sabedoria e Carisma contra efeitos mágicos."
+            },
+            {
+                name: "Linhagem Gnômica (Floresta ou Rocha)",
+                description: "Gnomo da Floresta: Truque Ilusão Menor e conjuração de Falar com Animais PB vezes por Descanso Longo. Gnomo das Rochas: Truques Consertar e Prestidigitação, e capacidade de construir pequenos inventos mecânicos em 10 minutos."
+            }
+        ]
+    },
+    {
+        id: 'goliath',
+        name: 'Golias',
+        system: 'dnd55e',
+        description: "Gigantescos guerreiros montanheses com sangue dos antigos titãs. Com deslocamento de 10,5 metros, poderes sobrenaturais de seus ancestrais gigantes e capacidade de assumir Tamanho Grande a partir do 5º nível.",
+        age: "Amadurecem no final da adolescência e vivem pouco menos de um século.",
         size: "Médio",
         speed: 10.5,
-        alignment: "Elfos da floresta tendem a ser caóticos e bons, valorizando a liberdade e a compaixão.",
-        bonus: { dex: 2, wis: 1 },
-        languages: ['Comum', 'Língua Antiga'],
+        alignment: "Fortemente independentes e competitivos, prezam mérito e justiça leal.",
+        bonus: { str: 2, con: 1 },
+        languages: ['Comum', 'Gigante'],
         traits: [
-            { name: "Visão no Escuro", description: "Visão superior no escuro e na penumbra." },
-            { name: "Sentidos Aguçados", description: "Proficiência em Percepção." },
-            { name: "Ancestralidade Feérica", description: "Vantagem contra ser enfeitiçado; imune a sono mágico." },
-            { name: "Transe", description: "Medita 4h em vez de dormir 8h." },
-            { name: "Treinamento Élfico com Armas", description: "Proficiência com espadas curtas, longas, arcos curtos e longos." },
-            { name: "Pés Ligeiros", description: "Seu deslocamento base de caminhada aumenta para 10,5 metros." },
-            { name: "Máscara da Natureza", description: "Você pode tentar se esconder mesmo quando estiver apenas levemente obscurecido por folhagem, chuva forte, neve caindo, névoa ou outro fenômeno natural." }
+            {
+                name: "Ancestralidade Gigante",
+                description: "Escolha uma herança (usos = Bônus de Proficiência por Descanso Longo): Gigante das Nuvens (teleporte de 9m como ação bônus); Gigante do Fogo (+1d10 dano ígneo); Gigante do Gelo (+1d6 frio e -3m deslocamento inimigo); Gigante das Colinas (derruba criatura Enorme ou menor Caída ao acertar ataque); Gigante de Pedra (reação reduz dano em 1d12 + CON); Gigante da Tempestade (reação causa 1d8 elétrico a quem te atacou)."
+            },
+            {
+                name: "Forma Agigantada (Nível 5+)",
+                description: "Com Ação Bônus, torne-se Grande por 10 minutos. Causa +1d6 dano uma vez por turno, ganha +3m de deslocamento e Vantagem em testes de Força (1/Descanso Longo)."
+            },
+            {
+                name: "Constituição Poderosa",
+                description: "Conta como uma categoria de tamanho maior para determinar capacidade de carga, arrastar e empurrar objetos pesados."
+            }
         ]
     },
     {
-        id: 'dwarf_hill',
-        name: 'Anão (Colina)',
-        description: "Como um anão da colina, você tem sentidos aguçados, intuição profunda e uma resistência notável. Os anões dourados de Faerûn, em seu poderoso reino ao sul, são anões da colina, assim como os exilados Neidar e os degradados Klar de Krynn, no cenário de Dragonlance.",
-        age: "Anões tornam-se adultos por volta dos 50 anos e vivem até cerca de 350 anos.",
-        size: "Médio",
-        speed: 7.5,
-        alignment: "A maioria dos anões é leal, acreditando firmemente nos benefícios de uma sociedade bem organizada.",
-        bonus: { con: 2, wis: 1 },
-        languages: ['Comum', 'Anão'],
-        traits: [
-            { name: "Visão no Escuro", description: "Acostumado à vida subterrânea, você enxerga no escuro como se fosse penumbra." },
-            { name: "Resiliência Anã", description: "Você tem vantagem nos testes de resistência contra veneno e resistência contra dano de veneno." },
-            { name: "Treinamento Anão em Combate", description: "Você tem proficiência com machados de batalha, machadinhas, martelos leves e martelos de guerra." },
-            { name: "Tenacidade Anã", description: "Seus pontos de vida máximos aumentam em 1, e aumentam em 1 sempre que você sobe um nível." }
-        ]
-    },
-    {
-        id: 'dwarf_mountain',
-        name: 'Anão (Montanha)',
-        description: "Como um anão da montanha, você é forte e robusto, acostumado a uma vida difícil em terrenos acidentados. Você provavelmente descende de anões com mais altura (para um anão) e tende a ter uma coloração mais clara. Os anões de escudo do norte de Faerûn, bem como o clã governante Hylar e o clã nobre Daewar de Dragonlance, são anões da montanha.",
-        age: "Idêntico aos Anões da Colina.",
-        size: "Médio",
-        speed: 7.5,
-        alignment: "Geralmente leais e bons, mas alguns tendem ao neutro.",
-        bonus: { con: 2, str: 2 },
-        languages: ['Comum', 'Anão'],
-        traits: [
-            { name: "Visão no Escuro", description: "Visão superior no escuro e na penumbra." },
-            { name: "Resiliência Anã", description: "Vantagem contra veneno e resistência a dano venenoso." },
-            { name: "Treinamento Anão em Combate", description: "Proficiência com machados e martelos." },
-            { name: "Treinamento com Armaduras", description: "Você tem proficiência com armaduras leves e médias." }
-        ]
-    },
-    {
-        id: 'halfling_lightfoot',
-        name: 'Halfling (Pés Leves)',
-        description: "Como um halfling pés-leves, você pode se esconder facilmente, usando até mesmo outras pessoas como cobertura. Você tende a ser afável e se dar bem com os outros. Em Forgotten Realms, os halflings pés-leves espalharam-se mais e, portanto, são a variedade mais comum.",
-        age: "Um halfling atinge a idade adulta aos 20 anos e geralmente vive até meados do seu segundo século.",
+        id: 'halfling',
+        name: 'Halfling',
+        system: 'dnd55e',
+        description: "Povo alegre, corajoso e incrivelmente afortunado. Com deslocamento de 9 metros, possuem a lendária bênção da Sorte (rerolando qualquer 1 natural no d20) e bravura sobrenatural contra o medo.",
+        age: "Amadurecem aos 20 anos e vivem cerca de 150 anos.",
         size: "Pequeno",
-        speed: 7.5,
-        alignment: "Maioria é Leal e Boa.",
-        bonus: { dex: 2, cha: 1 },
-        languages: ['Comum'],
-        traits: [
-            { name: "Sorte", description: "Quando você rolar um 1 natural em uma jogada de ataque, teste de habilidade ou teste de resistência, você pode jogar o dado novamente e deve utilizar o novo resultado." },
-            { name: "Bravura", description: "Você tem vantagem em testes de resistência contra ficar amedrontado." },
-            { name: "Agilidade Halfling", description: "Você pode mover-se através do espaço de qualquer criatura que for de um tamanho maior que o seu." },
-            { name: "Furtividade Natural", description: "Você pode tentar se esconder mesmo quando possuir apenas a cobertura de uma criatura que for no mínimo um tamanho maior que o seu." }
-        ]
-    },
-    {
-        id: 'halfling_stout',
-        name: 'Halfling (Robusto)',
-        description: "Como um halfling robusto, você é mais resistente que a média e tem alguma resistência contra venenos. Alguns dizem que os robustos têm sangue de anão. Nos Reinos Esquecidos, esses halflings são chamados de fortes e são mais comuns no sul.",
-        age: "Idêntico aos Pés Leves.",
-        size: "Pequeno",
-        speed: 7.5,
-        alignment: 'Caótico Bom',
+        speed: 9,
+        alignment: "Geralmente Leais e Bons, amantes de comunidades pacíficas e boa comida.",
         bonus: { dex: 2, con: 1 },
-        languages: ['Comum', 'Língua Antiga'],
+        languages: ['Comum', 'Halfling'],
         traits: [
-            { name: "Sorte", description: "Rerolar 1s naturais." },
-            { name: "Bravura", description: "Vantagem contra medo." },
-            { name: "Agilidade Halfling", description: "Mover-se pelo espaço de criaturas maiores." },
-            { name: "Resiliência dos Robustos", description: "Você tem vantagem em testes de resistência contra veneno e tem resistência contra dano de veneno." }
+            {
+                name: "Sorte Lendária",
+                description: "Quando você rolar um 1 natural em um d20 (ataque, teste de perícia ou salvaguarda), você pode rerolar o dado e DEVE utilizar o novo resultado."
+            },
+            {
+                name: "Bravura",
+                description: "Você tem Vantagem em salvaguardas para evitar ou encerrar a condição Amedrontado."
+            },
+            {
+                name: "Agilidade dos Pequeninos",
+                description: "Você pode se mover livremente através do espaço de qualquer criatura que seja de tamanho Médio ou maior."
+            },
+            {
+                name: "Furtividade Natural",
+                description: "Você pode tentar a ação Esconder-se mesmo quando estiver apenas atrás de uma criatura de tamanho Médio ou maior."
+            }
         ]
     },
-
+    {
+        id: 'orc',
+        name: 'Orc',
+        system: 'dnd55e',
+        description: "Guerreiros resistentes, ágeis e implacáveis no campo de batalha. Orcs ganham Visão no Escuro de 36m, Investida Adrenérgica que concede PV temporários e a clássica Resistência Implacável.",
+        age: "Amadurecem aos 16 anos e vivem pouco menos de um século.",
+        size: "Médio",
+        speed: 9,
+        alignment: "Apaixonados e diretos, valorizam honra de clã, força e lealdade.",
+        bonus: { str: 2, con: 1 },
+        languages: ['Comum', 'Orc'],
+        traits: [
+            {
+                name: "Visão no Escuro Superior (36m / 120ft)",
+                description: "Enxerga na escuridão a até 36 metros."
+            },
+            {
+                name: "Investida Adrenérgica",
+                description: "Com uma Ação Bônus, você pode realizar a ação Disparada. Ao fazê-lo, ganhe Pontos de Vida Temporários iguais ao seu Bônus de Proficiência. Usos = Bônus de Proficiência por Descanso Longo."
+            },
+            {
+                name: "Resistência Implacável",
+                description: "Quando reduzido a 0 PV e não morto instantaneamente, você cai para 1 Ponto de Vida em vez disso (1/Descanso Longo)."
+            }
+        ]
+    },
     {
         id: 'tiefling',
         name: 'Tiefling',
-        description: "Ser recebido com olhares e sussurros, sofrer violência e insultos na rua, ver a desconfiança e o medo em cada olhar: esse é o fardo do tiefling. E para contornar tudo isso, um tiefling sabe que isso é graças a um pacto feito gerações atrás que infundiu a essência de Asmodeus - senhor supremo dos Nove Infernos - em sua linhagem.",
-        age: "Tieflings amadurecem ao mesmo tempo que humanos, mas vivem alguns anos a mais.",
+        system: 'dnd55e',
+        description: "Mortais marcados pela essência dos Planos Inferiores. Podem pertencer a três legados místicos distintos (Infernal, Abissal ou Ctoniano), cada um conferindo resistência elemental e magias arcanas próprias.",
+        age: "Amadurecem no mesmo ritmo dos humanos e vivem cerca de um século.",
         size: "Médio",
         speed: 9,
-        alignment: 'Caótico Neutro',
+        alignment: "Tendência caótica e independente, desconfiados de autoritarismos rígidos.",
         bonus: { cha: 2, int: 1 },
-        languages: ['Comum', 'Língua Antiga'],
+        languages: ['Comum', 'Infernal'],
+        cantripChoices: { count: 1, options: ['thaumaturgy', 'poison_spray', 'chill_touch'], ability: 'cha' },
         traits: [
-            { name: "Visão no Escuro", description: "Graças à sua herança infernal, você tem uma visão superior no escuro e na penumbra." },
-            { name: "Resistência Infernal", description: "Você tem resistência a dano de fogo." },
-            { name: "Legado Infernal", description: "Você conhece o truque Thaumaturgy. No 3º nível, pode conjurar Hellish Rebuke. No 5º nível, pode conjurar Darkness." }
+            {
+                name: "Visão no Escuro (18m)",
+                description: "Enxerga na escuridão a até 18 metros."
+            },
+            {
+                name: "Legado Sobrenatural (Infernal, Abissal ou Ctoniano)",
+                description: "Infernal: Resistência a Fogo, truque Taumaturgia, Repreensão Infernal (nv 3), Escuridão (nv 5). Abissal: Resistência a Veneno, Rajada de Veneno, Raio de Doença (nv 3), Imobilizar Pessoa (nv 5). Ctoniano: Resistência a Necrótico, Toque Arrepiante, Vitalidade Falsa (nv 3), Raio do Enfraquecimento (nv 5)."
+            },
+            {
+                name: "Conjuração de Herança",
+                description: "Carisma é o seu atributo de conjuração para as magias concedidas pelo seu legado."
+            }
         ]
     },
 
-    // --- SPECIAL / CUSTOM ---
+    // ==========================================
+    // THE WITCHER ADAPTADO (SISTEMA WITCHER)
+    // ==========================================
     {
         id: 'witcher',
-        name: 'Humano (Bruxo)',
-        description: "Um mutante treinado especificamente para caçar monstros. Seus olhos felinos, cicatrizes e espadas duplas são marcas inconfundíveis. Eles passam pelo violento processo conhecido como a Prova das Ervas, que concede reflexos, força e longevidade sobre-humanos, mas retira a capacidade de reprodução e amortece as emoções (segundo dizem).",
+        name: 'Bruxo (Mutante)',
+        system: 'witcher',
+        description: "Um mutante treinado especificamente para caçar monstros no Continente. Seus olhos felinos, cicatrizes e espadas duplas são marcas inconfundíveis. Passou pela Prova das Ervas, que concede reflexos, força e longevidade sobre-humanos, mas retira a fertilidade e amortece as emoções mundanas.",
         age: "Graças às mutações, bruxos envelhecem muito lentamente e são imunes à maioria das doenças, vivendo séculos se não morrerem em combate.",
         size: "Médio",
         speed: 9,
-        alignment: "Geralmente Neutros, focados no trabalho e pragmatismo.",
+        alignment: "Geralmente Neutros, focados no dever profissional, contratos e pragmatismo.",
         bonus: { con: 2, str: 1, dex: 1 },
-        languages: ['Comum'],
+        languages: ['Comum', 'Língua Antiga'],
         traits: [
-            { name: "Visão no Escuro", description: "Suas pupilas verticais permitem enxergar na escuridão total (18m)." },
-            { name: "Metabolismo Aprimorado", description: "Você é imune a doenças mundanas e tem vantagem em testes de resistência contra venenos de monstros." },
-            { name: "Prova das Ervas", description: "Seus reflexos são sobrenaturais. Você ganha proficiência em Percepção e Sobrevivência." },
-            { name: "Sinais", description: "Você pode conjurar sinais básicos (magia rudimentar) utilizando Vigor ou Sabedoria." }
+            { name: "Visão no Escuro (18m)", description: "Suas pupilas verticais adaptadas permitem enxergar na escuridão total a até 18 metros." },
+            { name: "Metabolismo Aprimorado", description: "Você é imune a doenças mundanas e tem vantagem em testes de resistência contra venenos e toxinas de monstros." },
+            { name: "Prova das Ervas", description: "Seus reflexos são sobrenaturais. Você ganha proficiência nas perícias Percepção e Sobrevivência." },
+            { name: "Sinais de Bruxo", description: "Você pode canalizar sinais básicos (Aard, Igni, Quen, Yrden, Axii) utilizando Vigor ou Sabedoria." }
         ]
     },
+    {
+        id: 'witcher_elf',
+        name: 'Elfo do Continente (Aen Seidhe)',
+        system: 'witcher',
+        description: "Os elfos originários do Continente antes da Conjunção das Esferas. Orgulhosos, esguios e perseguidos pelos reinos do norte, muitos pegam em armas como guerrilheiros Scoia'tael nas florestas densas.",
+        age: "Podem viver centenas de anos, mantendo vigor físico por séculos.",
+        size: "Médio",
+        speed: 10.5,
+        alignment: "Inclinados à rebeldia e sobrevivência nas matas (Caótico e Neutro).",
+        bonus: { dex: 2, wis: 1 },
+        languages: ['Comum', 'Língua Antiga (Hen Llinge)'],
+        traits: [
+            { name: "Visão no Escuro (18m)", description: "Enxerga na escuridão a até 18 metros." },
+            { name: "Sentidos Aguçados", description: "Proficiência na perícia Percepção." },
+            { name: "Passos na Floresta", description: "Deslocamento de 10,5m e não sofre penalidades em terreno difícil de floresta." }
+        ]
+    },
+    {
+        id: 'witcher_dwarf',
+        name: 'Anão de Mahakam',
+        system: 'witcher',
+        description: "Nascidos nas fortalezas rochosas do maciço de Mahakam. Conhecidos pelo artesanato incomparável de armas, armaduras e sua lendária resistência a venenos e golpes contundentes.",
+        age: "Vivem cerca de 300 anos com vigor inabalável.",
+        size: "Médio",
+        speed: 9,
+        alignment: "Leais e pragmáticos, prezam clãs, honra e contratos comerciais.",
+        bonus: { con: 2, str: 1 },
+        languages: ['Comum', 'Anão de Mahakam'],
+        traits: [
+            { name: "Visão no Escuro (18m)", description: "Enxerga na escuridão a até 18 metros." },
+            { name: "Resistência de Mahakam", description: "Vantagem em testes contra venenos e resistência a dano de veneno." },
+            { name: "Tradição da Forja", description: "Proficiência em Ferramentas de Ferreiro e bônus em testes de identificação de metais preciosos." }
+        ]
+    }
 ];

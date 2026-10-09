@@ -175,6 +175,64 @@ export const Token: React.FC<TokenProps> = ({
                     <div style={{ position: 'absolute', top: '-10%', left: '50%', width: '2px', height: '120%', background: 'rgba(255,0,0,0.5)' }} />
                 </div>
             )}
+
+            {/* Elevation Badge */}
+            {typeof token.elevation === 'number' && token.elevation > 0 && (
+                <div style={{
+                    position: 'absolute',
+                    bottom: '-6px',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    background: 'rgba(30, 64, 175, 0.92)',
+                    color: '#93c5fd',
+                    border: '1px solid #60a5fa',
+                    borderRadius: '8px',
+                    padding: '1px 6px',
+                    fontSize: '0.62rem',
+                    fontWeight: 'bold',
+                    pointerEvents: 'none',
+                    zIndex: 40,
+                    whiteSpace: 'nowrap',
+                    boxShadow: '0 2px 6px rgba(0,0,0,0.6)'
+                }}>
+                    ↑ {token.elevation}m
+                </div>
+            )}
+
+            {/* Conditions Badges */}
+            {token.conditions && token.conditions.length > 0 && (
+                <div style={{
+                    position: 'absolute',
+                    top: '-6px',
+                    right: '-6px',
+                    display: 'flex',
+                    flexDirection: 'row',
+                    flexWrap: 'wrap',
+                    maxWidth: '80px',
+                    gap: '2px',
+                    pointerEvents: 'none',
+                    zIndex: 45
+                }}>
+                    {token.conditions.map(cond => (
+                        <span
+                            key={cond}
+                            style={{
+                                background: '#7f1d1d',
+                                color: '#fca5a5',
+                                border: '1px solid #ef4444',
+                                borderRadius: '4px',
+                                padding: '1px 4px',
+                                fontSize: '0.55rem',
+                                fontWeight: 'bold',
+                                lineHeight: 1,
+                                boxShadow: '0 1px 4px rgba(0,0,0,0.7)'
+                            }}
+                        >
+                            {cond}
+                        </span>
+                    ))}
+                </div>
+            )}
         </div>
     );
 };

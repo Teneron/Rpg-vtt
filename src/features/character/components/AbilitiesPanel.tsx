@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
 import type { Character, ClassFeature } from '../characterTypes';
 import { useChat } from '../../chat/ChatContext';
+import { Table, Scroll } from 'lucide-react';
 import './AbilitiesPanel.css';
 
 interface AbilitiesPanelProps {
     character: Character;
+    onOpenProgression?: () => void;
 }
 
-export const AbilitiesPanel: React.FC<AbilitiesPanelProps> = ({ character }) => {
+export const AbilitiesPanel: React.FC<AbilitiesPanelProps> = ({ character, onOpenProgression }) => {
     const { sendMessage } = useChat();
     const [expandedId, setExpandedId] = useState<string | null>(null);
 
@@ -27,8 +29,19 @@ export const AbilitiesPanel: React.FC<AbilitiesPanelProps> = ({ character }) => 
 
     return (
         <div className="abilities-panel-book">
-            <div className="book-header-row">
+            <div className="book-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <h3>Habilidades de Classe & Raça</h3>
+                {onOpenProgression && (
+                    <button
+                        className="book-btn simple"
+                        onClick={onOpenProgression}
+                        title="Ver Tabela Oficial de Progressão de Níveis 1 a 20"
+                        style={{ fontSize: '0.78rem', padding: '4px 8px', color: '#c5a059', borderColor: '#c5a059', display: 'flex', alignItems: 'center', gap: '5px' }}
+                    >
+                        <Table size={13} />
+                        <span>Progressão 1–20</span>
+                    </button>
+                )}
             </div>
 
             <div className="abilities-list">
@@ -63,8 +76,9 @@ export const AbilitiesPanel: React.FC<AbilitiesPanelProps> = ({ character }) => 
                                         {feature.description}
                                     </div>
                                     <div className="ability-actions">
-                                        <button className="book-btn simple" onClick={() => handleAnnounce(feature)}>
-                                            📜 Anunciar no Chat
+                                        <button className="book-btn simple" onClick={() => handleAnnounce(feature)} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                            <Scroll size={13} />
+                                            <span>Anunciar no Chat</span>
                                         </button>
                                     </div>
                                 </div>

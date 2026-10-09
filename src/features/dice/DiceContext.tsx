@@ -164,7 +164,7 @@ export const DiceProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
         // CRITICAL FIX: Ensure previous cleanup is cancelled so it doesn't kill THIS roll.
         if (cleanupTimer.current) {
-            console.log(`[DiceContext] 🛑 Cancelling cleanup timer (ID: ${cleanupTimer.current}) before starting new roll.`);
+            console.log(`[DiceContext] Cancelling cleanup timer (ID: ${cleanupTimer.current}) before starting new roll.`);
             clearTimeout(cleanupTimer.current);
             cleanupTimer.current = null;
         }

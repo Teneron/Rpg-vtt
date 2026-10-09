@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { useCombat } from './CombatContext';
 import { usePeer } from '../multiplayer/FirebaseContext';
+import { useMap } from '../map/MapContext';
 import { rollInitiative } from './combatUtils';
 import type { TacticalStatus } from './combatTypes';
+import { Shield, FastForward, Eye, Users, SkipForward, Dices, Swords, Crosshair, X } from 'lucide-react';
 import './InitiativeTracker.css';
 
 export const InitiativeTracker: React.FC = () => {
@@ -19,10 +21,12 @@ export const InitiativeTracker: React.FC = () => {
         endCombat,
         setTarget
     } = useCombat();
-    const { isHost, myCharacter } = usePeer();
+    const { isHost, myCharacter, connectedPlayersData, updateRemotePlayerCharacter } = usePeer();
+    const { tokens, updateToken } = useMap();
 
     const [npcName, setNpcName] = useState('');
     const [npcInit, setNpcInit] = useState('');
+    const [npcHp, setNpcHp] = useState('10');
 
     // Check if my character is already in combat
     const isMyCharacter = !!myCharacter;
@@ -41,15 +45,61 @@ export const InitiativeTracker: React.FC = () => {
     // --- HANDLERS ---
     const handleAddNPC = () => {
         if (!npcName) return;
+        const hpVal = Math.max(1, Number(npcHp) || 10);
         addCombatant({
             id: `npc-${Date.now()}`,
             name: npcName,
             initiative: Number(npcInit) || 0,
             isNPC: true,
+            hp: { current: hpVal, max: hpVal },
             status: 'normal'
         });
         setNpcName('');
         setNpcInit('');
+        setNpcHp('10');
+    };
+
+    const handleCombatantHpDelta = (c: any, delta: number) => {
+        const linkedPlayer = c.characterId
+            ? Object.values(connectedPlayersData).find(p => p.character?.id === c.characterId)
+            : null;
+        const linkedChar = linkedPlayer?.character || (myCharacter?.id === c.characterId ? myCharacter : null);
+        const max = c.hp?.max ?? linkedChar?.hp?.max ?? 10;
+        const cur = c.hp?.current ?? linkedChar?.hp?.current ?? max;
+        const newCurrent = Math.max(0, Math.min(max, cur + delta));
+
+        // 1. Atualiza combatente no rastreador (sincroniza COMBAT_UPDATE para todos)
+        updateCombatant(c.id, {
+            hp: { current: newCurrent, max }
+        });
+
+        // 2. Se for personagem de jogador, atualiza a ficha remota (sincroniza PLAYER_UPDATE)
+        if (linkedPlayer && linkedPlayer.character) {
+            const updatedChar = {
+                ...linkedPlayer.character,
+                hp: {
+                    ...linkedPlayer.character.hp,
+                    current: newCurrent,
+                    max
+                },
+                lastModified: Date.now()
+            };
+            updateRemotePlayerCharacter(linkedPlayer.peerId, updatedChar as any);
+        }
+
+        // 3. Se houver token correspondente no mapa de batalha, sincroniza PV do token
+        if (tokens && updateToken) {
+            const matchingToken = tokens.find(t =>
+                t.id === c.id ||
+                t.combatantId === c.id ||
+                (c.characterId && t.characterId === c.characterId)
+            );
+            if (matchingToken) {
+                updateToken(matchingToken.id, {
+                    hp: { current: newCurrent, max }
+                });
+            }
+        }
     };
 
     const handleRollInitiative = () => {
@@ -109,8 +159,9 @@ export const InitiativeTracker: React.FC = () => {
                 <div className="initiative-tracker inactive">
                     <div style={{ padding: '20px', textAlign: 'center' }}>
                         <p style={{ color: '#888' }}>Combate Inativo</p>
-                        <button className="control-btn primary" onClick={startCombat}>
-                            ⚔️ Iniciar Combate
+                        <button className="control-btn primary" onClick={startCombat} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                            <Swords size={14} />
+                            <span>Iniciar Combate</span>
                         </button>
                     </div>
                 </div>
@@ -124,10 +175,8 @@ export const InitiativeTracker: React.FC = () => {
     }
 
     // --- RENDER ACTIVE ---
-    // Privacy: Players only see themselves. Host sees everyone.
-    const viewList = isHost
-        ? safeCombatants
-        : safeCombatants.filter(c => myCharacter && (c.id === myCharacter.id || c.characterId === myCharacter.id));
+    // All participants see the combat turn order
+    const viewList = safeCombatants;
 
     return (
         <div className="initiative-tracker">
@@ -162,7 +211,7 @@ export const InitiativeTracker: React.FC = () => {
                                         onChange={(e) => updateCombatant(c.id, { initiative: Number(e.target.value) })}
                                     />
                                     <button
-                                        style={{ background: 'none', border: 'none', cursor: 'pointer' }}
+                                        style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                                         title="Rolar d20"
                                         onClick={(e) => {
                                             e.stopPropagation();
@@ -170,13 +219,13 @@ export const InitiativeTracker: React.FC = () => {
                                             updateCombatant(c.id, { initiative: roll, roll, bonus: c.bonus || 0 });
                                         }}
                                     >
-                                        🎲
+                                        <Dices size={14} color="#ffd700" />
                                     </button>
                                 </div>
                             ) : (
                                 <div className="combatant-init-display">
                                     <span className="combatant-init">
-                                        {isMe ? c.initiative : (c.initiative > 0 ? '?' : '-')}
+                                        {c.initiative > 0 ? c.initiative : '-'}
                                     </span>
                                 </div>
                             )}
@@ -192,24 +241,83 @@ export const InitiativeTracker: React.FC = () => {
                                 </div>
                             </div>
 
+                            {(() => {
+                                const linkedPlayer = c.characterId
+                                    ? Object.values(connectedPlayersData).find(p => p.character?.id === c.characterId)
+                                    : null;
+                                const linkedChar = linkedPlayer?.character || (myCharacter?.id === c.characterId ? myCharacter : null);
+                                const hpCurrent = c.hp?.current ?? linkedChar?.hp?.current;
+                                const hpMax = c.hp?.max ?? linkedChar?.hp?.max;
+                                const hasHp = hpCurrent !== undefined && hpMax !== undefined && hpMax > 0;
+
+                                if (!hasHp) return null;
+
+                                const percent = Math.max(0, Math.min(100, (hpCurrent / hpMax) * 100));
+                                const hpBarColor = percent > 50 ? '#4caf50' : percent > 20 ? '#ff9800' : '#f44336';
+
+                                return (
+                                    <div className="combatant-hp-section">
+                                        <div className="hp-bar-mini" title={`PV: ${hpCurrent}/${hpMax}`}>
+                                            <div
+                                                className="hp-bar-mini-fill"
+                                                style={{ width: `${percent}%`, background: hpBarColor }}
+                                            />
+                                            <span className="hp-mini-text">{hpCurrent}/{hpMax}</span>
+                                        </div>
+                                        {isHost && (
+                                            <div className="hp-quick-adjust">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleCombatantHpDelta(c, -5)}
+                                                    title="Dano -5"
+                                                    className="hp-adjust-btn dmg"
+                                                >-5</button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleCombatantHpDelta(c, -1)}
+                                                    title="Dano -1"
+                                                    className="hp-adjust-btn dmg"
+                                                >-1</button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleCombatantHpDelta(c, 1)}
+                                                    title="Cura +1"
+                                                    className="hp-adjust-btn heal"
+                                                >+1</button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleCombatantHpDelta(c, 5)}
+                                                    title="Cura +5"
+                                                    className="hp-adjust-btn heal"
+                                                >+5</button>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })()}
+
                             <button
                                 type="button"
                                 style={{
                                     background: 'none',
                                     border: 'none',
                                     cursor: 'pointer',
-                                    fontSize: '1rem',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
                                     opacity: isTargeted ? 1 : 0.4,
                                     marginRight: '6px'
                                 }}
                                 title={isTargeted ? 'Remover mira' : 'Mirar neste alvo'}
                                 onClick={() => setTarget(isTargeted ? null : c.id)}
                             >
-                                🎯
+                                <Crosshair size={16} color={isTargeted ? '#ef4444' : '#aaa'} />
                             </button>
 
                             {isHost && (
-                                <button className="remove-btn" onClick={() => removeCombatant(c.id)}>×</button>
+                                <button className="remove-btn" onClick={() => removeCombatant(c.id)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <X size={12} />
+                                </button>
                             )}
                         </li>
                     );
@@ -221,26 +329,34 @@ export const InitiativeTracker: React.FC = () => {
                 <div className="tracker-controls">
                     <label style={{ color: '#c5a059', fontSize: '0.8rem', textTransform: 'uppercase' }}>Ações de Combate</label>
                     <div className="action-grid">
-                        <button className="control-btn" onClick={() => handleAction('dodge')}>🛡️ Esquivar</button>
-                        <button className="control-btn" onClick={() => handleAction('dash')}>💨 Disparada</button>
-                        <button className="control-btn" onClick={() => handleAction('hide')}>👁️ Esconder</button>
-                        <button className="control-btn" onClick={() => handleAction('help')}>🤝 Ajudar</button>
+                        <button className="control-btn" onClick={() => handleAction('dodge')}>
+                            <Shield size={13} style={{ marginRight: '5px' }} /> Esquivar
+                        </button>
+                        <button className="control-btn" onClick={() => handleAction('dash')}>
+                            <FastForward size={13} style={{ marginRight: '5px' }} /> Disparada
+                        </button>
+                        <button className="control-btn" onClick={() => handleAction('hide')}>
+                            <Eye size={13} style={{ marginRight: '5px' }} /> Esconder
+                        </button>
+                        <button className="control-btn" onClick={() => handleAction('help')}>
+                            <Users size={13} style={{ marginRight: '5px' }} /> Ajudar
+                        </button>
                     </div>
                     <button
                         className="control-btn primary"
-                        style={{ marginTop: '8px', width: '100%', background: '#2c5e3b', borderColor: '#438a56' }}
+                        style={{ marginTop: '8px', width: '100%', background: '#2c5e3b', borderColor: '#438a56', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
                         onClick={nextTurn}
                         title="Passar vez para o próximo combatente"
                     >
-                        ⏭️ Encerrar Meu Turno
+                        <SkipForward size={14} /> Encerrar Meu Turno
                     </button>
                 </div>
             )}
 
             {!hasRolled && isMyCharacter && !isMyTurn && (
                 <div className="tracker-controls">
-                    <button className="control-btn primary" onClick={handleRollInitiative}>
-                        🎲 Rolar Iniciativa
+                    <button className="control-btn primary" onClick={handleRollInitiative} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', width: '100%' }}>
+                        <Dices size={14} /> Rolar Iniciativa
                     </button>
                 </div>
             )}
@@ -259,8 +375,9 @@ export const InitiativeTracker: React.FC = () => {
 
                     <div className="npc-input-row">
                         <input className="npc-input" placeholder="NPC Nome" value={npcName} onChange={e => setNpcName(e.target.value)} />
-                        <input className="npc-input" type="number" placeholder="Inic." style={{ width: '60px' }} value={npcInit} onChange={e => setNpcInit(e.target.value)} />
-                        <button className="control-btn" onClick={handleAddNPC}>+</button>
+                        <input className="npc-input" type="number" placeholder="Inic." style={{ width: '50px' }} value={npcInit} onChange={e => setNpcInit(e.target.value)} />
+                        <input className="npc-input" type="number" placeholder="PV" style={{ width: '50px' }} value={npcHp} onChange={e => setNpcHp(e.target.value)} />
+                        <button className="control-btn" onClick={handleAddNPC} title="Adicionar NPC ao Combate">+</button>
                     </div>
 
                     <button className="control-btn danger" style={{ marginTop: 5 }} onClick={endCombat}>Parar Combate</button>

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import type { Character, Item } from '../characterTypes';
 import { ITEMS } from '../data/items';
 import { ItemEditModal } from './ItemEditModal';
+import { Swords, Shield, FlaskConical, Backpack, Package, Plus, Check, Edit2, Trash2, Scale } from 'lucide-react';
 
 interface InventoryPanelProps {
     character: Character;
@@ -75,13 +76,13 @@ export const InventoryPanel: React.FC<InventoryPanelProps> = ({
     const maxWeight = (character.attributes?.str?.value || 10) * 7.5;
     const weightPercent = Math.min(100, (totalWeight / maxWeight) * 100);
 
-    const getIcon = (type: string) => {
+    const renderItemIcon = (type: string) => {
         const t = (type || '').toLowerCase();
-        if (t.includes('weapon') || t.includes('arma')) return '⚔️';
-        if (t.includes('armor') || t.includes('armadura') || t.includes('shield') || t.includes('escudo')) return '🛡️';
-        if (t.includes('consumable') || t.includes('pot') || t.includes('food')) return '🧪';
-        if (t.includes('gear') || t.includes('equip')) return '🎒';
-        return '📦';
+        if (t.includes('weapon') || t.includes('arma')) return <Swords size={20} color="#f43f5e" />;
+        if (t.includes('armor') || t.includes('armadura') || t.includes('shield') || t.includes('escudo')) return <Shield size={20} color="#38bdf8" />;
+        if (t.includes('consumable') || t.includes('pot') || t.includes('food')) return <FlaskConical size={20} color="#a855f7" />;
+        if (t.includes('gear') || t.includes('equip')) return <Backpack size={20} color="#eab308" />;
+        return <Package size={20} color="#94a3b8" />;
     };
 
     return (
@@ -109,7 +110,8 @@ export const InventoryPanel: React.FC<InventoryPanelProps> = ({
                                     display: 'flex', alignItems: 'center', gap: '5px'
                                 }}
                             >
-                                <span>➕</span> Novo Item
+                                <Plus size={14} />
+                                <span>Novo Item</span>
                             </button>
                         )}
                     </div>
@@ -129,35 +131,37 @@ export const InventoryPanel: React.FC<InventoryPanelProps> = ({
             {/* Filters */}
             <div className="inv-filters" style={{ display: 'flex', gap: '8px', marginBottom: '20px', overflowX: 'auto', paddingBottom: '5px' }}>
                 {[
-                    { id: 'all', label: 'Todos', icon: '♾️' },
-                    { id: 'weapon', label: 'Armas', icon: '⚔️' },
-                    { id: 'armor', label: 'Armaduras', icon: '🛡️' },
-                    { id: 'consumable', label: 'itens', icon: '🧪' },
-                    { id: 'gear', label: 'Mochila', icon: '🎒' }
-                ].map(f => (
-                    <button
-                        key={f.id}
-                        onClick={() => setFilter(f.id as any)}
-                        style={{
-                            background: filter === f.id ? 'linear-gradient(45deg, #c5a059, #b08d45)' : '#1a1a1a',
-                            color: filter === f.id ? '#1a1a1a' : '#888',
-                            border: filter === f.id ? '1px solid #d4ac0d' : '1px solid #333',
-                            padding: '8px 16px',
-                            borderRadius: '20px',
-                            cursor: 'pointer',
-                            fontSize: '0.9rem',
-                            fontWeight: filter === f.id ? 'bold' : 'normal',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '6px',
-                            transition: 'all 0.2s',
-                            boxShadow: filter === f.id ? '0 0 10px rgba(197, 160, 89, 0.3)' : 'none'
-                        }}
-                    >
-                        <span>{f.icon}</span>
-                        <span>{f.label}</span>
-                    </button>
-                ))}
+                    { id: 'all', label: 'Todos', icon: Package },
+                    { id: 'weapon', label: 'Armas', icon: Swords },
+                    { id: 'armor', label: 'Armaduras', icon: Shield },
+                    { id: 'consumable', label: 'Itens', icon: FlaskConical },
+                    { id: 'gear', label: 'Mochila', icon: Backpack }
+                ].map(f => {
+                    const IconComp = f.icon;
+                    return (
+                        <button
+                            key={f.id}
+                            onClick={() => setFilter(f.id as any)}
+                            style={{
+                                background: filter === f.id ? 'linear-gradient(45deg, #c5a059, #b08d45)' : '#1a1a1a',
+                                color: filter === f.id ? '#1a1a1a' : '#888',
+                                border: filter === f.id ? '1px solid #d4ac0d' : '1px solid #333',
+                                padding: '6px 14px',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontWeight: 'bold',
+                                fontSize: '0.85rem',
+                                whiteSpace: 'nowrap',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px'
+                            }}
+                        >
+                            <IconComp size={14} />
+                            <span>{f.label}</span>
+                        </button>
+                    );
+                })}
             </div>
 
             {/* Grid List */}
@@ -185,9 +189,9 @@ export const InventoryPanel: React.FC<InventoryPanelProps> = ({
                                         width: '40px', height: '40px',
                                         background: '#111', borderRadius: '6px',
                                         display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                        fontSize: '1.2rem', border: '1px solid #333'
+                                        border: '1px solid #333'
                                     }}>
-                                        {getIcon(item.type)}
+                                        {renderItemIcon(item.type)}
                                     </div>
                                     <div>
                                         <div style={{ fontWeight: 'bold', color: isEquipped ? '#c5a059' : '#e0e0e0', fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -200,11 +204,12 @@ export const InventoryPanel: React.FC<InventoryPanelProps> = ({
                                                     }}
                                                     style={{
                                                         background: 'none', border: '1px solid #444', borderRadius: '4px',
-                                                        color: '#888', cursor: 'pointer', fontSize: '0.7rem', padding: '2px 6px'
+                                                        color: '#888', cursor: 'pointer', fontSize: '0.7rem', padding: '2px 5px',
+                                                        display: 'flex', alignItems: 'center'
                                                     }}
                                                     title="Editar Item"
                                                 >
-                                                    ✏️
+                                                    <Edit2 size={11} />
                                                 </button>
                                             )}
                                         </div>
@@ -213,7 +218,7 @@ export const InventoryPanel: React.FC<InventoryPanelProps> = ({
                                         </div>
                                     </div>
                                 </div>
-                                {isEquipped && <span style={{ fontSize: '1.2rem', marginRight: '10px' }}>✅</span>}
+                                {isEquipped && <Check size={18} color="#4ade80" style={{ marginRight: '8px' }} />}
                                 {onRemoveItem && (
                                     <button
                                         onClick={(e) => {
@@ -224,15 +229,16 @@ export const InventoryPanel: React.FC<InventoryPanelProps> = ({
                                             background: 'none',
                                             border: 'none',
                                             cursor: 'pointer',
-                                            fontSize: '1.1rem',
                                             color: '#666',
                                             padding: '0 5px',
+                                            display: 'flex',
+                                            alignItems: 'center',
                                             transition: 'color 0.2s'
                                         }}
                                         className="hover:text-red-500"
                                         title="Remover Item"
                                     >
-                                        🗑️
+                                        <Trash2 size={15} />
                                     </button>
                                 )}
                             </div>
@@ -256,9 +262,9 @@ export const InventoryPanel: React.FC<InventoryPanelProps> = ({
                             </div>
 
                             <div style={{ background: '#111', borderRadius: '4px', padding: '8px', display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: '#888', marginBottom: '15px' }}>
-                                {item.damage && <span>⚔️ {item.damage}</span>}
-                                {item.ac && <span>🛡️ +{item.ac}</span>}
-                                <span>⚖️ {(item.weight || 0).toFixed(1)}kg</span>
+                                {item.damage && <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Swords size={12} color="#f43f5e" /> {item.damage}</span>}
+                                {item.ac && <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Shield size={12} color="#38bdf8" /> +{item.ac}</span>}
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Scale size={12} /> {(item.weight || 0).toFixed(1)}kg</span>
                             </div>
 
                             {/* Actions */}
@@ -298,11 +304,14 @@ export const InventoryPanel: React.FC<InventoryPanelProps> = ({
                                         fontWeight: 'bold',
                                         cursor: 'pointer',
                                         textTransform: 'uppercase',
-                                        fontSize: '0.8rem',
-                                        letterSpacing: '0.5px'
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: '6px'
                                     }}
                                 >
-                                    🧪 Beber (☠ {item.toxicity})
+                                    <FlaskConical size={14} />
+                                    <span>Beber (Tox: {item.toxicity})</span>
                                 </button>
                             )}
                         </div>

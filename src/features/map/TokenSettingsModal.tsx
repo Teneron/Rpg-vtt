@@ -4,6 +4,7 @@ import { usePeer } from '../multiplayer/FirebaseContext';
 import type { MapToken } from './mapTypes';
 import '../../Layout.css';
 import { useCombat } from '../combat/CombatContext';
+import { Settings, Swords, Check, FileText, X, User, BarChart2, Eye, EyeOff, Heart, Lock, Unlock, Sun, Trash2, ArrowUp, ShieldAlert } from 'lucide-react';
 
 interface TokenSettingsModalProps {
     tokenId: string | null;
@@ -129,6 +130,9 @@ export const TokenSettingsModal: React.FC<TokenSettingsModalProps> = ({ tokenId,
                         console.log("Auto-Syncing Vision directly from Character Sheet:", charData.visionRange);
                         initialTokenState.visionRange = charData.visionRange;
                     }
+                    if ((!initialTokenState.conditions || initialTokenState.conditions.length === 0) && charData.conditions) {
+                        initialTokenState.conditions = [...charData.conditions];
+                    }
                 }
             }
             setToken(initialTokenState);
@@ -220,7 +224,9 @@ export const TokenSettingsModal: React.FC<TokenSettingsModalProps> = ({ tokenId,
         }
 
         if (token.characterId && editedCharData) {
-            // ... (existing character save logic, kept identical)
+            if (token.conditions) {
+                editedCharData.conditions = [...token.conditions];
+            }
             console.log("Saving Linked Character Data...", editedCharData);
             const ownerEntry = Object.values(connectedPlayersData).find(p => p.character?.id === token.characterId);
             const targetPeerId = ownerEntry?.peerId || 'unknown';
@@ -250,20 +256,25 @@ export const TokenSettingsModal: React.FC<TokenSettingsModalProps> = ({ tokenId,
             display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3000
         }}>
             <div className="glass-panel" style={{ width: '500px', flexDirection: 'column', gap: '20px' }}>
-                <h2 style={{ borderBottom: '1px solid var(--glass-border)', paddingBottom: '10px', display: 'flex', justifyContent: 'space-between' }}>
-                    🛠️ Editar Token: {token.name}
-                    <div style={{ display: 'flex', gap: '10px' }}>
+                <h2 style={{ borderBottom: '1px solid var(--glass-border)', paddingBottom: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Settings size={18} />
+                        <span>Editar Token: {token.name}</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                         <button
                             onClick={handleToggleCombat}
                             title={isInCombat ? "Remover do Combate" : "Adicionar ao Combate"}
                             style={{
-                                fontSize: '1.2rem', padding: '0 8px',
+                                fontSize: '0.85rem', padding: '4px 8px',
                                 background: isInCombat ? '#442222' : '#224422',
                                 border: `1px solid ${isInCombat ? '#884444' : '#448844'}`,
-                                color: '#fff', cursor: 'pointer', borderRadius: '4px'
+                                color: '#fff', cursor: 'pointer', borderRadius: '4px',
+                                display: 'flex', alignItems: 'center', gap: '4px'
                             }}
                         >
-                            {isInCombat ? '⚔️✅' : '⚔️'}
+                            {isInCombat ? <Check size={14} /> : <Swords size={14} />}
+                            <span>{isInCombat ? 'Em Combate' : 'Combate'}</span>
                         </button>
 
                         {token.characterId && (
@@ -272,20 +283,24 @@ export const TokenSettingsModal: React.FC<TokenSettingsModalProps> = ({ tokenId,
                                     window.dispatchEvent(new CustomEvent('request_open_sheet', { detail: token.characterId }));
                                     onClose();
                                 }}
-                                style={{ fontSize: '0.8rem', padding: '5px', background: '#444', border: '1px solid #666', color: '#fff', cursor: 'pointer', borderRadius: '4px' }}
+                                style={{ fontSize: '0.8rem', padding: '5px 8px', background: '#444', border: '1px solid #666', color: '#fff', cursor: 'pointer', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}
                             >
-                                📄 Abrir Ficha
+                                <FileText size={14} />
+                                <span>Abrir Ficha</span>
                             </button>
                         )}
                         {onOpenSheet && !token.characterId && isHost && (
                             <button
                                 onClick={onOpenSheet}
-                                style={{ fontSize: '0.8rem', padding: '5px', background: '#444', border: '1px solid #666', color: '#fff', cursor: 'pointer', borderRadius: '4px' }}
+                                style={{ fontSize: '0.8rem', padding: '5px 8px', background: '#444', border: '1px solid #666', color: '#fff', cursor: 'pointer', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}
                             >
-                                📄 Abrir Ficha
+                                <FileText size={14} />
+                                <span>Abrir Ficha</span>
                             </button>
                         )}
-                        <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer' }}>✕</button>
+                        <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                            <X size={16} />
+                        </button>
                     </div>
                 </h2>
 
@@ -294,15 +309,27 @@ export const TokenSettingsModal: React.FC<TokenSettingsModalProps> = ({ tokenId,
                     <button
                         className={`glass-button small ${activeTab === 'identity' ? 'active' : ''}`}
                         onClick={() => setActiveTab('identity')}
-                    >👤 Identidade</button>
+                        style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                    >
+                        <User size={13} />
+                        <span>Identidade</span>
+                    </button>
                     <button
                         className={`glass-button small ${activeTab === 'stats' ? 'active' : ''}`}
                         onClick={() => setActiveTab('stats')}
-                    >📊 Stats</button>
+                        style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                    >
+                        <BarChart2 size={13} />
+                        <span>Stats</span>
+                    </button>
                     <button
                         className={`glass-button small ${activeTab === 'vision' ? 'active' : ''}`}
                         onClick={() => setActiveTab('vision')}
-                    >👁️ Visão/Luz</button>
+                        style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                    >
+                        <Eye size={13} />
+                        <span>Visão/Luz</span>
+                    </button>
                 </div>
 
                 {/* Content */}
@@ -367,7 +394,8 @@ export const TokenSettingsModal: React.FC<TokenSettingsModalProps> = ({ tokenId,
                                             checked={token.invisible || false}
                                             onChange={e => setToken({ ...token, invisible: e.target.checked })}
                                         />
-                                        <span>👻 Invisível para Jogadores</span>
+                                        <EyeOff size={14} />
+                                        <span>Invisível para Jogadores</span>
                                     </label>
                                     <label style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px', cursor: 'pointer' }}>
                                         <input
@@ -375,7 +403,8 @@ export const TokenSettingsModal: React.FC<TokenSettingsModalProps> = ({ tokenId,
                                             checked={token.visibleStats || false}
                                             onChange={e => setToken({ ...token, visibleStats: e.target.checked })}
                                         />
-                                        <span>❤️ Barra de Vida Pública (Todos Veem)</span>
+                                        <Heart size={14} color="#f43f5e" />
+                                        <span>Barra de Vida Pública (Todos Veem)</span>
                                     </label>
                                     <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
                                         <input
@@ -383,7 +412,8 @@ export const TokenSettingsModal: React.FC<TokenSettingsModalProps> = ({ tokenId,
                                             checked={token.isLocked || false}
                                             onChange={e => setToken({ ...token, isLocked: e.target.checked })}
                                         />
-                                        <span>🔒 Travar Movimento</span>
+                                        <Lock size={14} />
+                                        <span>Travar Movimento</span>
                                     </label>
                                 </div>
                             )}
@@ -400,8 +430,8 @@ export const TokenSettingsModal: React.FC<TokenSettingsModalProps> = ({ tokenId,
 
                                     return (
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                                            {!canEdit && <div style={{ fontSize: '0.8rem', color: '#aaa', marginBottom: '5px' }}>🔒 Visualização apenas (Edite na Ficha)</div>}
-                                            {canEdit && <div style={{ fontSize: '0.8rem', color: '#cfc', marginBottom: '5px' }}>🔓 Modo GM: Editando Ficha Linkada</div>}
+                                            {!canEdit && <div style={{ fontSize: '0.8rem', color: '#aaa', marginBottom: '5px', display: 'flex', alignItems: 'center', gap: '4px' }}><Lock size={12} /> <span>Visualização apenas (Edite na Ficha)</span></div>}
+                                            {canEdit && <div style={{ fontSize: '0.8rem', color: '#cfc', marginBottom: '5px', display: 'flex', alignItems: 'center', gap: '4px' }}><Unlock size={12} /> <span>Modo GM: Editando Ficha Linkada</span></div>}
 
 
 
@@ -466,7 +496,7 @@ export const TokenSettingsModal: React.FC<TokenSettingsModalProps> = ({ tokenId,
                                     return (
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
                                             <div style={{ background: '#332', color: '#ddb', padding: '8px', borderRadius: '4px', fontSize: '0.85rem', marginBottom: '10px' }}>
-                                                📝 Modo NPC: Edição manual de stats.
+                                                Modo NPC: Edição manual de stats.
                                             </div>
 
                                             <div className="form-group">
@@ -520,6 +550,67 @@ export const TokenSettingsModal: React.FC<TokenSettingsModalProps> = ({ tokenId,
                                     );
                                 }
                             })()}
+
+                            {/* ELEVATION & CONDITIONS */}
+                            <div style={{ marginTop: '16px', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '14px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                                <div className="form-group">
+                                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.9rem', marginBottom: '6px', color: '#e2e8f0' }}>
+                                        <ArrowUp size={14} color="#38bdf8" />
+                                        <span>Elevação / Altitude de Voo (metros)</span>
+                                    </label>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <input
+                                            className="glass-input"
+                                            type="number"
+                                            min={0}
+                                            step={1.5}
+                                            value={token.elevation ?? 0}
+                                            onChange={e => setToken({ ...token, elevation: Math.max(0, Number(e.target.value)) })}
+                                            style={{ width: '80px', padding: '6px 10px', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--glass-border)', color: '#fff', borderRadius: '4px', textAlign: 'center' }}
+                                        />
+                                        <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>m (0 = no solo / chão)</span>
+                                    </div>
+                                </div>
+
+                                <div className="form-group">
+                                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.9rem', marginBottom: '8px', color: '#e2e8f0' }}>
+                                        <ShieldAlert size={14} color="#f87171" />
+                                        <span>Condições Ativas (D&D 2024 / TTRPG)</span>
+                                    </label>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                        {['Amedrontado', 'Caído', 'Cego', 'Contido', 'Envenenado', 'Incapacitado', 'Invisível', 'Agarrado', 'Paralisado', 'Atordoado', 'Petrificado', 'Exaustão'].map(c => {
+                                            const isSelected = (token.conditions || []).includes(c);
+                                            return (
+                                                <button
+                                                    key={c}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        const current = token.conditions || [];
+                                                        const updated = isSelected ? current.filter(x => x !== c) : [...current, c];
+                                                        setToken({ ...token, conditions: updated });
+                                                        if (editedCharData) {
+                                                            setEditedCharData({ ...editedCharData, conditions: updated });
+                                                        }
+                                                    }}
+                                                    style={{
+                                                        padding: '4px 8px',
+                                                        fontSize: '0.75rem',
+                                                        borderRadius: '4px',
+                                                        cursor: 'pointer',
+                                                        border: isSelected ? '1px solid #ef4444' : '1px solid rgba(255,255,255,0.15)',
+                                                        background: isSelected ? 'rgba(239, 68, 68, 0.25)' : 'rgba(0,0,0,0.3)',
+                                                        color: isSelected ? '#fca5a5' : '#aaa',
+                                                        fontWeight: isSelected ? 600 : 400,
+                                                        transition: 'all 0.15s ease'
+                                                    }}
+                                                >
+                                                    {c}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     )}
 
@@ -544,7 +635,8 @@ export const TokenSettingsModal: React.FC<TokenSettingsModalProps> = ({ tokenId,
                                         checked={token.lightEnabled !== false}
                                         onChange={e => setToken({ ...token, lightEnabled: e.target.checked })}
                                     />
-                                    <span>💡 Emitir Luz</span>
+                                    <Sun size={14} color="#ffd700" />
+                                    <span>Emitir Luz</span>
                                 </label>
                             </div>
 
@@ -565,7 +657,7 @@ export const TokenSettingsModal: React.FC<TokenSettingsModalProps> = ({ tokenId,
                                         border: '1px solid #eba', color: '#feb',
                                         fontSize: '0.8rem', borderRadius: '4px'
                                     }}>
-                                        ⚠️ Luz Global está 'Clara' (Bright). Luzes individuais não serão visíveis no mapa. Mude para 'Dim' ou 'Dark' nas Configurações do Mapa.
+                                        Aviso: Luz Global está 'Clara' (Bright). Luzes individuais não serão visíveis no mapa. Mude para 'Dim' ou 'Dark' nas Configurações do Mapa.
                                     </div>
                                 )}
                             </div>
@@ -586,7 +678,10 @@ export const TokenSettingsModal: React.FC<TokenSettingsModalProps> = ({ tokenId,
 
                 {/* Footer */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '10px', borderTop: '1px solid var(--glass-border)', paddingTop: '15px' }}>
-                    <button className="glass-button" style={{ color: '#ff4444', borderColor: '#ff4444' }} onClick={handleDelete}>🗑️ Deletar</button>
+                    <button className="glass-button" style={{ color: '#ff4444', borderColor: '#ff4444', display: 'flex', alignItems: 'center', gap: '6px' }} onClick={handleDelete}>
+                        <Trash2 size={14} />
+                        <span>Deletar</span>
+                    </button>
                     <div style={{ display: 'flex', gap: '10px' }}>
                         <button className="glass-button" onClick={onClose}>Cancelar</button>
                         <button className="glass-button active" onClick={handleSave}>Salvar</button>

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useChat } from './ChatContext';
+import { Send } from 'lucide-react';
 
 export const MessageInput: React.FC = () => {
     const { sendMessage } = useChat();
@@ -23,7 +24,9 @@ export const MessageInput: React.FC = () => {
                 value={text}
                 onChange={(e) => setText(e.target.value)}
             />
-            <button type="submit" className="chat-send-btn">➤</button>
+            <button type="submit" className="chat-send-btn" title="Enviar Mensagem">
+                <Send size={15} />
+            </button>
         </form>
     );
 };

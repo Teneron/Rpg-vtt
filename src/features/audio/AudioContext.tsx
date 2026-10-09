@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { usePeer } from '../multiplayer/FirebaseContext';
-
+import { playSynthSound } from './audioSynth';
+import type { SynthSoundType } from './audioSynth';
 
 export type AudioTrack = {
     id: string;
@@ -9,6 +10,7 @@ export type AudioTrack = {
     type: 'music' | 'sfx';
     loop?: boolean;
     volume?: number; // 0-1
+    synthType?: SynthSoundType;
 };
 
 interface AudioContextState {
@@ -149,10 +151,27 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 const { track } = data.payload;
                 console.log("[Audio] Rx SFX Trigger:", track?.title);
                 playSfxLocal(track);
+            } else if (data.type === 'ROLL_RESULT') {
+                const roll = data.payload?.roll;
+                if (roll) {
+                    const formula = String(roll.formula || '');
+                    const rolls = Array.isArray(roll.rolls) ? roll.rolls : [];
+                    const isD20 = formula.includes('d20') || (rolls.length === 1 && (roll.total <= 20 || formula.includes('20')));
+                    const has20 = rolls.includes(20) || roll.total === 20;
+                    const has1 = rolls.includes(1);
+
+                    if (isD20 && has20) {
+                        playSynthSound('crit', volume * 0.85);
+                    } else if (isD20 && has1) {
+                        playSynthSound('fumble', volume * 0.85);
+                    } else {
+                        playSynthSound('dice', volume * 0.7);
+                    }
+                }
             }
         });
         return cleanup;
-    }, [onMessage, peerId]);
+    }, [onMessage, peerId, volume]);
 
     const playMusic = useCallback(async (track: AudioTrack) => {
         setCurrentMusic(track);
@@ -209,13 +228,49 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     const playSfxLocal = (track: AudioTrack) => {
         console.log("[Audio] Playing SFX Local:", track.title);
-        const sfx = new Audio(track.url);
-        sfx.volume = volume * (track.volume ?? 1.0);
-        sfx.play().catch(e => {
-            console.error("SFX Play Error:", e);
-            setAudioBlocked(true);
-        });
+        if (track.synthType) {
+            playSynthSound(track.synthType, volume * (track.volume ?? 1.0));
+            return;
+        }
+        if (!track.url) return;
+        try {
+            const sfx = new Audio(track.url);
+            sfx.volume = Math.max(0, Math.min(1, volume * (track.volume ?? 1.0)));
+            sfx.onended = () => { sfx.src = ''; };
+            sfx.play().catch(e => {
+                console.error("SFX Play Error:", e);
+                setAudioBlocked(true);
+            });
+        } catch (e) {
+            console.error("SFX Init Error:", e);
+        }
     };
+
+    // Automatic Local Roll Audio Listener (Dice impact & Crit/Fumble chimes)
+    useEffect(() => {
+        const handleRollAudio = (e: Event) => {
+            const customEvent = e as CustomEvent;
+            const rollData = customEvent.detail;
+            if (!rollData) return;
+
+            const formula = String(rollData.formula || '');
+            const rolls = Array.isArray(rollData.rolls) ? rollData.rolls : [];
+            const isD20 = formula.includes('d20') || (rolls.length === 1 && (rollData.total <= 20 || formula.includes('20')));
+            const has20 = rolls.includes(20) || rollData.total === 20;
+            const has1 = rolls.includes(1);
+
+            if (isD20 && has20) {
+                playSynthSound('crit', volume * 0.85);
+            } else if (isD20 && has1) {
+                playSynthSound('fumble', volume * 0.85);
+            } else {
+                playSynthSound('dice', volume * 0.7);
+            }
+        };
+
+        window.addEventListener('rpg_broadcast_roll', handleRollAudio);
+        return () => window.removeEventListener('rpg_broadcast_roll', handleRollAudio);
+    }, [volume]);
 
     const playSfx = useCallback(async (track: AudioTrack) => {
         playSfxLocal(track); // Play immediately for self

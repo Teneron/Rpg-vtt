@@ -100,6 +100,8 @@ export const ITEMS: ItemDefinition[] = [
 
     // Shield
     { id: 'escudo', name: 'Escudo', type: 'armor', cost: 10, weight: 3, ac: 2, acDexBonus: false },
+    { id: 'escudo_de_madeira', name: 'Escudo de Madeira', type: 'armor', cost: 10, weight: 2.5, ac: 2, acDexBonus: false },
+    { id: 'corselete_de_couro', name: 'Corselete de Couro', type: 'armor', cost: 10, weight: 4.5, ac: 11, acDexBonus: true, description: 'Armadura leve de couro batido comum no Continente.' },
 
     // --- ADVENTURING GEAR ---
     { id: 'mochila', name: 'Mochila', type: 'gear', cost: 2, weight: 2.5 },
@@ -115,15 +117,20 @@ export const ITEMS: ItemDefinition[] = [
     { id: 'pocao_mel_branco', name: 'Mel Branco', type: 'consumable', cost: 15, weight: 0.5, toxicity: 0, description: 'Limpa toda a toxicidade e cancela efeitos de poções ativas.' }, // Clears toxicity, no cost
     { id: 'pocao_coruja', name: 'Coruja do Mato', type: 'consumable', cost: 25, weight: 0.5, toxicity: 20, description: 'Acelera a recuperação de Vigor (Recupera 1 Slot de Magia/Sinal Nível 1).' },
     { id: 'pocao_lua_cheia', name: 'Lua Cheia', type: 'consumable', cost: 40, weight: 0.5, toxicity: 70, description: 'Aumenta a Vitalidade Máxima temporariamente (+2d8 PV Temp) por 1 hora.' },
+    { id: 'pocao_lua_superior', name: 'Poção Lua Superior', type: 'consumable', cost: 60, weight: 0.5, toxicity: 80, description: 'Poção avançada que concede +4d8 PV temporários.' },
+    { id: 'veneno_de_lagarto', name: 'Veneno de Lagarto', type: 'consumable', cost: 25, weight: 0.2, description: 'Toxina paralisante aplicada em lâminas (+1d6 de dano de veneno).' },
     { id: 'trofeu_monstro', name: 'Troféu de Monstro', type: 'gear', cost: 0, weight: 2.0, description: 'A cabeça de uma besta abatida.' },
     { id: 'medalhao_bruxo', name: 'Medalhão de Bruxo', type: 'gear', cost: 0, weight: 0.2, description: 'Vibra na presença de magia.' },
     { id: 'kit_alquimia', name: 'Kit de Alquimia', type: 'tool', cost: 50, weight: 2.0, description: 'Usado para criar poções e óleos.' },
+    { id: 'cristal_de_foco', name: 'Cristal de Foco', type: 'gear', cost: 10, weight: 0.5, description: 'Cristal lapidado usado para canalizar energia mágica ou Sinais.' },
 
     // --- AMMUNITION ---
     { id: 'flechas', name: 'Flechas (20)', type: 'consumable', cost: 1, weight: 1, properties: ['munição'] },
     { id: 'virotes', name: 'Virotes (20)', type: 'consumable', cost: 1, weight: 1.5, properties: ['munição'] },
     { id: 'flecha', name: 'Flecha', type: 'consumable', cost: 0.05, weight: 0.05, properties: ['munição'] }, // Single
     { id: 'virote', name: 'Virote', type: 'consumable', cost: 0.05, weight: 0.075, properties: ['munição'] }, // Single
+    { id: 'aljava', name: 'Aljava (20 flechas)', type: 'gear', cost: 1, weight: 1, description: 'Contém até 20 flechas para arco.' },
+    { id: 'aljava_(20_flechas)', name: 'Aljava (20 flechas)', type: 'gear', cost: 1, weight: 1, description: 'Contém até 20 flechas para arco.' },
 
     // --- CLASS ITEMS & FOCUSES ---
     { id: 'simbolo_sagrado', name: 'Símbolo Sagrado', type: 'gear', cost: 5, weight: 0.1 },
@@ -131,6 +138,8 @@ export const ITEMS: ItemDefinition[] = [
     { id: 'bolsa_de_componentes', name: 'Bolsa de Componentes', type: 'gear', cost: 25, weight: 1 }, // Alias
     { id: 'grimorio', name: 'Grimório', type: 'gear', cost: 50, weight: 1.5 },
     { id: 'foco_arcano', name: 'Foco Arcano', type: 'gear', cost: 5, weight: 0.5 },
+    { id: 'foco_druidico', name: 'Foco Druídico', type: 'gear', cost: 1, weight: 0.5, description: 'Ramo de visco, totem ou bordão para canalizar magia da natureza.' },
+    { id: 'roupas_simples', name: 'Roupas Simples', type: 'gear', cost: 0.2, weight: 1.5, description: 'Vestes modestas de linho ou algodão.' },
     { id: 'alaude', name: 'Alaúde', type: 'gear', cost: 35, weight: 1, description: 'Instrumento musical.' },
     { id: 'flauta', name: 'Flauta', type: 'gear', cost: 2, weight: 0.5 },
     { id: 'lira', name: 'Lira', type: 'gear', cost: 30, weight: 1 },
@@ -150,6 +159,8 @@ export const ITEMS: ItemDefinition[] = [
     { id: 'pacote_de_estudioso', name: 'Pacote de Estudioso', type: 'gear', cost: 40, weight: 5, description: 'Mochila, livro de lore, tinta, pena, pergaminho, areia, faca pequena.' }, // Alias
     { id: 'pacote_aventureiro', name: 'Pacote de Aventureiro', type: 'gear', cost: 12, weight: 20, description: 'Mochila, pé de cabra, martelo, pítons, tochas, pederneira, rações, cantil, corda.' },
     { id: 'pacote_de_aventureiro', name: 'Pacote de Aventureiro', type: 'gear', cost: 12, weight: 20, description: 'Mochila, pé de cabra, martelo, pítons, tochas, pederneira, rações, cantil, corda.' }, // Alias
+    { id: 'pacote_masmorra', name: 'Pacote de Masmorra', type: 'gear', cost: 12, weight: 25, description: 'Mochila, pé de cabra, martelo, 10 pitões, 10 tochas, pederneira, rações (10 dias) e cantil.' },
+    { id: 'pacote_de_masmorra', name: 'Pacote de Masmorra', type: 'gear', cost: 12, weight: 25, description: 'Mochila, pé de cabra, martelo, 10 pitões, 10 tochas, pederneira, rações (10 dias) e cantil.' },
 
     // Tools
     { id: 'ferramentas_ladrao', name: 'Ferramentas de Ladrão', type: 'tool', cost: 25, weight: 0.5 },

@@ -1,6 +1,8 @@
 import type { Monster } from './monsterTypes';
 import { MONSTERS_5E } from './data/monsters5e';
 import { MONSTERS_WITCHER } from './data/monstersWitcher';
+import { MONSTERS_PF2E } from './data/monstersPF2e';
+import { MONSTERS_DAGGERHEART } from './data/monstersDaggerheart';
 import { db } from '../../db/RPGDatabase';
 
 const STORAGE_KEY = 'rpg_custom_monsters';
@@ -126,18 +128,12 @@ export class MonsterRepository {
 
     static getAll(filter?: { source?: string; campaignId?: string; system?: string }): Monster[] {
         const custom = this.getCustomMonsters(filter?.campaignId);
-        let base5e: Monster[] = MONSTERS_5E || [];
-        let baseWitcher: Monster[] = MONSTERS_WITCHER || [];
+        const base5e: Monster[] = MONSTERS_5E || [];
+        const baseWitcher: Monster[] = MONSTERS_WITCHER || [];
+        const basePf2e: Monster[] = MONSTERS_PF2E || [];
+        const baseDaggerheart: Monster[] = MONSTERS_DAGGERHEART || [];
 
-        if (filter?.source) {
-            if (filter.source === 'DnD5e') {
-                baseWitcher = [];
-            } else if (filter.source === 'Witcher') {
-                base5e = [];
-            }
-        }
-
-        let all = [...base5e, ...baseWitcher, ...custom];
+        let all = [...base5e, ...baseWitcher, ...basePf2e, ...baseDaggerheart, ...custom];
         if (filter?.source) {
             all = all.filter(m => m.source === filter.source);
         }

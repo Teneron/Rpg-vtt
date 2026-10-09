@@ -24,20 +24,22 @@ export interface MultiplayerContextState {
     connections: any[];
     hostConnection: any | null;
     connectToHost: (hostId: string, playerName: string) => void;
-    startHosting: (hostName: string, adventureId?: string, adventureName?: string) => void;
+    startHosting: (hostName: string, adventureId?: string, adventureName?: string, system?: string) => void;
     broadcast: (msg: PeerMessage) => void;
     username: string;
     isConnected: boolean;
     peerError: string | null;
     currentAdventureId: string | null;
     currentAdventureName: string | null;
+    roomSystem: string;
     hostAdventureId: (id: string) => void;
-    connectedPlayersData: Record<string, { name: string; character: Character; peerId: string; isOnline?: boolean }>;
+    connectedPlayersData: Record<string, { name: string; character: Character; peerId: string; isOnline?: boolean; isHost?: boolean }>;
     broadcastCharacterUpdate: (character: Character) => void;
     isConnecting: boolean;
     myCharacter: Character | null;
     updateMyCharacter: (character: Character) => void;
     disconnect: () => void;
+    closeRoom: () => void;
     updateRemotePlayerCharacter: (targetPeerId: string, character: Character) => void;
     removePlayer: (targetPeerId: string) => Promise<void>;
     triggerForceRefresh: () => Promise<void>;
@@ -86,8 +88,19 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
     const [isConnected, setIsConnected] = useState(false);
     const [isConnecting, setIsConnecting] = useState(false);
     const [peerError, setPeerError] = useState<string | null>(null);
-    const [connectedPlayersData, setConnectedPlayersData] = useState<Record<string, { name: string; character: Character; peerId: string; isOnline?: boolean }>>({});
+    const [connectedPlayersData, setConnectedPlayersData] = useState<Record<string, { name: string; character: Character; peerId: string; isOnline?: boolean; isHost?: boolean }>>({});
     const [myCharacter, setMyCharacter] = useState<Character | null>(null);
+    const [roomSystem, setRoomSystem] = useState<string>(() => {
+        try {
+            const saved = localStorage.getItem('rpg_session');
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                if (parsed.system) return parsed.system;
+                if (parsed.adventureId?.toUpperCase().startsWith('WTC')) return 'witcher';
+            }
+        } catch (e) {}
+        return 'dnd55e';
+    });
     const [serverUrl, setServerUrl] = useState<string>(() => {
         return localStorage.getItem('rpg_server_url') || getDefaultServerUrl();
     });
@@ -108,7 +121,7 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
     const messageListenersRef = useRef<Set<(data: PeerMessage) => void>>(new Set());
 
     const connections = Object.values(connectedPlayersData)
-        .filter(p => p.isOnline)
+        .filter(p => p.isOnline && p.peerId !== myId)
         .map(p => ({
             peer: p.peerId,
             metadata: { name: p.name }
@@ -170,7 +183,8 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
                     name: m.playerName,
                     character: m.character,
                     peerId: m.userId,
-                    isOnline: m.isOnline
+                    isOnline: m.isOnline,
+                    isHost: !!m.isHost
                 };
             });
             setConnectedPlayersData(mapped);
@@ -178,6 +192,11 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
             if (mapped[myId]?.character && !myCharacterRef.current) {
                 setMyCharacter(mapped[myId].character);
             }
+        }
+
+        if (state.system) {
+            console.log('[Socket] Setting roomSystem from server state:', state.system);
+            setRoomSystem(state.system);
         }
 
         if (state.gameState) {
@@ -262,7 +281,8 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
                     name: member.playerName,
                     character: member.character,
                     peerId: member.userId,
-                    isOnline: true
+                    isOnline: true,
+                    isHost: !!member.isHost
                 }
             }));
         });
@@ -272,7 +292,11 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
             setConnectedPlayersData(prev => {
                 const next = { ...prev };
                 if (next[data.userId]) {
-                    next[data.userId] = { ...next[data.userId], isOnline: false };
+                    if (!next[data.userId].character) {
+                        delete next[data.userId];
+                    } else {
+                        next[data.userId] = { ...next[data.userId], isOnline: false };
+                    }
                 }
                 return next;
             });
@@ -307,16 +331,42 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
                 // 2. Update myCharacter if this update was aimed at me (e.g. GM updated player sheet)
                 const isForMe = targetPeerId === myId || (myCharacterRef.current && msg.payload.character?.id === myCharacterRef.current.id);
-                if (isForMe) {
-                    console.log('[Socket] Updating local character from remote PLAYER_UPDATE:', msg.payload.character?.name);
+                if (isForMe && msg.payload.character) {
+                    console.log('[Socket] Updating local character from remote PLAYER_UPDATE:', msg.payload.character.name);
                     setMyCharacter(msg.payload.character);
+                    import('../character/characterRepository').then(({ CharacterRepository }) => {
+                        CharacterRepository.save(msg.payload.character);
+                    }).catch(e => console.error('[Socket] Error saving remote character update:', e));
                 }
             }
+        });
+
+        socket.on('player_kicked', (data: { reason?: string }) => {
+            console.log('[Socket] Player was removed from room:', data);
+            alert(data?.reason || 'Você foi removido da mesa pelo Mestre.');
+            setIsConnected(false);
+            setIsConnecting(false);
+            setCurrentAdventureId(null);
+            setConnectedPlayersData({});
+            localStorage.removeItem('rpg_session');
+            sessionStorage.removeItem('rpg_game_started');
+            window.location.reload();
         });
 
         socket.on('force_refresh', () => {
             alert('O Mestre solicitou recarregamento da versão do jogo.');
             window.location.reload();
+        });
+
+        socket.on('room_closed', (data: { roomId: string; reason?: string }) => {
+            console.log('[Socket] Room closed event received from server:', data);
+            setIsConnected(false);
+            setIsConnecting(false);
+            setCurrentAdventureId(null);
+            setConnectedPlayersData({});
+            localStorage.removeItem('rpg_session');
+            sessionStorage.removeItem('rpg_game_started');
+            window.dispatchEvent(new CustomEvent('rpg_room_closed', { detail: data }));
         });
 
         return socket;
@@ -364,6 +414,11 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
                 setIsHost(!!session.isHost);
                 setCurrentAdventureId(session.adventureId);
                 setCurrentAdventureName(session.adventureName || null);
+                if (session.system) {
+                    setRoomSystem(session.system);
+                } else if (session.adventureId?.toUpperCase().startsWith('WTC')) {
+                    setRoomSystem('witcher');
+                }
                 setIsConnecting(true);
 
                 const socket = initSocket(serverUrl);
@@ -372,11 +427,13 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
                     playerName: session.username,
                     isHost: !!session.isHost,
                     character: null,
-                    userId: myId
+                    userId: myId,
+                    system: session.system || (session.adventureId?.toUpperCase().startsWith('WTC') ? 'witcher' : 'dnd55e')
                 }, (response: any) => {
                     setIsConnecting(false);
                     if (response?.success) {
                         setIsConnected(true);
+                        if (response.system) setRoomSystem(response.system);
                         handleRoomState(response);
                         console.log('[Socket] Session restored successfully for room:', session.adventureId);
                     } else {
@@ -392,8 +449,7 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
         }
     }, [myId, serverUrl, initSocket, handleRoomState]);
 
-    const startHosting = async (hostName: string, _initialAdventureId = 'default', initialAdventureName = 'Aventura Padrão') => {
-        if (isConnecting || isConnected) return;
+    const startHosting = async (hostName: string, _initialAdventureId = 'default', initialAdventureName = 'Aventura Padrão', system = 'dnd55e') => {
         setIsConnecting(true);
         setPeerError(null);
 
@@ -402,6 +458,7 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
         setIsHost(true);
         setCurrentAdventureId(roomId);
         setCurrentAdventureName(initialAdventureName);
+        setRoomSystem(system);
 
         try {
             const socket = initSocket(serverUrl);
@@ -410,18 +467,21 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
                 playerName: hostName,
                 isHost: true,
                 character: null,
-                userId: myId
+                userId: myId,
+                system
             }, (response: any) => {
                 setIsConnecting(false);
                 if (response?.success) {
                     setIsConnected(true);
+                    if (response.system) setRoomSystem(response.system);
                     handleRoomState(response);
-                    console.log('[Socket] Hosting room successfully:', roomId);
+                    console.log('[Socket] Hosting room successfully:', roomId, 'System:', system);
                     localStorage.setItem('rpg_session', JSON.stringify({
                         adventureId: roomId,
                         username: hostName,
                         isHost: true,
-                        adventureName: initialAdventureName
+                        adventureName: initialAdventureName,
+                        system
                     }));
                 } else {
                     setPeerError(response?.error || 'Erro ao criar sala no servidor.');
@@ -435,41 +495,50 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
     };
 
     const connectToHost = async (targetId: string, playerName: string) => {
-        if (isConnecting || isConnected) return;
         setIsConnecting(true);
         setPeerError(null);
 
+        const cleanTargetId = targetId.trim().toUpperCase();
+        const derivedSystem = cleanTargetId.startsWith('WTC') ? 'witcher' : 'dnd55e';
+        setRoomSystem(derivedSystem);
+
         setUsername(playerName);
         setIsHost(false);
-        setCurrentAdventureId(targetId);
+        setCurrentAdventureId(cleanTargetId);
 
         try {
             const socket = initSocket(serverUrl);
             socket.emit('join_room', {
-                roomId: targetId,
+                roomId: cleanTargetId,
                 playerName,
                 isHost: false,
                 character: myCharacterRef.current,
-                userId: myId
+                userId: myId,
+                system: derivedSystem
             }, (response: any) => {
                 setIsConnecting(false);
                 if (response?.success) {
                     setIsConnected(true);
+                    const finalSystem = response.system || derivedSystem;
+                    setRoomSystem(finalSystem);
                     handleRoomState(response);
                     setCurrentAdventureName(response.hostName ? `Mesa de ${response.hostName}` : 'Aventura');
-                    console.log('[Socket] Connected to host room successfully:', targetId);
+                    console.log('[Socket] Connected to host room successfully:', cleanTargetId, 'System:', finalSystem);
                     localStorage.setItem('rpg_session', JSON.stringify({
-                        adventureId: targetId,
+                        adventureId: cleanTargetId,
                         username: playerName,
                         isHost: false,
-                        adventureName: response.hostName || 'Aventura'
+                        adventureName: response.hostName || 'Aventura',
+                        system: finalSystem
                     }));
                 } else {
+                    setCurrentAdventureId(null);
                     setPeerError(response?.error || 'Erro ao ingressar na sala. Verifique o ID.');
                 }
             });
         } catch (err: any) {
             console.error('[Socket] Connect to host error:', err);
+            setCurrentAdventureId(null);
             setPeerError(err.message || 'Erro ao conectar ao servidor.');
             setIsConnecting(false);
         }
@@ -534,11 +603,14 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
     const removePlayer = useCallback(async (targetPeerId: string) => {
         const roomId = currentAdventureIdRef.current;
         if (!socketRef.current || !roomId) return;
-        socketRef.current.emit('room_broadcast', {
+        socketRef.current.emit('kick_player', {
             roomId,
-            event: 'player_left',
-            data: { userId: targetPeerId },
-            includeSender: true
+            userId: targetPeerId
+        });
+        setConnectedPlayersData(prev => {
+            const next = { ...prev };
+            delete next[targetPeerId];
+            return next;
         });
     }, []);
 
@@ -560,7 +632,7 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
     const disconnect = useCallback(() => {
         const roomId = currentAdventureIdRef.current;
         if (socketRef.current && roomId) {
-            socketRef.current.emit('leave_room', { roomId });
+            socketRef.current.emit('leave_room', { roomId, closeRoom: isHostRef.current });
             socketRef.current.disconnect();
             socketRef.current = null;
         }
@@ -569,6 +641,23 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
         setCurrentAdventureId(null);
         setConnectedPlayersData({});
         localStorage.removeItem('rpg_session');
+        sessionStorage.removeItem('rpg_game_started');
+    }, []);
+
+    const closeRoom = useCallback(() => {
+        const roomId = currentAdventureIdRef.current;
+        if (socketRef.current && roomId) {
+            socketRef.current.emit('close_room', { roomId });
+            socketRef.current.disconnect();
+            socketRef.current = null;
+        }
+        setIsConnected(false);
+        setIsConnecting(false);
+        setCurrentAdventureId(null);
+        setConnectedPlayersData({});
+        localStorage.removeItem('rpg_session');
+        sessionStorage.removeItem('rpg_game_started');
+        window.dispatchEvent(new CustomEvent('rpg_room_closed', { detail: { reason: 'Você encerrou a mesa.' } }));
     }, []);
 
     const onMessage = useCallback((callback: (data: PeerMessage) => void) => {
@@ -603,6 +692,7 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
             peerError,
             currentAdventureId,
             currentAdventureName,
+            roomSystem,
             hostAdventureId,
             connectedPlayersData,
             broadcastCharacterUpdate,
@@ -610,6 +700,7 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
             myCharacter,
             updateMyCharacter,
             disconnect,
+            closeRoom,
             updateRemotePlayerCharacter,
             removePlayer,
             triggerForceRefresh,

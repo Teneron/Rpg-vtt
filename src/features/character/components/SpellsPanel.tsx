@@ -2,6 +2,8 @@ import React, { useState, useMemo } from 'react';
 import type { Character } from '../characterTypes';
 import type { Spell } from '../data/spells';
 import { useChat } from '../../chat/ChatContext';
+import { playSynthSound } from '../../audio/audioSynth';
+import { Clock, Compass, Scroll, Sparkles } from 'lucide-react';
 import './SpellsPanel.css'; // New CSS file for book-style
 
 interface SpellsPanelProps {
@@ -58,9 +60,11 @@ export const SpellsPanel: React.FC<SpellsPanelProps> = ({ character, onUpdateSlo
             }
         }
 
+        playSynthSound('magic');
+
         // Send to Chat
         sendMessage(
-            `conjurou **${spell.name}**!`,
+            `conjurou **${spell.name}** (${spell.school})!`,
             'system' // Or 'spell' type if we had it
         );
         // We could send a rich embed, but text is fine for now.
@@ -91,8 +95,12 @@ export const SpellsPanel: React.FC<SpellsPanelProps> = ({ character, onUpdateSlo
             </div>
 
             <div className="spell-mini-info">
-                <span>⏱ {spell.castingTime}</span>
-                <span>📏 {spell.range}</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                    <Clock size={11} /> {spell.castingTime}
+                </span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                    <Compass size={11} /> {spell.range}
+                </span>
             </div>
 
             {expandedSpell === spell.id && (
@@ -121,11 +129,13 @@ export const SpellsPanel: React.FC<SpellsPanelProps> = ({ character, onUpdateSlo
                     </div>
 
                     <div className="spell-actions-book">
-                        <button className="book-btn simple" onClick={() => handleAnnounce(spell)}>
-                            📜 Mostrar no Chat
+                        <button className="book-btn simple" onClick={() => handleAnnounce(spell)} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                            <Scroll size={13} />
+                            <span>Mostrar no Chat</span>
                         </button>
-                        <button className="book-btn magic" onClick={() => handleCast(spell)}>
-                            ✨ Conjurar {spell.level > 0 ? `(Gastar Slot ${spell.level})` : '(Truque)'}
+                        <button className="book-btn magic" onClick={() => handleCast(spell)} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                            <Sparkles size={13} />
+                            <span>Conjurar {spell.level > 0 ? `(Gastar Slot ${spell.level})` : '(Truque)'}</span>
                         </button>
                     </div>
                 </div>

@@ -4,6 +4,10 @@ import type { Monster } from './monsterTypes';
 import { useCombat } from '../combat/CombatContext';
 import { MonsterEditor } from './MonsterEditor';
 import { MonsterDetailsModal } from './MonsterDetailsModal';
+import { Edit2, Trash2, Swords, Move, Info } from 'lucide-react';
+
+import { usePeer } from '../multiplayer/FirebaseContext';
+import { useAdventure } from '../adventure/AdventureContext';
 
 // Helper for safe ID generation
 const generateId = (prefix: string) => {
@@ -13,6 +17,16 @@ const generateId = (prefix: string) => {
 };
 
 export const BestiarySidebar: React.FC = () => {
+    const { roomSystem, currentAdventureId } = usePeer();
+    const { currentAdventure } = useAdventure();
+
+    const activeSystem: 'witcher' | 'dnd55e' = (
+        roomSystem === 'witcher' ||
+        currentAdventure?.system === 'witcher' ||
+        currentAdventureId?.toUpperCase().startsWith('WTC') ||
+        (typeof window !== 'undefined' && localStorage.getItem('rpg_selected_system') === 'witcher')
+    ) ? 'witcher' : 'dnd55e';
+
     const [monsters, setMonsters] = useState<Monster[]>([]);
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
@@ -46,35 +60,41 @@ export const BestiarySidebar: React.FC = () => {
         loadMonsters();
     }, []);
 
-    const [sources, setSources] = useState<string[]>(['All']);
-
-    useEffect(() => {
-        try {
-            const loaded = MonsterRepository.listSources();
-            setSources(['All', ...loaded]);
-        } catch (e) {
-            console.error("Failed to load sources", e);
+    const availableSources = React.useMemo(() => {
+        const list = ['All'];
+        if (activeSystem === 'witcher') {
+            list.push('Witcher');
+        } else {
+            list.push('5e');
         }
-    }, [monsters]);
+        if (monsters.some(m => m.source === 'Custom' && (m.system === activeSystem || !m.system))) {
+            list.push('Custom');
+        }
+        return list;
+    }, [activeSystem, monsters]);
 
     const [activeTab, setActiveTab] = useState<'Bestiary' | 'NPCs'>('Bestiary');
 
     const filteredMonsters = monsters
         .filter(m => {
+            // Strict campaign system isolation
+            const isSystemMatch = activeSystem === 'witcher'
+                ? (m.source === 'Witcher' || m.system === 'witcher' || (m.source === 'Custom' && m.system !== 'dnd55e'))
+                : (m.source === '5e' || m.source === 'DnD5e' || m.system === 'dnd55e' || (m.source === 'Custom' && m.system !== 'witcher'));
+            if (!isSystemMatch) return false;
+
             const name = m.name || '';
             const cat = m.category || '';
             const matchSearch = name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                 cat.toLowerCase().includes(searchTerm.toLowerCase());
-            const matchSource = filterSource === 'All' || m.source === filterSource;
-
-            // Tab Logic
-            // NPCs = Humanoids (excluding obvious monsters like Goblins/Orcs if preferred, but simpler to include all Humanoids or specific list)
-            // For now: NPC Tab = category includes 'Humanoide'. Bestiary = !includes 'Humanoide' OR includes 'Goblin'/'Orc'/'Kobold' (Hybrid approach?)
-            // Let's go strict: NPC Tab = Civilized Humanoids (Guard, Knight, Witcher). Bestiary = Everything else.
-            // Simplified: NPC Tab = category 'Humanoide' or 'Humanoid'. Bestiary = All others.
+            
+            let matchSource = filterSource === 'All';
+            if (!matchSource) {
+                if (filterSource === '5e') matchSource = m.source === '5e' || m.source === 'DnD5e';
+                else matchSource = m.source === filterSource;
+            }
 
             const isHumanoid = cat.toLowerCase().includes('humanoide') || cat.toLowerCase().includes('humanoid');
-            // Exceptions for monstrous humanoids that should be in Bestiary
             const monstrousRaces = ['goblin', 'orc', 'kobold', 'gnoll', 'bullywug', 'sahuagin', 'troglodyte', 'bugbear', 'hobgoblin'];
             const isMonstrousRace = monstrousRaces.some(r => name.toLowerCase().includes(r));
 
@@ -82,7 +102,6 @@ export const BestiarySidebar: React.FC = () => {
             if (activeTab === 'NPCs') {
                 matchTab = isHumanoid && !isMonstrousRace;
             } else {
-                // Bestiary
                 matchTab = !isHumanoid || isMonstrousRace;
             }
 
@@ -152,7 +171,7 @@ export const BestiarySidebar: React.FC = () => {
                             fontWeight: 'bold'
                         }}
                     >
-                        🐲 Monstros
+                        Monstros
                     </button>
                     <button
                         onClick={() => setActiveTab('NPCs')}
@@ -167,7 +186,7 @@ export const BestiarySidebar: React.FC = () => {
                             fontWeight: 'bold'
                         }}
                     >
-                        💂 NPCs
+                        NPCs
                     </button>
                 </div>
             </div>
@@ -204,9 +223,16 @@ export const BestiarySidebar: React.FC = () => {
                 <select
                     value={filterSource}
                     onChange={e => setFilterSource(e.target.value)}
-                    style={{ padding: '5px', borderRadius: '4px', border: '1px solid #444', background: '#222', color: '#fff', width: '90px' }}
+                    style={{ padding: '5px 8px', borderRadius: '4px', border: '1px solid #444', background: '#222', color: '#fff', minWidth: '125px' }}
                 >
-                    {sources.map(s => <option key={s} value={s}>{s === 'All' ? 'Tudo' : s}</option>)}
+                    {availableSources.map(s => {
+                        let label = s;
+                        if (s === 'All') label = activeSystem === 'witcher' ? 'Todas as Criaturas' : 'Todos os Monstros';
+                        else if (s === '5e' || s === 'DnD5e') label = 'D&D 5.5e (Oficial)';
+                        else if (s === 'Witcher') label = 'The Witcher (Oficial)';
+                        else if (s === 'Custom') label = 'Customizado';
+                        return <option key={s} value={s}>{label}</option>;
+                    })}
                 </select>
                 <select
                     value={sortBy}
@@ -214,7 +240,7 @@ export const BestiarySidebar: React.FC = () => {
                     style={{ padding: '5px', borderRadius: '4px', border: '1px solid #444', background: '#222', color: '#fff', width: '80px' }}
                 >
                     <option value="Name">Nome</option>
-                    <option value="CR">CR</option>
+                    <option value="CR">CR / Nv</option>
                 </select>
             </div>
 
@@ -236,7 +262,21 @@ export const BestiarySidebar: React.FC = () => {
                                     style={{ width: '32px', height: '32px', borderRadius: '50%', border: '2px solid #555', background: '#222' }}
                                 />
                                 <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                    <strong style={{ fontSize: '1.1rem', color: monster.source === 'Custom' ? '#55ff55' : '#c5a059' }}>{monster.name}</strong>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                        <strong style={{ fontSize: '1.05rem', color: monster.source === 'Custom' ? '#55ff55' : '#f8fafc' }}>{monster.name}</strong>
+                                        <span style={{
+                                            fontSize: '0.65rem',
+                                            padding: '1px 5px',
+                                            borderRadius: '8px',
+                                            border: '1px solid',
+                                            borderColor: monster.source === 'Custom' ? '#10b981' : (activeSystem === 'witcher' ? '#c5a059' : '#e11d48'),
+                                            color: monster.source === 'Custom' ? '#34d399' : (activeSystem === 'witcher' ? '#fde047' : '#fb7185'),
+                                            backgroundColor: 'rgba(0,0,0,0.3)',
+                                            fontWeight: 'bold'
+                                        }}>
+                                            {monster.source === 'Custom' ? 'Custom' : (activeSystem === 'witcher' ? 'Witcher' : '5.5e')}
+                                        </span>
+                                    </div>
                                 </div>
                                 <button
                                     onClick={() => setViewingMonster(monster)}
@@ -256,7 +296,7 @@ export const BestiarySidebar: React.FC = () => {
                                         marginLeft: '5px'
                                     }}
                                 >
-                                    ℹ️
+                                    <Info size={12} color="#aaa" />
                                 </button>
                             </div>
                             <div style={{ display: 'flex', gap: '5px' }}>
@@ -265,8 +305,12 @@ export const BestiarySidebar: React.FC = () => {
                                 </span>
                                 {monster.source === 'Custom' && (
                                     <>
-                                        <button onClick={() => setEditingMonster(monster)} title="Editar" style={{ cursor: 'pointer', background: 'none', border: 'none', color: '#aaa' }}>✏️</button>
-                                        <button onClick={(e) => handleDeleteCustom(monster.id, e)} title="Deletar" style={{ cursor: 'pointer', background: 'none', border: 'none', color: '#f55' }}>🗑️</button>
+                                        <button onClick={() => setEditingMonster(monster)} title="Editar" style={{ cursor: 'pointer', background: 'none', border: 'none', color: '#aaa', padding: '2px' }}>
+                                            <Edit2 size={13} />
+                                        </button>
+                                        <button onClick={(e) => handleDeleteCustom(monster.id, e)} title="Deletar" style={{ cursor: 'pointer', background: 'none', border: 'none', color: '#f55', padding: '2px' }}>
+                                            <Trash2 size={13} />
+                                        </button>
                                     </>
                                 )}
                             </div>
@@ -299,10 +343,16 @@ export const BestiarySidebar: React.FC = () => {
                                     color: '#ffaaaa',
                                     borderRadius: '4px',
                                     cursor: 'pointer',
-                                    padding: '5px'
+                                    padding: '5px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '5px',
+                                    fontSize: '0.8rem'
                                 }}
                             >
-                                ⚔️ Combate
+                                <Swords size={13} />
+                                <span>Combate</span>
                             </button>
                             <button
                                 draggable
@@ -325,11 +375,17 @@ export const BestiarySidebar: React.FC = () => {
                                     color: '#aaffaa',
                                     borderRadius: '4px',
                                     cursor: 'pointer',
-                                    padding: '5px'
+                                    padding: '5px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '5px',
+                                    fontSize: '0.8rem'
                                 }}
                                 title="Arraste para o mapa"
                             >
-                                🗺️ Arrastar
+                                <Move size={13} />
+                                <span>Arrastar</span>
                             </button>
                         </div>
                     </div>

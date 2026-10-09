@@ -31,6 +31,8 @@ export interface MapToken {
     rotation?: number; // Rotation in degrees (0-360)
     isLocked?: boolean; // If true, prevents movement (even by GM)
     lightEnabled?: boolean; // If true (or undefined), emits light. If false, light is off.
+    elevation?: number; // Metros de elevação / voo acima do chão
+    conditions?: string[]; // Condições ativas no combate (ex: 'Caído', 'Cego', 'Amedrontado')
 }
 
 export interface Wall {

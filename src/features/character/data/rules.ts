@@ -154,14 +154,34 @@ export const TOOLS_LIST = [
     "Ferramentas de Ladrão"
 ];
 
-export const LANGUAGES_LIST = [
+export const DND_LANGUAGES = [
     "Comum",
-    "Língua Antiga",
     "Anão",
-    "Nilfgaardiano",
-    "Skellige",
-    "Gnomo"
+    "Élfico",
+    "Gigante",
+    "Gnomo",
+    "Goblin",
+    "Halfling",
+    "Órquico",
+    "Subcomum",
+    "Dracônico",
+    "Celestial",
+    "Abissal",
+    "Infernal",
+    "Primordial",
+    "Silvestre"
 ];
+
+export const WITCHER_LANGUAGES = [
+    "Comum (Fala do Norte)",
+    "Língua Antiga (Hen Llinge)",
+    "Nilfgaardiano",
+    "Dialeto de Skellige",
+    "Dialeto Mahakaman (Anão)",
+    "Dialeto Gnômico"
+];
+
+export const LANGUAGES_LIST = DND_LANGUAGES;
 
 export interface ToolRule {
     name: string;

@@ -3,6 +3,7 @@ import { useMap } from './MapContext';
 import { usePeer } from '../multiplayer/FirebaseContext';
 import { MapSettingsModal } from './MapSettingsModal';
 import { AddAssetModal } from './AddAssetModal';
+import { Hand, Ruler, Sparkles, Box, Eye, EyeOff, RefreshCw, Settings, Image } from 'lucide-react';
 
 export const MapHeaderControls: React.FC = () => {
     const {
@@ -24,24 +25,27 @@ export const MapHeaderControls: React.FC = () => {
                         className={`glass-button small ${interactionMode === 'select' ? 'active' : ''}`}
                         onClick={() => setInteractionMode('select')}
                         title="Mover (S)"
+                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                     >
-                        ✋
+                        <Hand size={14} />
                     </button>
 
                     <button
                         className={`glass-button small ${interactionMode === 'measure' ? 'active' : ''}`}
                         onClick={() => setInteractionMode('measure')}
                         title="Régua (M)"
+                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                     >
-                        📏
+                        <Ruler size={14} />
                     </button>
 
                     <button
                         className={`glass-button small ${interactionMode === 'draw' ? 'active' : ''}`}
                         onClick={() => setInteractionMode('draw')}
                         title="Laser (L)"
+                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                     >
-                        🔦
+                        <Sparkles size={14} />
                     </button>
                 </div>
 
@@ -54,16 +58,18 @@ export const MapHeaderControls: React.FC = () => {
                                 className={`glass-button small ${interactionMode === 'wall' ? 'active' : ''}`}
                                 onClick={() => setInteractionMode('wall')}
                                 title="Paredes (W)"
+                                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                             >
-                                🧱
+                                <Box size={14} />
                             </button>
 
                             <button
-                                className={`glass-button small ${config.fogEnabled === false ? '' : ''}`}
+                                className={`glass-button small`}
                                 onClick={() => setConfig({ ...config, fogEnabled: !config.fogEnabled })}
                                 title={config.fogEnabled !== false ? "Desativar Fog Global" : "Ativar Fog Global"}
+                                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                             >
-                                {config.fogEnabled !== false ? '🌑' : '☀️'}
+                                {config.fogEnabled !== false ? <EyeOff size={14} /> : <Eye size={14} />}
                             </button>
                         </div>
 
@@ -75,15 +81,17 @@ export const MapHeaderControls: React.FC = () => {
                                 }
                             }}
                             title="Forçar Sincronia (Use apenas se houver bugs)"
+                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                         >
-                            🔄
+                            <RefreshCw size={14} />
                         </button>
                         <button
                             className={`glass-button small`}
                             onClick={() => setIsConfigOpen(true)}
                             title="Configurações do Mapa"
+                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                         >
-                            ⚙️
+                            <Settings size={14} />
                         </button>
 
                         <div style={{ width: '1px', height: '24px', background: 'var(--glass-border)' }} />
@@ -92,8 +100,9 @@ export const MapHeaderControls: React.FC = () => {
                             className={`glass-button small`}
                             onClick={() => setIsAssetModalOpen(true)}
                             title="Adicionar Asset / Imagem"
+                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                         >
-                            🖼️
+                            <Image size={14} />
                         </button>
                     </>
                 )}

@@ -8,7 +8,7 @@ import { ConnectionScreen } from './features/multiplayer/ConnectionScreen'
 import { BattleMap } from './features/map/BattleMap'
 import { MapHeaderControls } from './features/map/MapToolbar';
 import { InitiativeTracker } from './features/combat/InitiativeTracker';
-import { AdventureProvider } from './features/adventure/AdventureContext'
+import { AdventureProvider, useAdventure } from './features/adventure/AdventureContext'
 import { MapProvider } from './features/map/MapContext'
 import { SceneProvider } from './features/map/SceneContext'
 import { CombatProvider } from './features/combat/CombatContext';
@@ -18,6 +18,23 @@ import { ChatProvider } from './features/chat/ChatContext';
 import { AudioProvider } from './features/audio/AudioContext';
 import { MusicPlayer } from './features/audio/MusicPlayer';
 import { Soundboard } from './features/audio/Soundboard';
+
+import {
+  User,
+  Dices,
+  Swords,
+  Skull,
+  Shield,
+  BookOpen,
+  Scroll,
+  LogOut,
+  Copy,
+  Check,
+  Link2,
+  Loader2,
+  X,
+  Sparkles
+} from 'lucide-react';
 
 // Lazy loaded heavy components to optimize initial bundle size & load on demand
 const DiceOverlay = lazy(() => import('./features/dice/DiceRoller').then(m => ({ default: m.DiceOverlay })));
@@ -31,7 +48,7 @@ const GMRulebook = lazy(() => import('./features/rules/GMRulebook').then(m => ({
 
 const LazyLoadingFallback = () => (
   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: '100px', color: '#c5a059', gap: '8px' }}>
-    <span style={{ fontSize: '1.2rem' }}>⏳</span>
+    <Loader2 size={16} className="animate-spin" />
     <span style={{ fontSize: '0.9rem' }}>Carregando módulo...</span>
   </div>
 );
@@ -39,20 +56,47 @@ const LazyLoadingFallback = () => (
 type Tab = 'dice' | 'character' | 'map' | 'gm-screen' | 'combat' | 'bestiary' | 'rules-player' | 'rules-gm';
 
 function AppContent() {
-  const { isConnected, isHost, disconnect } = usePeer();
+  const { isConnected, isHost, disconnect, closeRoom, currentAdventureId, peerId, myCharacter } = usePeer();
+  const { closeAdventure } = useAdventure();
   const [activeTab, setActiveTab] = useState<Tab>('character');
   const [viewMode, setViewMode] = useState<'connection' | 'game' | 'character-setup' | 'rules-player' | 'rules-gm'>('connection');
   const [selectedCharacterId, setSelectedCharacterId] = useState<string | null>(() => {
     return localStorage.getItem('rpg_selected_char_id') || null;
   });
 
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [copiedRoomCodeHeader, setCopiedRoomCodeHeader] = useState(false);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3000);
+  };
+
+  const activeRoomCode = currentAdventureId || peerId;
+
+  const handleCopyCodeFromHeader = () => {
+    if (!activeRoomCode) return;
+    navigator.clipboard.writeText(activeRoomCode);
+    setCopiedRoomCodeHeader(true);
+    showToast(`Código da sala "${activeRoomCode}" copiado para a área de transferência!`);
+    setTimeout(() => setCopiedRoomCodeHeader(false), 2500);
+  };
+
+  const handleCopyInviteLinkFromHeader = () => {
+    if (!activeRoomCode) return;
+    const inviteUrl = `${window.location.origin}${window.location.pathname}?sala=${encodeURIComponent(activeRoomCode)}`;
+    navigator.clipboard.writeText(inviteUrl);
+    showToast(`Link de convite para a sala "${activeRoomCode}" copiado!`);
+  };
+
   // Ao conectar ou reconectar, decidir para onde vai
   useEffect(() => {
     console.log("AppContent Mounted/Updated. Mode:", viewMode, "isConnected:", isConnected, "isHost:", isHost);
 
-    // Se for HOST e conectar/restaurar sessão na tela inicial, vai direto para o jogo
-    if (isConnected && isHost && viewMode === 'connection') {
-      console.log("Host connected/restored, switching to game view...");
+    // Se for HOST restaurando sessão prévia (ex: refresh de tela no meio da partida)
+    const isGameStarted = sessionStorage.getItem('rpg_game_started') === 'true';
+    if (isConnected && isHost && viewMode === 'connection' && isGameStarted) {
+      console.log("Host session restored from in-game refresh, switching to game view...");
       setViewMode('game');
     }
 
@@ -69,6 +113,21 @@ function AppContent() {
       }
     }
   }, [isConnected, isHost, viewMode]);
+
+  // Listen for room closure from host
+  useEffect(() => {
+    const handleRoomClosed = (e: any) => {
+      sessionStorage.removeItem('rpg_game_started');
+      localStorage.removeItem('rpg_selected_char_id');
+      closeAdventure();
+      setViewMode('connection');
+      const msg = e.detail?.reason || 'A mesa foi encerrada pelo Mestre.';
+      showToast(msg);
+      alert(msg);
+    };
+    window.addEventListener('rpg_room_closed', handleRoomClosed);
+    return () => window.removeEventListener('rpg_room_closed', handleRoomClosed);
+  }, []);
 
   // Handle Hash Navigation (for Rulebook links)
   useEffect(() => {
@@ -152,7 +211,10 @@ function AppContent() {
   if (viewMode === 'connection') {
     return (
       <ConnectionScreen
-        onStartGame={() => setViewMode('game')}
+        onStartGame={() => {
+          sessionStorage.setItem('rpg_game_started', 'true');
+          setViewMode('game');
+        }}
         onOpenPlayerRules={() => setViewMode('rules-player')}
         onOpenGMRules={() => setViewMode('rules-gm')}
       />
@@ -179,64 +241,227 @@ function AppContent() {
   return (
     <div className="app-container">
       <header className="app-header">
-        <div className="app-title">
-          🔮 RPG Tabletop
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+          <div className="app-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Shield size={18} color="#c5a059" />
+            <span>RPG Tabletop</span>
+          </div>
+
+          {/* CÓDIGO DA SALA EM DESTAQUE NO HEADER */}
+          {activeRoomCode && (
+            <div
+              className="room-code-badge"
+              onClick={handleCopyCodeFromHeader}
+              title="Clique para copiar o Código da Sala"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                background: 'linear-gradient(135deg, rgba(22, 22, 34, 0.95) 0%, rgba(12, 12, 20, 0.98) 100%)',
+                border: '1px solid rgba(255, 215, 0, 0.45)',
+                borderRadius: '20px',
+                padding: '4px 12px',
+                boxShadow: '0 0 15px rgba(255, 215, 0, 0.18)',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease'
+              }}
+            >
+              <Shield size={13} color="#ffd700" />
+              <span style={{ fontSize: '0.75rem', color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                {isHost ? 'Mesa:' : 'Sala:'}
+              </span>
+              <span style={{
+                fontFamily: 'monospace',
+                fontWeight: 'bold',
+                color: '#ffd700',
+                fontSize: '0.95rem',
+                letterSpacing: '1px'
+              }}>
+                {activeRoomCode}
+              </span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleCopyCodeFromHeader();
+                }}
+                style={{
+                  background: copiedRoomCodeHeader ? '#4caf50' : '#ffd700',
+                  color: '#000',
+                  border: 'none',
+                  borderRadius: '12px',
+                  padding: '3px 8px',
+                  fontSize: '0.72rem',
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '3px'
+                }}
+                title="Copiar Código da Sala"
+              >
+                {copiedRoomCodeHeader ? <Check size={12} /> : <Copy size={12} />}
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleCopyInviteLinkFromHeader();
+                }}
+                style={{
+                  background: '#2563eb',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '12px',
+                  padding: '3px 8px',
+                  fontSize: '0.72rem',
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center'
+                }}
+                title="Copiar Link de Convite Direto para Jogadores"
+              >
+                <Link2 size={12} />
+              </button>
+            </div>
+          )}
         </div>
 
-        {/* PREMIUM TABS */}
-        <nav className="nav-tabs" style={{ margin: '0 20px' }}>
+        {/* NAVEGAÇÃO PROFISSIONAL COM ÍCONES VETORIAIS */}
+        <nav className="nav-tabs" style={{ margin: '0 20px', display: 'flex', alignItems: 'center', gap: '6px' }}>
           <button className={`nav-tab ${activeTab === 'character' ? 'active' : ''}`} onClick={() => setActiveTab('character')}>
-            👤 Ficha
+            <User size={15} />
+            <span>Ficha</span>
+            {!isHost && myCharacter?.pendingLevelUp && (
+              <span style={{
+                background: '#ffd700',
+                color: '#000',
+                fontSize: '0.68rem',
+                fontWeight: 'bold',
+                padding: '1px 6px',
+                borderRadius: '8px',
+                marginLeft: '4px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '2px'
+              }}>
+                <Sparkles size={10} />
+                <span>Nv {myCharacter.level}!</span>
+              </span>
+            )}
           </button>
           <button className={`nav-tab ${activeTab === 'dice' ? 'active' : ''}`} onClick={() => setActiveTab('dice')}>
-            🎲 Dados
+            <Dices size={15} />
+            <span>Dados</span>
           </button>
           <button className={`nav-tab ${activeTab === 'combat' ? 'active' : ''}`} onClick={() => setActiveTab('combat')}>
-            ⚔️ Combate
+            <Swords size={15} />
+            <span>Combate</span>
           </button>
           {isHost && (
             <button className={`nav-tab ${activeTab === 'bestiary' ? 'active' : ''}`} onClick={() => setActiveTab('bestiary')}>
-              🐉 Monstros
+              <Skull size={15} />
+              <span>Monstros</span>
             </button>
           )}
           {isHost && (
             <button className={`nav-tab ${activeTab === 'gm-screen' ? 'active' : ''}`} onClick={() => setActiveTab('gm-screen')}>
-              🛡️ GM
+              <Shield size={15} />
+              <span>Painel GM</span>
             </button>
           )}
         </nav>
-        <nav className="nav-tabs" style={{ margin: '0 20px', borderLeft: '1px solid #333', paddingLeft: '20px' }}>
+        <nav className="nav-tabs" style={{ margin: '0 20px', borderLeft: '1px solid #333', paddingLeft: '20px', display: 'flex', alignItems: 'center', gap: '6px' }}>
           <button className={`nav-tab ${activeTab === 'rules-player' ? 'active' : ''}`} onClick={() => setActiveTab('rules-player')}>
-            📖 Regras
+            <BookOpen size={15} />
+            <span>Regras</span>
           </button>
           {isHost && (
             <button className={`nav-tab ${activeTab === 'rules-gm' ? 'active' : ''}`} onClick={() => setActiveTab('rules-gm')}>
-              📜 Mestre
+              <Scroll size={15} />
+              <span>Mestre</span>
             </button>
           )}
         </nav>
 
-        {/* Map Tools (Right Side) */}
+        {/* Map Tools & Exit Controls (Right Side) */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
           <MapHeaderControls />
-          <button
-            onClick={() => {
-              if (confirm("Sair da sessão?")) {
-                localStorage.removeItem('rpg_selected_char_id');
-                disconnect();
-                setViewMode('connection');
-              }
-            }}
-            style={{
-              background: '#550000', border: '1px solid #770000', color: '#fff',
-              padding: '8px 15px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold'
-            }}
-            title="Sair / Deslogar"
-          >
-            🚪 Sair
-          </button>
+          {isHost ? (
+            <button
+              onClick={() => {
+                if (confirm("Deseja realmente encerrar a mesa? Isso desconectará todos os jogadores e fechará a sala.")) {
+                  localStorage.removeItem('rpg_selected_char_id');
+                  sessionStorage.removeItem('rpg_game_started');
+                  closeRoom();
+                  closeAdventure();
+                  setViewMode('connection');
+                }
+              }}
+              style={{
+                background: '#7f1d1d', border: '1px solid #991b1b', color: '#fff',
+                padding: '6px 14px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold',
+                display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem'
+              }}
+              title="Encerrar mesa e fechar sala para todos"
+            >
+              <LogOut size={14} />
+              <span>Encerrar Mesa</span>
+            </button>
+          ) : (
+            <button
+              onClick={() => {
+                if (confirm("Deseja sair da mesa?")) {
+                  localStorage.removeItem('rpg_selected_char_id');
+                  sessionStorage.removeItem('rpg_game_started');
+                  disconnect();
+                  closeAdventure();
+                  setViewMode('connection');
+                }
+              }}
+              style={{
+                background: '#374151', border: '1px solid #4b5563', color: '#fff',
+                padding: '6px 14px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold',
+                display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem'
+              }}
+              title="Sair da sala"
+            >
+              <LogOut size={14} />
+              <span>Sair da Sala</span>
+            </button>
+          )}
         </div>
       </header>
+
+      {/* FLOATING LEVEL UP BANNER FOR PLAYERS */}
+      {!isHost && myCharacter?.pendingLevelUp && activeTab !== 'character' && (
+        <div
+          onClick={() => setActiveTab('character')}
+          style={{
+            position: 'fixed',
+            top: '56px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: 'linear-gradient(135deg, rgba(255, 215, 0, 0.95) 0%, rgba(184, 134, 11, 0.95) 100%)',
+            color: '#000',
+            padding: '6px 18px',
+            borderRadius: '20px',
+            fontWeight: 'bold',
+            fontSize: '0.82rem',
+            cursor: 'pointer',
+            boxShadow: '0 4px 16px rgba(255, 215, 0, 0.4)',
+            zIndex: 1000,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px'
+          }}
+          title="Clique para abrir sua ficha e configurar seu novo nível"
+        >
+          <Sparkles size={14} />
+          <span>Subiu para o Nível {myCharacter.level}! Clique aqui para configurar suas novas perícias e habilidades.</span>
+        </div>
+      )}
 
       {/* Main Layout */}
       <div className="main-layout">
@@ -255,12 +480,7 @@ function AppContent() {
                     <p style={{ marginTop: '10px' }}>Selecione um token ou jogador para ver detalhes.</p>
                   )}
                   {!selectedCharacterId && !isHost && (
-                    <button
-                      onClick={() => setViewMode('character-setup')}
-                      style={{ marginTop: '20px', padding: '10px', background: '#333', color: '#fff', border: '1px solid #555', cursor: 'pointer' }}
-                    >
-                      Selecionar Personagem
-                    </button>
+                    <p style={{ marginTop: '10px' }}>Carregando dados da ficha...</p>
                   )}
                 </div>
               )}
@@ -338,10 +558,12 @@ function AppContent() {
                 onClick={() => setActiveTab('dice')}
                 style={{
                   position: 'absolute', top: 20, right: 20,
-                  background: 'none', border: 'none', color: '#fff', fontSize: '1.5rem', cursor: 'pointer', zIndex: 10
+                  background: 'none', border: 'none', color: '#fff', cursor: 'pointer', zIndex: 10,
+                  display: 'flex', alignItems: 'center'
                 }}
+                title="Fechar (Esc)"
               >
-                ✕
+                <X size={24} />
               </button>
               <Suspense fallback={<LazyLoadingFallback />}>
                 {activeTab === 'rules-player' && <PlayerRulebook />}
@@ -352,6 +574,32 @@ function AppContent() {
         )}
 
       </div>
+
+      {/* Floating Room Code / Action Toast */}
+      {toastMessage && (
+        <div style={{
+          position: 'fixed',
+          bottom: '24px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          background: '#151522',
+          border: '1px solid #ffd700',
+          color: '#ffd700',
+          padding: '10px 22px',
+          borderRadius: '24px',
+          boxShadow: '0 8px 30px rgba(0, 0, 0, 0.8)',
+          zIndex: 99999,
+          fontSize: '0.9rem',
+          fontWeight: 'bold',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          pointerEvents: 'none'
+        }}>
+          <Shield size={16} color="#ffd700" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
     </div>
   )
 }

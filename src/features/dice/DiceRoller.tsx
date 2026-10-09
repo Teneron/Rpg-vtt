@@ -5,6 +5,7 @@ import { useDice } from './DiceContext';
 import './DiceRoller.css';
 import { DiceScene } from './DiceScene';
 import { usePeer } from '../multiplayer/FirebaseContext';
+import { Users } from 'lucide-react';
 
 
 interface DieDefinition {
@@ -76,8 +77,9 @@ export const DiceSidebar: React.FC = () => {
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center'
             }}>
                 <span style={{ fontWeight: 'bold', color: '#ffaa00' }}>BANDEJA DE DADOS</span>
-                <div style={{ fontSize: '0.8rem', color: '#888' }}>
-                    🟢 {connections.length + 1} {connections.length + 1 === 1 ? 'Jogador' : 'Jogadores'}
+                <div style={{ fontSize: '0.8rem', color: '#888', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Users size={14} color="#22c55e" />
+                    <span>{connections.length + 1} {connections.length + 1 === 1 ? 'Jogador' : 'Jogadores'}</span>
                 </div>
             </div>
 

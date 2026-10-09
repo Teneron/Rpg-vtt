@@ -2,6 +2,13 @@ import express from 'express';
 import http from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import fs from 'fs';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const distPath = path.join(__dirname, '..', 'dist');
 
 const PORT = process.env.PORT || 3001;
 
@@ -22,16 +29,7 @@ app.use(express.json());
 // }
 const rooms = new Map();
 
-// Health check endpoints
-app.get('/', (req, res) => {
-    res.json({
-        name: 'RPG Tabletop Socket Server',
-        status: 'online',
-        uptime: process.uptime(),
-        activeRooms: rooms.size
-    });
-});
-
+// Health check endpoint
 app.get('/health', (req, res) => {
     res.json({
         status: 'healthy',
@@ -39,6 +37,26 @@ app.get('/health', (req, res) => {
         activeRooms: rooms.size
     });
 });
+
+// Serve static frontend build if available (Production All-in-One mode)
+if (fs.existsSync(distPath)) {
+    console.log(`[Server] Serving production frontend build from: ${distPath}`);
+    app.use(express.static(distPath));
+    app.get('*', (req, res, next) => {
+        if (req.path.startsWith('/socket.io') || req.path === '/health') return next();
+        res.sendFile(path.join(distPath, 'index.html'));
+    });
+} else {
+    // Health check endpoints in dev / standalone API mode
+    app.get('/', (req, res) => {
+        res.json({
+            name: 'RPG Tabletop Socket Server',
+            status: 'online',
+            uptime: process.uptime(),
+            activeRooms: rooms.size
+        });
+    });
+}
 
 const server = http.createServer(app);
 
@@ -57,22 +75,26 @@ io.on('connection', (socket) => {
     const joinedRooms = new Set();
 
     // 1. JOIN ROOM
-    socket.on('join_room', ({ roomId, playerName, isHost, character, userId }, callback) => {
-        if (!roomId) {
+    socket.on('join_room', ({ roomId, playerName, isHost, character, userId, system }, callback) => {
+        const cleanRoomId = roomId ? String(roomId).trim() : '';
+        if (!cleanRoomId) {
             if (callback) callback({ success: false, error: 'roomId is required' });
             return;
         }
 
-        socket.join(roomId);
-        joinedRooms.add(roomId);
-
-        let room = rooms.get(roomId);
+        let room = rooms.get(cleanRoomId);
         if (!room) {
+            if (!isHost) {
+                console.log(`[Socket] Player ${playerName || socket.id} attempted to join non-existent room: ${cleanRoomId}`);
+                if (callback) callback({ success: false, error: 'A sala informada não existe ou o Mestre ainda não abriu a mesa. Verifique o código digitado!' });
+                return;
+            }
             room = {
-                roomId,
-                hostSocketId: isHost ? socket.id : null,
-                hostUserId: isHost ? userId : null,
-                hostName: isHost ? playerName : null,
+                roomId: cleanRoomId,
+                system: system || (cleanRoomId.toUpperCase().startsWith('WTC') ? 'witcher' : 'dnd55e'),
+                hostSocketId: socket.id,
+                hostUserId: userId || null,
+                hostName: playerName || 'Mestre',
                 members: new Map(),
                 gameState: {
                     map: null,
@@ -80,13 +102,33 @@ io.on('connection', (socket) => {
                     chatHistory: []
                 }
             };
-            rooms.set(roomId, room);
+            rooms.set(cleanRoomId, room);
+        } else {
+            if (!isHost && !room.hostSocketId) {
+                console.log(`[Socket] Player ${playerName || socket.id} attempted to join room with offline host: ${cleanRoomId}`);
+                if (callback) callback({ success: false, error: 'O Mestre desta mesa está desconectado no momento.' });
+                return;
+            }
         }
+
+        socket.join(cleanRoomId);
+        joinedRooms.add(cleanRoomId);
 
         if (isHost) {
             room.hostSocketId = socket.id;
             room.hostUserId = userId;
             room.hostName = playerName;
+            if (system) room.system = system;
+        }
+
+        // Clean up any stale socket entries for the same userId in this room
+        if (userId) {
+            for (const [existingSocketId, existingMember] of room.members.entries()) {
+                if (existingMember.userId === userId && existingSocketId !== socket.id) {
+                    console.log(`[Room ${cleanRoomId}] Pruning stale socket ${existingSocketId} for user ${userId}`);
+                    room.members.delete(existingSocketId);
+                }
+            }
         }
 
         const memberData = {
@@ -100,17 +142,18 @@ io.on('connection', (socket) => {
 
         room.members.set(socket.id, memberData);
 
-        console.log(`[Room ${roomId}] ${memberData.playerName} (${memberData.isHost ? 'Host' : 'Player'}) joined. Members: ${room.members.size}`);
+        console.log(`[Room ${cleanRoomId}] [System: ${room.system}] ${memberData.playerName} (${memberData.isHost ? 'Host' : 'Player'}) joined. Members: ${room.members.size}`);
 
         // Broadcast to existing room members
-        socket.to(roomId).emit('player_joined', memberData);
+        socket.to(cleanRoomId).emit('player_joined', memberData);
 
         // Prepare existing members array to return to the joined player
         const currentMembers = Array.from(room.members.values());
 
         const responsePayload = {
             success: true,
-            roomId,
+            roomId: cleanRoomId,
+            system: room.system,
             isHost: !!isHost,
             hostName: room.hostName,
             members: currentMembers,
@@ -123,9 +166,10 @@ io.on('connection', (socket) => {
 
     // 2. PEER MESSAGE RELAY (Matches PeerMessage protocol)
     socket.on('peer_message', ({ roomId, message }) => {
-        if (!roomId || !message) return;
+        const cleanRoomId = roomId ? String(roomId).trim() : '';
+        if (!cleanRoomId || !message) return;
 
-        const room = rooms.get(roomId);
+        const room = rooms.get(cleanRoomId);
         if (!room) return;
 
         // Optionally cache state updates to accelerate sync for late-joining players
@@ -142,26 +186,102 @@ io.on('connection', (socket) => {
         }
 
         // Broadcast to all other peers in the room
-        socket.to(roomId).emit('peer_message', message);
+        socket.to(cleanRoomId).emit('peer_message', message);
     });
 
     // 3. BROADCAST TO ALL IN ROOM (including sender if requested)
     socket.on('room_broadcast', ({ roomId, event, data, includeSender }) => {
-        if (!roomId || !event) return;
+        const cleanRoomId = roomId ? String(roomId).trim() : '';
+        if (!cleanRoomId || !event) return;
         if (includeSender) {
-            io.to(roomId).emit(event, data);
+            io.to(cleanRoomId).emit(event, data);
         } else {
-            socket.to(roomId).emit(event, data);
+            socket.to(cleanRoomId).emit(event, data);
         }
     });
 
-    // 4. LEAVE ROOM
-    socket.on('leave_room', ({ roomId }) => {
-        if (!roomId) return;
-        handleSocketLeaveRoom(socket, roomId);
+    // 4. CLOSE ROOM (Explicitly by Host)
+    socket.on('close_room', ({ roomId }) => {
+        const cleanRoomId = roomId ? String(roomId).trim() : '';
+        if (!cleanRoomId) return;
+        const room = rooms.get(cleanRoomId);
+        if (!room) return;
+
+        const sender = room.members.get(socket.id);
+        const isHost = sender?.isHost || room.hostSocketId === socket.id;
+
+        if (isHost) {
+            console.log(`[Room ${cleanRoomId}] Room closed by Host (${socket.id}). Notifying all players.`);
+            io.to(cleanRoomId).emit('room_closed', {
+                roomId: cleanRoomId,
+                reason: 'A mesa foi encerrada pelo Mestre.'
+            });
+            io.in(cleanRoomId).socketsLeave(cleanRoomId);
+            rooms.delete(cleanRoomId);
+            joinedRooms.delete(cleanRoomId);
+        }
     });
 
-    // 5. DISCONNECT
+    // 5. LEAVE ROOM
+    socket.on('leave_room', ({ roomId, closeRoom }) => {
+        const cleanRoomId = roomId ? String(roomId).trim() : '';
+        if (!cleanRoomId) return;
+
+        const room = rooms.get(cleanRoomId);
+        const sender = room?.members.get(socket.id);
+        const isHost = sender?.isHost || room?.hostSocketId === socket.id;
+
+        if (isHost && closeRoom) {
+            console.log(`[Room ${cleanRoomId}] Host left with closeRoom flag. Terminating room.`);
+            io.to(cleanRoomId).emit('room_closed', {
+                roomId: cleanRoomId,
+                reason: 'A mesa foi encerrada pelo Mestre.'
+            });
+            io.in(cleanRoomId).socketsLeave(cleanRoomId);
+            rooms.delete(cleanRoomId);
+            joinedRooms.delete(cleanRoomId);
+            return;
+        }
+
+        socket.leave(cleanRoomId);
+        joinedRooms.delete(cleanRoomId);
+        handleSocketLeaveRoom(socket, cleanRoomId);
+    });
+
+    // 6. KICK / REMOVE PLAYER (Host Only)
+    socket.on('kick_player', ({ roomId, userId }) => {
+        const cleanRoomId = roomId ? String(roomId).trim() : '';
+        if (!cleanRoomId || !userId) return;
+        const room = rooms.get(cleanRoomId);
+        if (!room) return;
+
+        const sender = room.members.get(socket.id);
+        const isHost = sender?.isHost || room.hostSocketId === socket.id;
+        if (!isHost) return;
+
+        for (const [memberSocketId, member] of room.members.entries()) {
+            if (member.userId === userId) {
+                console.log(`[Room ${cleanRoomId}] Host kicked player: ${member.playerName} (${userId})`);
+                const targetSocket = io.sockets.sockets.get(memberSocketId);
+                if (targetSocket) {
+                    targetSocket.emit('player_kicked', {
+                        reason: 'Voce foi removido da mesa pelo Mestre.'
+                    });
+                    targetSocket.leave(cleanRoomId);
+                }
+                room.members.delete(memberSocketId);
+                socket.to(cleanRoomId).emit('player_left', {
+                    socketId: memberSocketId,
+                    userId: member.userId,
+                    playerName: member.playerName,
+                    wasHost: false
+                });
+                break;
+            }
+        }
+    });
+
+    // 7. DISCONNECT
     socket.on('disconnect', () => {
         console.log(`[Socket] Client disconnected: ${socket.id}`);
         for (const roomId of joinedRooms) {
@@ -190,15 +310,15 @@ function handleSocketLeaveRoom(socket, roomId) {
         });
     }
 
-    // If room is empty, clean it up after a brief grace period (5 minutes)
+    // If room is empty, clean it up quickly (15 seconds grace period for page reloads)
     if (room.members.size === 0) {
         setTimeout(() => {
             const currentRoom = rooms.get(roomId);
             if (currentRoom && currentRoom.members.size === 0) {
                 rooms.delete(roomId);
-                console.log(`[Room ${roomId}] Expired and cleaned up.`);
+                console.log(`[Room ${roomId}] Empty room expired and cleaned up.`);
             }
-        }, 5 * 60 * 1000);
+        }, 15 * 1000);
     }
 }
 
@@ -214,8 +334,8 @@ if (process.env.NODE_ENV !== 'test') {
 
     server.listen(PORT, () => {
         console.log(`===============================================`);
-        console.log(`🚀 RPG Tabletop Server listening on port ${PORT}`);
-        console.log(`📡 WebSocket ready for connections`);
+        console.log(`RPG Tabletop Server listening on port ${PORT}`);
+        console.log(`WebSocket ready for connections`);
         console.log(`===============================================`);
     });
 }

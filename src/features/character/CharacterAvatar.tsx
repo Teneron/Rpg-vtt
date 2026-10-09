@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import type { Character } from './characterTypes';
+import { Edit2 } from 'lucide-react';
 import '../../Layout.css';
 
 interface CharacterAvatarProps {
@@ -63,7 +64,7 @@ export const CharacterAvatar: React.FC<CharacterAvatarProps> = ({ character, onU
                     fontSize: '12px'
                 }}
             >
-                ✏️
+                <Edit2 size={13} />
             </button>
 
             {isEditing && (

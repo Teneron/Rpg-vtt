@@ -62,6 +62,96 @@ export const SPELLS: Spell[] = [
         description: 'Arma de madeira usa seu atributo de conjuração e causa 1d8.',
         classes: ['druid']
     },
+    {
+        id: 'light', name: 'Luz', level: 0, school: 'Evocação',
+        castingTime: '1 ação', range: 'Toque', components: 'V, M', duration: '1 hora',
+        description: 'Toca um objeto que emite luz plena num raio de 6m e penumbra por mais 6m.',
+        classes: ['bard', 'cleric', 'sorcerer', 'wizard']
+    },
+    {
+        id: 'prestidigitation', name: 'Prestidigitação', level: 0, school: 'Transmutação',
+        castingTime: '1 ação', range: '3m', components: 'V, S', duration: 'Até 1 hora',
+        description: 'Efeitos sensoriais inofensivos: acender/apagar velas, limpar/sujar, aquecer/esfriar ou criar ilusão tátil menor.',
+        classes: ['bard', 'sorcerer', 'warlock', 'wizard']
+    },
+    {
+        id: 'thaumaturgy', name: 'Taumaturgia', level: 0, school: 'Transmutação',
+        castingTime: '1 ação', range: '9m', components: 'V', duration: 'Até 1 minuto',
+        description: 'Manifestações menores de poder divino: voz 3x mais alta, chamas tremeluzentes, tremores e portas abertas bruscamente.',
+        classes: ['cleric']
+    },
+    {
+        id: 'message', name: 'Mensagem', level: 0, school: 'Transmutação',
+        castingTime: '1 ação', range: '36m', components: 'V, S, M', duration: '1 rodada',
+        description: 'Aponta o dedo e sussurra uma mensagem secreta que apenas o alvo escuta e pode responder em sussurro.',
+        classes: ['bard', 'sorcerer', 'wizard']
+    },
+    {
+        id: 'mending', name: 'Conserto', level: 0, school: 'Transmutação',
+        castingTime: '1 minuto', range: 'Toque', components: 'V, S, M', duration: 'Instantânea',
+        description: 'Repara uma única quebra ou rasgo em um objeto de até 30 centímetros (ex: elo de corrente, manto rasgado, chave partida).',
+        classes: ['bard', 'cleric', 'druid', 'sorcerer', 'wizard']
+    },
+    {
+        id: 'shocking_grasp', name: 'Toque Chocante', level: 0, school: 'Evocação',
+        castingTime: '1 ação', range: 'Toque', components: 'V, S', duration: 'Instantânea',
+        description: 'Ataque mágico corpo a corpo elétrico. 1d8 dano elétrico, vantagem contra alvos de armadura metálica e impede reações do alvo.',
+        classes: ['sorcerer', 'wizard']
+    },
+    {
+        id: 'ray_of_frost', name: 'Raio de Gelo', level: 0, school: 'Evocação',
+        castingTime: '1 ação', range: '18m', components: 'V, S', duration: 'Instantânea',
+        description: 'Feixe de luz azul e frio cortante. 1d8 de dano de frio e o deslocamento do alvo é reduzido em 3 metros.',
+        classes: ['sorcerer', 'wizard']
+    },
+    {
+        id: 'chill_touch', name: 'Toque Arrepiante', level: 0, school: 'Necromancia',
+        castingTime: '1 ação', range: '36m', components: 'V, S', duration: '1 rodada',
+        description: 'Mão esquelética espectral envolve o alvo. 1d8 de dano necrótico e impede que o alvo recupere pontos de vida até o próximo turno.',
+        classes: ['sorcerer', 'warlock', 'wizard']
+    },
+    {
+        id: 'poison_spray', name: 'Rajada de Veneno', level: 0, school: 'Necromancia',
+        castingTime: '1 ação', range: '9m', components: 'V, S', duration: 'Instantânea',
+        description: 'Projeta uma nuvem densa de fumaça tóxica. O alvo sofre 1d12 de dano de veneno se falhar na salvaguarda de Constituição.',
+        classes: ['druid', 'sorcerer', 'warlock', 'wizard']
+    },
+    {
+        id: 'druidcraft', name: 'Druidismo', level: 0, school: 'Transmutação',
+        castingTime: '1 ação', range: '9m', components: 'V, S', duration: 'Instantânea',
+        description: 'Prevê o clima das próximas 24h, faz brotos e flores desabrocharem ou cria brisas sutis e aromas silvestres.',
+        classes: ['druid']
+    },
+    {
+        id: 'thorn_whip', name: 'Chicote de Espinhos', level: 0, school: 'Transmutação',
+        castingTime: '1 ação', range: '9m', components: 'V, S, M', duration: 'Instantânea',
+        description: 'Chicote de vinhas espinhosas. 1d6 de dano perfurante e puxa o alvo Grande ou menor até 3 metros em sua direção.',
+        classes: ['druid']
+    },
+    {
+        id: 'resistance', name: 'Resistência', level: 0, school: 'Abjuração',
+        castingTime: '1 ação', range: 'Toque', components: 'V, S, M', duration: 'Conc, 1 min',
+        description: 'Toca uma criatura disposta. Ela pode adicionar 1d4 a uma salvaguarda à sua escolha antes da duração expirar.',
+        classes: ['cleric', 'druid']
+    },
+    {
+        id: 'spare_the_dying', name: 'Poupar os Moribundos', level: 0, school: 'Necromancia',
+        castingTime: '1 ação', range: 'Toque', components: 'V, S', duration: 'Instantânea',
+        description: 'Toca uma criatura viva com 0 Pontos de Vida. Ela se torna estável imediatamente.',
+        classes: ['cleric']
+    },
+    {
+        id: 'true_strike', name: 'Ataque Certeiro (2024)', level: 0, school: 'Adivinhação',
+        castingTime: '1 ação', range: 'Alcance da Arma', components: 'S, M', duration: 'Instantânea',
+        description: 'Guia misticamente seu golpe. Realiza um ataque com arma usando seu modificador de magia e o ataque causa dano Radiante.',
+        classes: ['bard', 'sorcerer', 'warlock', 'wizard']
+    },
+    {
+        id: 'dancing_lights', name: 'Globos de Luz', level: 0, school: 'Evocação',
+        castingTime: '1 ação', range: '36m', components: 'V, S, M', duration: 'Conc, 1 min',
+        description: 'Cria até quatro luzes cintilantes semelhantes a tochas ou vaga-lumes que flutuam sob seu comando mental.',
+        classes: ['bard', 'sorcerer', 'wizard']
+    },
 
     // --- NÍVEL 1 ---
     {
@@ -266,51 +356,171 @@ export const SPELLS: Spell[] = [
         description: 'Próximo ataque à distância explode em espinhos. 1d10 perfurante em área.',
         classes: ['ranger']
     },
+    {
+        id: 'sleep', name: 'Sono', level: 1, school: 'Encantamento',
+        castingTime: '1 ação', range: '27m', components: 'V, S, M', duration: 'Conc, 1 min',
+        description: 'Criaturas em esfera de 1,5m realizam Wisdom Save ou caem Inconscientes/Incapacitadas até levar dano ou serem acordadas.',
+        classes: ['bard', 'sorcerer', 'wizard']
+    },
+    {
+        id: 'feather_fall', name: 'Queda Suave', level: 1, school: 'Transmutação',
+        castingTime: '1 reação', range: '18m', components: 'V, M', duration: '1 min',
+        description: 'Diminui a velocidade de queda de até 5 criaturas caindo para 18m por rodada sem sofrer dano de queda.',
+        classes: ['bard', 'sorcerer', 'wizard']
+    },
+    {
+        id: 'detect_magic', name: 'Detectar Magia', level: 1, school: 'Adivinhação',
+        castingTime: '1 ação (Ritual)', range: 'Pessoal (9m)', components: 'V, S', duration: 'Conc, 10 min',
+        description: 'Sente a presença de magia num raio de 9m e identifica a escola de magia visível.',
+        classes: ['bard', 'cleric', 'druid', 'paladin', 'ranger', 'sorcerer', 'warlock', 'wizard']
+    },
+    {
+        id: 'comprehend_languages', name: 'Compreender Idiomas', level: 1, school: 'Adivinhação',
+        castingTime: '1 ação (Ritual)', range: 'Pessoal', components: 'V, S, M', duration: '1 hora',
+        description: 'Entende o sentido literal de qualquer idioma falado ou texto escrito tocado.',
+        classes: ['bard', 'sorcerer', 'warlock', 'wizard']
+    },
+    {
+        id: 'grease', name: 'Graxa', level: 1, school: 'Conjuração',
+        castingTime: '1 ação', range: '18m', components: 'V, S, M', duration: '1 min',
+        description: 'Cobre quadrado de 3m com graxa escorregadia (terreno difícil). Entrar ou iniciar turno exige Dex Save ou fica Caído.',
+        classes: ['sorcerer', 'wizard']
+    },
+    {
+        id: 'fog_cloud', name: 'Nuvem de Nevoeiro', level: 1, school: 'Conjuração',
+        castingTime: '1 ação', range: '36m', components: 'V, S', duration: 'Conc, 1 hora',
+        description: 'Cria esfera de 6m de raio com névoa densa que bloqueia visão (área pesadamente obscurecida).',
+        classes: ['druid', 'ranger', 'sorcerer', 'wizard']
+    },
+    {
+        id: 'speak_with_animals', name: 'Falar com Animais', level: 1, school: 'Adivinhação',
+        castingTime: '1 ação (Ritual)', range: 'Pessoal', components: 'V, S', duration: '10 min',
+        description: 'Ganha a habilidade de compreender e comunicar-se verbalmente com feras.',
+        classes: ['bard', 'druid', 'ranger', 'warlock']
+    },
+    {
+        id: 'inflict_wounds', name: 'Infligir Ferimentos', level: 1, school: 'Necromancia',
+        castingTime: '1 ação', range: 'Toque', components: 'V, S', duration: 'Instantânea',
+        description: 'Ataque mágico corpo a corpo canalizando energia necrosante, causando 3d10 de dano necrótico.',
+        classes: ['cleric']
+    },
+    {
+        id: 'false_life', name: 'Vida Falsa', level: 1, school: 'Necromancia',
+        castingTime: '1 ação', range: 'Pessoal', components: 'V, S, M', duration: '1 hora',
+        description: 'Reforça-se com vitalidade necromântica, ganhando 2d4 + 4 pontos de vida temporários.',
+        classes: ['sorcerer', 'wizard']
+    },
+    {
+        id: 'witch_bolt', name: 'Raio de Bruxa', level: 1, school: 'Evocação',
+        castingTime: '1 ação', range: '9m', components: 'V, S, M', duration: 'Conc, 1 min',
+        description: 'Raio de energia elétrica sustentada que causa 2d12 de dano de eletricidade no acerto e pode repetir o dano com Ação Bônus em turnos subsequentes.',
+        classes: ['sorcerer', 'warlock', 'wizard']
+    },
+    {
+        id: 'divine_smite', name: 'Punição Divina', level: 1, school: 'Evocação',
+        castingTime: '1 bônus', range: 'Pessoal', components: 'V', duration: 'Instantânea',
+        description: 'Conjurada imediatamente após acertar um ataque corpo a corpo com arma ou desarmado. Causa 2d8 de dano radiante extra (+1d8 contra mortos-vivos ou ínferos).',
+        classes: ['paladin']
+    },
+    {
+        id: 'searing_smite', name: 'Punição Ardente', level: 1, school: 'Evocação',
+        castingTime: '1 bônus', range: 'Pessoal', components: 'V', duration: 'Conc, 1 min',
+        description: 'Próximo ataque com arma causa 1d6 extra de fogo e incendeia o alvo, que sofre 1d6 de fogo no início de seus turnos até passar em Con Save.',
+        classes: ['paladin', 'ranger']
+    },
+    {
+        id: 'unseen_servant', name: 'Servo Invisível', level: 1, school: 'Conjuração',
+        castingTime: '1 ação (Ritual)', range: '18m', components: 'V, S, M', duration: '1 hora',
+        description: 'Manifesta uma força invisível e irracional que executa tarefas manuais simples a seu comando.',
+        classes: ['bard', 'warlock', 'wizard']
+    },
+    {
+        id: 'longstrider', name: 'Passos Longos', level: 1, school: 'Transmutação',
+        castingTime: '1 ação', range: 'Toque', components: 'V, S, M', duration: '1 hora',
+        description: 'Toca uma criatura aumentando o seu deslocamento terrestre em 3 metros durante toda a duração.',
+        classes: ['bard', 'druid', 'ranger', 'wizard']
+    },
+    {
+        id: 'jump', name: 'Salto', level: 1, school: 'Transmutação',
+        castingTime: '1 bônus', range: 'Toque', components: 'V, S, M', duration: '1 min',
+        description: 'Toca uma criatura. Uma vez em cada um de seus turnos, pode gastar 3m de movimento para saltar até 9m.',
+        classes: ['druid', 'ranger', 'sorcerer', 'wizard']
+    },
+    {
+        id: 'silent_image', name: 'Imagem Silenciosa', level: 1, school: 'Ilusão',
+        castingTime: '1 ação', range: '18m', components: 'V, S, M', duration: 'Conc, 10 min',
+        description: 'Cria a imagem ilusória de um objeto, criatura ou fenômeno visível em cubo de 4,5m.',
+        classes: ['bard', 'sorcerer', 'wizard']
+    },
+    {
+        id: 'disguise_self', name: 'Disfarçar-se', level: 1, school: 'Ilusão',
+        castingTime: '1 ação', range: 'Pessoal', components: 'V, S', duration: '1 hora',
+        description: 'Modifica magicamente a sua aparência, roupas e equipamentos ilusoriamente por até 1 hora.',
+        classes: ['bard', 'sorcerer', 'wizard']
+    },
     // ------------------------------------
-    // --- WITCHER SIGNS (SINAIS) & FEITIÇOS ---
+    // ------------------------------------
+    // --- WITCHER SIGNS (SINAIS BÁSICOS) & FEITIÇOS ---
     {
-        id: 'aard', name: 'Sinal: Aard', level: 1, school: 'Evocação',
+        id: 'aard', name: 'Sinal: Aard', level: 0, school: 'Evocação',
         castingTime: '1 ação', range: 'Cone 6m', components: 'S', duration: 'Instantânea',
-        description: 'Explosão de força. 2d6 trovejante e empurra 4.5m (Str Save).',
+        description: 'Explosão de força telecinética. 2d6 de dano de concussão e empurra o alvo 4,5m ou derruba caído (Str Save).',
         classes: ['witcher']
     },
     {
-        id: 'igni', name: 'Sinal: Igni', level: 1, school: 'Evocação',
+        id: 'igni', name: 'Sinal: Igni', level: 0, school: 'Evocação',
         castingTime: '1 ação', range: 'Cone 4.5m', components: 'S', duration: 'Instantânea',
-        description: 'Jato de chamas. 2d8 de fogo e empurra 1.5m (Dex Save).',
+        description: 'Jato cônico de chamas. 2d8 de dano de fogo e incendeia alvos vulneráveis (Dex Save).',
         classes: ['witcher']
     },
     {
-        id: 'quen', name: 'Sinal: Quen', level: 1, school: 'Abjuração',
+        id: 'quen', name: 'Sinal: Quen', level: 0, school: 'Abjuração',
         castingTime: '1 bônus', range: 'Pessoal', components: 'S', duration: 'Conc, 1 min',
-        description: 'Escudo protetor. +2 na CA e Salvaguardas.',
+        description: 'Escudo arcano protetor que envolve o corpo do bruxo. Concede +2 na CA e salvaguardas enquanto ativo.',
         classes: ['witcher']
     },
     {
-        id: 'axii', name: 'Sinal: Axii', level: 1, school: 'Encantamento',
+        id: 'axii', name: 'Sinal: Axii', level: 0, school: 'Encantamento',
         castingTime: '1 ação', range: '9m', components: 'S', duration: 'Instantânea',
-        description: 'Confundir mente. 2d6 psíquico e desvantagem (Wis Save).',
+        description: 'Onda mental hipnótica que confunde o alvo (Wis Save). Causa 2d6 psíquico e impõe desvantagem.',
         classes: ['witcher']
     },
     {
-        id: 'yrden', name: 'Sinal: Yrden', level: 4, school: 'Abjuração',
+        id: 'yrden', name: 'Sinal: Yrden', level: 0, school: 'Abjuração',
         castingTime: '1 ação', range: '9m', components: 'S', duration: '1 minuto',
-        description: 'Armadilha mágica 4.5m raio. Dano aumentado em 1d4 na área, terreno difícil.',
+        description: 'Armadilha mágica circular de 4,5m de raio no chão. Cria terreno difícil para inimigos e materializa espectros.',
         classes: ['witcher']
     },
     {
-        id: 'heliotrope', name: 'Sinal: Heliotropo', level: 2, school: 'Abjuração',
+        id: 'heliotrope', name: 'Sinal: Heliotropo', level: 1, school: 'Abjuração',
         castingTime: '1 reação', range: 'Pessoal', components: 'S', duration: 'Instantânea',
-        description: 'Reduz dano recebido em 3d8.',
+        description: 'Gesto defensivo reflexivo ao sofrer dano mágico ou físico. Reduz o dano recebido em 2d8 + mod.',
+        classes: ['witcher']
+    },
+    {
+        id: 'somne', name: 'Sinal: Somne', level: 1, school: 'Encantamento',
+        castingTime: '1 ação', range: '9m', components: 'S', duration: '1 minuto',
+        description: 'Gesto arcano calmante que induz sonolência rápida no alvo (Wis Save ou fica Inconsciente/Adormecido até sofrer dano).',
+        classes: ['witcher']
+    },
+    {
+        id: 'alchemical_vigor', name: 'Vigor Alquímico', level: 1, school: 'Transmutação',
+        castingTime: '1 bônus', range: 'Pessoal', components: 'S, M', duration: '1 hora',
+        description: 'Catalisa os mutagênicos no organismo. Concede 1d10 + mod PV temporários e vantagem em salvaguardas contra veneno.',
+        classes: ['witcher']
+    },
+    {
+        id: 'cat_vision', name: 'Elixir: Gato (Visão Noturna)', level: 1, school: 'Transmutação',
+        castingTime: '1 bônus', range: 'Pessoal', components: 'S, M', duration: '1 hora',
+        description: 'Dilata as pupilas felinas. Concede visão no escuro total (36m) e imunidade à penumbra.',
         classes: ['witcher']
     },
     {
         id: 'glacies', name: 'Glacies', level: 3, school: 'Evocação',
         castingTime: '1 ação', range: '18m', components: 'S', duration: '1 minuto',
-        description: 'Rajada de gelo. 5d8 frio e imobiliza (Str Save).',
+        description: 'Rajada congelante profunda. 5d8 frio e imobiliza o alvo (Str Save).',
         classes: ['witcher']
     },
-    // Adding generic cantrips available to Witcher as per text (e.g. Produce Flame, Friends)
     {
         id: 'produce_flame', name: 'Produzir Chama', level: 0, school: 'Evocação',
         castingTime: '1 ação', range: '9m', components: 'V, S', duration: '10 min',

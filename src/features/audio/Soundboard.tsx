@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useAudio } from './AudioContext';
 import { usePeer } from '../multiplayer/FirebaseContext';
-import { Zap, Plus, Trash2 } from 'lucide-react';
+import { Zap, Plus, Trash2, Swords, Flame, DoorClosed, Crosshair, Square, Music, Volume2, Sparkles, Heart, Dices, Skull, X } from 'lucide-react';
 import { db } from '../../db/RPGDatabase';
 
 export const Soundboard: React.FC = () => {
@@ -123,9 +123,10 @@ export const Soundboard: React.FC = () => {
                 </span>
                 <button
                     onClick={() => setIsExpanded(false)}
-                    style={{ background: 'none', border: 'none', color: '#aaa', cursor: 'pointer', fontSize: '1.2rem' }}
+                    style={{ background: 'none', border: 'none', color: '#aaa', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                    title="Fechar"
                 >
-                    ×
+                    <X size={16} />
                 </button>
             </div>
 
@@ -147,18 +148,33 @@ export const Soundboard: React.FC = () => {
 
             {/* Default SFX (Only in SFX tab) */}
             {tab === 'sfx' && (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '15px', borderBottom: '1px solid #332211', paddingBottom: '10px' }}>
-                    <button onClick={() => playSfx({ id: 'sfx-sword', title: 'Espada', url: '/assets/sfx/sword.mp3', type: 'sfx', volume: 0.6 })} className="sfx-btn">
-                        ⚔️ Espada
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px', marginBottom: '15px', borderBottom: '1px solid #332211', paddingBottom: '10px' }}>
+                    <button onClick={() => playSfx({ id: 'sfx-sword', title: 'Espada', url: '/assets/sfx/sword.mp3', type: 'sfx', volume: 0.7 })} className="sfx-btn" title="Ataque Cortante">
+                        <Swords size={13} /> <span>Espada</span>
                     </button>
-                    <button onClick={() => playSfx({ id: 'sfx-explosion', title: 'Explosão', url: '/assets/sfx/explosion.mp3', type: 'sfx', volume: 0.8 })} className="sfx-btn">
-                        💥 Explosão
+                    <button onClick={() => playSfx({ id: 'sfx-arrow', title: 'Flecha', url: '/assets/sfx/arrow.ogg', type: 'sfx', volume: 0.8 })} className="sfx-btn" title="Disparo à Distância">
+                        <Crosshair size={13} /> <span>Flecha</span>
                     </button>
-                    <button onClick={() => playSfx({ id: 'sfx-door', title: 'Porta', url: '/assets/sfx/door.wav?t=3', type: 'sfx', volume: 0.9 })} className="sfx-btn">
-                        🚪 Porta
+                    <button onClick={() => playSfx({ id: 'sfx-explosion', title: 'Explosão', url: '/assets/sfx/explosion.mp3', type: 'sfx', volume: 0.8 })} className="sfx-btn" title="Impacto Explosivo / Fogo">
+                        <Flame size={13} /> <span>Explosão</span>
                     </button>
-                    <button onClick={() => playSfx({ id: 'sfx-arrow', title: 'Flecha', url: '/assets/sfx/arrow.ogg?t=3', type: 'sfx', volume: 0.8 })} className="sfx-btn">
-                        🏹 Flecha
+                    <button onClick={() => playSfx({ id: 'sfx-door', title: 'Porta', url: '/assets/sfx/door.wav', type: 'sfx', volume: 0.85 })} className="sfx-btn" title="Abrir Porta de Madeira">
+                        <DoorClosed size={13} /> <span>Porta</span>
+                    </button>
+                    <button onClick={() => playSfx({ id: 'sfx-magic', title: 'Magia', url: '', synthType: 'magic', type: 'sfx', volume: 0.8 })} className="sfx-btn" title="Conjuração Arcana">
+                        <Sparkles size={13} color="#93c5fd" /> <span>Magia</span>
+                    </button>
+                    <button onClick={() => playSfx({ id: 'sfx-heal', title: 'Cura', url: '', synthType: 'heal', type: 'sfx', volume: 0.8 })} className="sfx-btn" title="Restauração / Poção">
+                        <Heart size={13} color="#86efac" /> <span>Cura</span>
+                    </button>
+                    <button onClick={() => playSfx({ id: 'sfx-dice', title: 'Dado', url: '', synthType: 'dice', type: 'sfx', volume: 0.8 })} className="sfx-btn" title="Rolagem de Dados">
+                        <Dices size={13} color="#fde047" /> <span>Dados</span>
+                    </button>
+                    <button onClick={() => playSfx({ id: 'sfx-crit', title: 'Crítico', url: '', synthType: 'crit', type: 'sfx', volume: 0.85 })} className="sfx-btn" style={{ borderColor: '#ca8a04', color: '#fef08a' }} title="Sucesso Crítico (20 Natural)">
+                        <Zap size={13} color="#eab308" /> <span>Crítico</span>
+                    </button>
+                    <button onClick={() => playSfx({ id: 'sfx-fumble', title: 'Falha', url: '', synthType: 'fumble', type: 'sfx', volume: 0.85 })} className="sfx-btn" style={{ borderColor: '#991b1b', color: '#fca5a5' }} title="Falha Crítica (1 Natural)">
+                        <Skull size={13} color="#ef4444" /> <span>Falha</span>
                     </button>
                 </div>
             )}
@@ -167,9 +183,9 @@ export const Soundboard: React.FC = () => {
             {tab === 'music' && (
                 <button
                     onClick={stopMusic}
-                    style={{ background: '#552222', border: 'none', color: '#fff', padding: '8px', borderRadius: '4px', cursor: 'pointer', marginBottom: '10px' }}
+                    style={{ background: '#552222', border: 'none', color: '#fff', padding: '8px', borderRadius: '4px', cursor: 'pointer', marginBottom: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', width: '100%' }}
                 >
-                    ⏹️ Parar Música
+                    <Square size={14} /> <span>Parar Música</span>
                 </button>
             )}
 
@@ -180,10 +196,11 @@ export const Soundboard: React.FC = () => {
                     <div key={asset.id} style={{ display: 'flex', alignItems: 'center', gap: '5px', background: '#2a1a0a', padding: '5px', borderRadius: '4px' }}>
                         <button
                             onClick={() => playAsset(asset)}
-                            style={{ flex: 1, background: 'none', border: 'none', color: '#ffd', textAlign: 'left', cursor: 'pointer', fontSize: '0.9rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                            style={{ flex: 1, background: 'none', border: 'none', color: '#ffd', textAlign: 'left', cursor: 'pointer', fontSize: '0.9rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'flex', alignItems: 'center', gap: '6px' }}
                             title={asset.name}
                         >
-                            {tab === 'music' ? '🎵' : '🔊'} {asset.name}
+                            {tab === 'music' ? <Music size={13} color="#c5a059" /> : <Volume2 size={13} color="#c5a059" />}
+                            <span>{asset.name}</span>
                         </button>
                         <button onClick={() => handleDelete(asset.id!)} style={{ background: 'none', border: 'none', color: '#f55', cursor: 'pointer' }}>
                             <Trash2 size={14} />

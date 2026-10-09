@@ -1,8 +1,23 @@
-import React, { useState } from 'react';
-import type { Character, ClassFeature, Spell, CharacterAttributes } from '../characterTypes';
+import React, { useState, useMemo } from 'react';
+import type { Character, ClassFeature, Spell, Skill, CharacterAttributes, ClassResource } from '../characterTypes';
+import { regenerateCharacterStats, calculateModifier, calculateProficiencyBonus } from '../characterTypes';
 import { CLASSES } from '../data/classes';
 import { SPELLS } from '../data/spells';
 import { FEATS, type Feat } from '../data/feats';
+import { playSynthSound } from '../../audio/audioSynth';
+import {
+    Check,
+    Shield,
+    Sparkles,
+    ArrowRight,
+    ArrowLeft,
+    Star,
+    Award,
+    Dices,
+    X,
+    UserCheck,
+    Flame
+} from 'lucide-react';
 import './LevelUpModal.css';
 
 interface LevelUpModalProps {
@@ -11,274 +26,838 @@ interface LevelUpModalProps {
     onClose: () => void;
 }
 
+// 8 Estilos de Luta Oficiais (D&D 5.5e / 2024 & 5e)
+export const FIGHTING_STYLES = [
+    {
+        id: 'archery',
+        name: 'Arquearia (Archery)',
+        category: 'Ataque à Distância',
+        description: 'Você ganha um bônus de +2 em jogadas de ataque realizadas com armas de ataque à distância.'
+    },
+    {
+        id: 'defense',
+        name: 'Defesa (Defense)',
+        category: 'Defesa',
+        description: 'Enquanto estiver vestindo qualquer armadura, você ganha um bônus de +1 na Classe de Armadura (CA).'
+    },
+    {
+        id: 'dueling',
+        name: 'Duelismo (Dueling)',
+        category: 'Corpo a Corpo',
+        description: 'Ao empunhar uma arma de ataque corpo a corpo em uma mão e nenhuma outra arma, ganhe +2 de dano com essa arma.'
+    },
+    {
+        id: 'great_weapon',
+        name: 'Combate com Armas Grandes (Great Weapon)',
+        category: 'Armas Pesadas',
+        description: 'Ao tirar 1 ou 2 em qualquer dado de dano com arma de duas mãos ou versátil empunhada com ambas as mãos, você pode re-rolar o dado.'
+    },
+    {
+        id: 'two_weapon',
+        name: 'Combate com Duas Armas (Two-Weapon)',
+        category: 'Duas Armas',
+        description: 'Você adiciona seu modificador de atributo à jogada de dano do ataque adicional realizado com a mão inábil.'
+    },
+    {
+        id: 'protection',
+        name: 'Proteção (Protection)',
+        category: 'Suporte & Reação',
+        description: 'Quando uma criatura que você vê ataca um aliado a até 1,5m, use sua Reação para impor Desvantagem no ataque (exige escudo).'
+    },
+    {
+        id: 'interception',
+        name: 'Interceptação (Interception)',
+        category: 'Redução de Dano',
+        description: 'Quando uma criatura acertar um ataque em um aliado a até 1,5m, use sua Reação para reduzir o dano sofrido por ele em 1d10 + seu PB (exige escudo ou arma).'
+    },
+    {
+        id: 'blind_fighting',
+        name: 'Luta às Cegas (Blind Fighting)',
+        category: 'Sentidos Aguçados',
+        description: 'Você ganha Visão às Cegas em raio de 3 metros (10 pés), enxergando na escuridão e alvos invisíveis sem cobertura total.'
+    }
+];
+
+// Invocações Místicas do Bruxo (D&D 2024 / 5e)
+export const WARLOCK_INVOCATIONS = [
+    {
+        id: 'devils_sight',
+        name: 'Visão Diabólica (Devil\'s Sight)',
+        description: 'Você enxerga normalmente na escuridão mágica e não mágica até 36 metros de distância.'
+    },
+    {
+        id: 'agonizing_blast',
+        name: 'Rajada Agonizante (Agonizing Blast)',
+        description: 'Ao acertar com a Rajada Mística (Eldritch Blast), adicione seu modificador de Carisma ao dano causado.'
+    },
+    {
+        id: 'armor_of_shadows',
+        name: 'Armadura das Sombras (Armor of Shadows)',
+        description: 'Você pode conjurar Armadura Arcana sobre si mesmo à vontade, sem gastar espaços de magia ou componentes materiais.'
+    },
+    {
+        id: 'eyes_rune_keeper',
+        name: 'Olhos do Guardião das Runas (Eyes of the Rune Keeper)',
+        description: 'Você consegue ler e compreender qualquer escrita, runa ou idioma escrito.'
+    },
+    {
+        id: 'eldritch_spear',
+        name: 'Lança Mística (Eldritch Spear)',
+        description: 'O alcance da sua Rajada Mística aumenta para 90 metros (300 pés).'
+    },
+    {
+        id: 'repelling_blast',
+        name: 'Repulsão Mística (Repelling Blast)',
+        description: 'Ao acertar uma criatura com a Rajada Mística, você pode empurrá-la até 3 metros em linha reta para longe de você.'
+    }
+];
+
 export const LevelUpModal: React.FC<LevelUpModalProps> = ({ character, onUpdate, onClose }) => {
     const newLevel = character.level;
-    const classData = CLASSES.find(c => c.id === character.class || c.name === character.class);
+    const classData = useMemo(() => {
+        return CLASSES.find(c => c.id === character.class || c.name === character.class) || CLASSES[0];
+    }, [character.class]);
 
-    // Steps state
-    const [step, setStep] = useState<'summary' | 'hp' | 'spells' | 'feat' | 'finish'>('summary');
+    const classNameLower = (classData?.name || character.class || '').toLowerCase();
+    const isFighter = /guerreiro|fighter/i.test(classNameLower);
+    const isPaladin = /paladino|paladin/i.test(classNameLower);
+    const isRanger = /guardi[ãa]o|ranger/i.test(classNameLower);
+    const isWarlock = /bruxo|warlock/i.test(classNameLower);
+    const isBard = /bardo|bard/i.test(classNameLower);
+    const isRogue = /ladino|rogue/i.test(classNameLower);
+    const isWizard = /mago|wizard/i.test(classNameLower);
+    const isCaster = !!classData?.spellcastingConfig || isPaladin || isRanger;
+    const isAsiLevel = newLevel % 4 === 0 || newLevel === 19;
 
-    // Choices state
+    const hasFightingStyleChoice = (isFighter && newLevel === 2) || (isPaladin && newLevel === 2) || (isRanger && newLevel === 2);
+    const hasInvocationChoice = isWarlock && newLevel === 2;
+    const hasSubclassChoice = newLevel === 3 && (classData?.subclasses?.length || 0) > 0;
+    const hasClassSpecialChoice = hasFightingStyleChoice || hasInvocationChoice || hasSubclassChoice;
+
+    // Steps Pipeline
+    type StepId = 'summary' | 'hp' | 'skills' | 'choices' | 'spells' | 'feat' | 'finish';
+    const steps = useMemo<{ id: StepId; label: string }[]>(() => {
+        const list: { id: StepId; label: string }[] = [
+            { id: 'summary', label: '1. Visão Geral' },
+            { id: 'hp', label: '2. Pontos de Vida' },
+            { id: 'skills', label: '3. Perícias & Expertise' }
+        ];
+        if (hasClassSpecialChoice) {
+            list.push({ id: 'choices', label: '4. Escolha de Classe' });
+        }
+        if (isCaster) {
+            list.push({ id: 'spells', label: `${list.length + 1}. Magias` });
+        }
+        if (isAsiLevel) {
+            list.push({ id: 'feat', label: `${list.length + 1}. Talento / Atributos` });
+        }
+        list.push({ id: 'finish', label: `${list.length + 1}. Concluir` });
+        return list;
+    }, [hasClassSpecialChoice, isCaster, isAsiLevel]);
+
+    const [currentStepIdx, setCurrentStepIdx] = useState<number>(0);
+    const currentStep = steps[currentStepIdx]?.id || 'summary';
+
+    // HP State
     const [hpChoice, setHpChoice] = useState<'avg' | 'roll'>('avg');
     const [rolledHp, setRolledHp] = useState<number | null>(null);
+
+    // Skills & Expertise State (Working copy)
+    const [workingSkills, setWorkingSkills] = useState<Skill[]>(() => {
+        return (character.skills || []).map(s => ({ ...s }));
+    });
+
+    // Special Choices State
+    const [selectedFightingStyle, setSelectedFightingStyle] = useState<string>('');
+    const [selectedInvocation, setSelectedInvocation] = useState<string>('');
+    const [selectedSubclass, setSelectedSubclass] = useState<string>('');
+
+    // Spells State
     const [selectedSpells, setSelectedSpells] = useState<Spell[]>([]);
+    const [spellSearch, setSpellSearch] = useState<string>('');
+    const maxSpellsAllowed = isWizard ? 2 : 1;
 
     // Feat / ASI State
     const [progressionType, setProgressionType] = useState<'feat' | 'asi'>('feat');
     const [selectedFeat, setSelectedFeat] = useState<Feat | null>(null);
     const [asiTargets, setAsiTargets] = useState<{ attr1: keyof CharacterAttributes; attr2: keyof CharacterAttributes | null }>({ attr1: 'str', attr2: null });
 
-    if (!classData) return null;
-
-    // Derived Constants
+    // Derived Math
     const modCon = Math.floor((character.attributes.con.value - 10) / 2);
-    const hitDieValue = parseInt(classData.hitDie.replace('d', ''));
-    const avgHp = Math.floor(hitDieValue / 2) + 1 + modCon;
+    const hitDieValue = parseInt(classData?.hitDie?.replace('d', '') || '8', 10) || 8;
+    const featBonusPerLevel = (character.feats || []).reduce((acc, feat) => {
+        const canonicalFeat = FEATS.find(f => f.id === feat.id);
+        const effects = canonicalFeat?.effects || feat.effects;
+        const hpEffect = effects?.find(e => e.type === 'hp_per_level');
+        return acc + (hpEffect ? hpEffect.value : 0);
+    }, 0);
+    const totalBonus = featBonusPerLevel;
+    const avgHp = Math.max(1, Math.floor(hitDieValue / 2) + 1 + modCon + totalBonus);
+    const finalHpGain = hpChoice === 'avg' ? avgHp : (rolledHp !== null ? rolledHp : avgHp);
 
-    // Features gained this level
-    const newFeatures = classData.features.filter(f => f.level === newLevel) as unknown as ClassFeature[];
-    const isCaster = !!classData.spellcastingConfig;
-    const isAsiLevel = newLevel % 4 === 0 || newLevel === 19; // Basic rule
+    const profBonus = calculateProficiencyBonus(newLevel);
+    const newFeatures = (classData?.features || []).filter(f => f.level === newLevel) as unknown as ClassFeature[];
 
-    // Spell Logic
-    const newSpellsCount = 1;
-
+    // Roll HP Handler
     const handleRollHp = () => {
         const roll = Math.floor(Math.random() * hitDieValue) + 1;
-        setRolledHp(roll + modCon);
+        const total = Math.max(1, roll + modCon + totalBonus);
+        setRolledHp(total);
+        playSynthSound('dice');
     };
 
-    const handleConfirmHp = () => {
-        // Just move next, we calculate final HP at the end
-        if (isCaster) setStep('spells');
-        else if (isAsiLevel) setStep('feat');
-        else handleFinish();
+    // Toggle Expertise Handler
+    const toggleSkillExpertise = (skillName: string) => {
+        setWorkingSkills(prev => prev.map(s => {
+            if (s.name !== skillName) return s;
+            const newExpertise = !s.expertise;
+            const attrKey = s.attribute;
+            const attrMod = character.attributes[attrKey]?.modifier ?? 0;
+            let val = attrMod;
+            if (s.proficient) val += profBonus;
+            if (newExpertise) val += profBonus;
+            return {
+                ...s,
+                expertise: newExpertise,
+                value: val
+            };
+        }));
     };
 
+    // Toggle Proficiency Handler
+    const toggleSkillProficiency = (skillName: string) => {
+        setWorkingSkills(prev => prev.map(s => {
+            if (s.name !== skillName) return s;
+            const newProf = !s.proficient;
+            const attrKey = s.attribute;
+            const attrMod = character.attributes[attrKey]?.modifier ?? 0;
+            let val = attrMod;
+            if (newProf) val += profBonus;
+            if (s.expertise && newProf) val += profBonus;
+            return {
+                ...s,
+                proficient: newProf,
+                expertise: newProf ? s.expertise : false,
+                value: val
+            };
+        }));
+    };
+
+    // Finish & Apply Progression
     const handleFinish = () => {
-        // 1. Calculate HP
-        const hpGain = hpChoice === 'avg' ? avgHp : (rolledHp || avgHp);
-        const newMaxHp = character.hp.max + hpGain;
-        const newCurrentHp = character.hp.current + hpGain;
+        // 1. HP Updates
+        const newMaxHp = character.hp.max + finalHpGain;
+        const newCurrentHp = character.hp.current + finalHpGain;
 
-        // 2. Features
-        const existingFeatNames = character.features.map(f => f.name);
-        const featuresToAdd = newFeatures.filter(f => !existingFeatNames.includes(f.name));
-
-        // 3. Prepare Base
-        const finalChar: Character = {
-            ...character,
-            hp: { ...character.hp, max: newMaxHp, current: newCurrentHp },
-            features: [...character.features, ...featuresToAdd],
-            pendingLevelUp: false,
-            hpRolled: hpChoice === 'roll' ? (rolledHp || avgHp) : false
+        // 2. Hit Dice Updates
+        const updatedHitDice = {
+            dieFace: classData?.hitDie || character.hitDice?.dieFace || 'd8',
+            max: newLevel,
+            current: Math.min(newLevel, (character.hitDice?.current || 1) + 1)
         };
 
-        // 4. Spells
-        if (selectedSpells.length > 0) {
-            finalChar.spells = [...finalChar.spells, ...selectedSpells];
-        }
+        // 3. Features
+        const existingNames = new Set((character.features || []).map(f => f.name));
+        const featuresToAdd = newFeatures.filter(f => !existingNames.has(f.name));
 
-        // 5. Feat / ASI
-        if (isAsiLevel) {
-            if (progressionType === 'feat' && selectedFeat) {
-                finalChar.feats = [...finalChar.feats, selectedFeat];
-            } else if (progressionType === 'asi') {
-                // Apply ASI
-                // Deep clone attributes to avoid mutation issues
-                const newAttrs = JSON.parse(JSON.stringify(finalChar.attributes));
-
-                // +2 to one or +1 to two?
-                if (asiTargets.attr2 === null) {
-                    // +2 to attr1
-                    newAttrs[asiTargets.attr1].value += 2;
-                    newAttrs[asiTargets.attr1].modifier = Math.floor((newAttrs[asiTargets.attr1].value - 10) / 2);
-                } else {
-                    // +1 to both
-                    newAttrs[asiTargets.attr1].value += 1;
-                    newAttrs[asiTargets.attr1].modifier = Math.floor((newAttrs[asiTargets.attr1].value - 10) / 2);
-
-                    newAttrs[asiTargets.attr2].value += 1;
-                    newAttrs[asiTargets.attr2].modifier = Math.floor((newAttrs[asiTargets.attr2].value - 10) / 2);
-                }
-                finalChar.attributes = newAttrs;
+        // Add special choices as features if selected
+        if (hasFightingStyleChoice && selectedFightingStyle) {
+            const fs = FIGHTING_STYLES.find(f => f.id === selectedFightingStyle);
+            if (fs && !existingNames.has(fs.name)) {
+                featuresToAdd.push({
+                    name: `Estilo de Luta: ${fs.name}`,
+                    level: newLevel,
+                    description: fs.description,
+                    type: 'passive'
+                });
             }
         }
 
+        if (hasInvocationChoice && selectedInvocation) {
+            const inv = WARLOCK_INVOCATIONS.find(i => i.id === selectedInvocation);
+            if (inv && !existingNames.has(inv.name)) {
+                featuresToAdd.push({
+                    name: `Invocação Mística: ${inv.name}`,
+                    level: newLevel,
+                    description: inv.description,
+                    type: 'passive'
+                });
+            }
+        }
+
+        if (hasSubclassChoice && selectedSubclass) {
+            const sc = classData?.subclasses?.find(s => s.id === selectedSubclass);
+            if (sc) {
+                (sc.features || []).filter(f => f.level <= newLevel).forEach(f => {
+                    if (!existingNames.has(f.name)) {
+                        featuresToAdd.push({
+                            ...f,
+                            type: f.type || 'passive'
+                        });
+                    }
+                });
+            }
+        }
+
+        // 4. Spell Slots calculation
+        const updatedSpellSlots = { ...(character.spellSlots || {}) };
+        if (isCaster) {
+            if (newLevel === 2) {
+                if (isPaladin || isRanger) {
+                    updatedSpellSlots[1] = { max: 2, used: 0 };
+                } else if (isWarlock) {
+                    updatedSpellSlots[1] = { max: 2, used: 0 };
+                } else {
+                    // Full casters (Wizard, Sorcerer, Bard, Cleric, Druid)
+                    updatedSpellSlots[1] = { max: 3, used: 0 };
+                }
+            } else if (newLevel === 3) {
+                if (isWarlock) {
+                    updatedSpellSlots[2] = { max: 2, used: 0 };
+                } else if (isPaladin || isRanger) {
+                    updatedSpellSlots[1] = { max: 3, used: 0 };
+                } else {
+                    updatedSpellSlots[1] = { max: 4, used: 0 };
+                    updatedSpellSlots[2] = { max: 2, used: 0 };
+                }
+            }
+        }
+
+        // 5. Class Resources calculation
+        const updatedResources: ClassResource[] = [...(character.classResources || [])];
+        const ensureResource = (id: string, name: string, maxVal: number, recharge: 'short' | 'long') => {
+            const idx = updatedResources.findIndex(r => r.id === id);
+            if (idx >= 0) {
+                updatedResources[idx].max = maxVal;
+                updatedResources[idx].current = maxVal;
+            } else {
+                updatedResources.push({
+                    id,
+                    name,
+                    max: maxVal,
+                    current: maxVal,
+                    rechargesOn: recharge
+                });
+            }
+        };
+
+        if (isFighter && newLevel >= 2) {
+            ensureResource('action_surge', 'Surto de Ação (Action Surge)', 1, 'short');
+            ensureResource('second_wind', 'Retomar o Fôlego (Second Wind)', 2, 'short');
+        }
+        if (/mon[kg]|monge/i.test(classNameLower) && newLevel >= 2) {
+            ensureResource('focus_points', 'Pontos de Foco (Ki)', newLevel, 'short');
+        }
+        if (/feiticeiro|sorcerer/i.test(classNameLower) && newLevel >= 2) {
+            ensureResource('sorcery_points', 'Pontos de Feitiçaria (Fonte de Magia)', newLevel, 'long');
+        }
+        if (/druid|druida/i.test(classNameLower) && newLevel >= 2) {
+            ensureResource('wild_shape', 'Forma Selvagem (Wild Shape)', 2, 'short');
+        }
+        if (/cl[ée]rigo|cleric/i.test(classNameLower) && newLevel >= 2) {
+            ensureResource('channel_divinity', 'Canalizar Divindade', 2, 'short');
+        }
+        if (/bardo|bard/i.test(classNameLower)) {
+            const chaMod = Math.max(1, character.attributes.cha.modifier);
+            ensureResource('bardic_inspiration', 'Inspiração de Bardo', chaMod, 'short');
+        }
+        if (/b[áa]rbar/i.test(classNameLower)) {
+            ensureResource('rage', 'Fúria (Rage)', newLevel >= 3 ? 3 : 2, 'long');
+        }
+
+        // 6. Base Character Update
+        const nextChar: Character = {
+            ...character,
+            hp: { ...character.hp, max: newMaxHp, current: newCurrentHp },
+            hitDice: updatedHitDice,
+            skills: workingSkills,
+            features: [...(character.features || []), ...featuresToAdd],
+            subclass: selectedSubclass || character.subclass,
+            spellSlots: updatedSpellSlots,
+            classResources: updatedResources,
+            pendingLevelUp: false,
+            hpRolled: hpChoice === 'roll' ? finalHpGain : false
+        };
+
+        // 7. Add Selected Spells
+        if (selectedSpells.length > 0) {
+            const existingSpellIds = new Set((character.spells || []).map(s => s.id));
+            const newSpells = selectedSpells.filter(s => !existingSpellIds.has(s.id));
+            nextChar.spells = [...(character.spells || []), ...newSpells];
+        }
+
+        // 8. Add Feat / ASI if applicable
+        if (isAsiLevel) {
+            if (progressionType === 'feat' && selectedFeat) {
+                nextChar.feats = [...(character.feats || []), selectedFeat];
+            } else if (progressionType === 'asi') {
+                const newAttrs = JSON.parse(JSON.stringify(nextChar.attributes));
+                if (asiTargets.attr2 === null) {
+                    newAttrs[asiTargets.attr1].value += 2;
+                    newAttrs[asiTargets.attr1].modifier = calculateModifier(newAttrs[asiTargets.attr1].value);
+                } else {
+                    newAttrs[asiTargets.attr1].value += 1;
+                    newAttrs[asiTargets.attr1].modifier = calculateModifier(newAttrs[asiTargets.attr1].value);
+                    newAttrs[asiTargets.attr2].value += 1;
+                    newAttrs[asiTargets.attr2].modifier = calculateModifier(newAttrs[asiTargets.attr2].value);
+                }
+                nextChar.attributes = newAttrs;
+            }
+        }
+
+        // Regenerate derived stats (AC, DC, PB, attacks)
+        const finalChar = regenerateCharacterStats(nextChar);
+
+        playSynthSound('crit');
         onUpdate(finalChar);
         onClose();
     };
 
-    const attrOptions: { key: keyof CharacterAttributes; label: string }[] = [
-        { key: 'str', label: 'Força' },
-        { key: 'dex', label: 'Destreza' },
-        { key: 'con', label: 'Constituição' },
-        { key: 'int', label: 'Inteligência' },
-        { key: 'wis', label: 'Sabedoria' },
-        { key: 'cha', label: 'Carisma' },
-    ];
+    const nextStep = () => {
+        if (currentStepIdx < steps.length - 1) {
+            setCurrentStepIdx(prev => prev + 1);
+        } else {
+            handleFinish();
+        }
+    };
+
+    const prevStep = () => {
+        if (currentStepIdx > 0) {
+            setCurrentStepIdx(prev => prev - 1);
+        }
+    };
 
     return (
         <div className="lvl-modal-overlay">
             <div className="lvl-modal">
+                {/* Header */}
                 <div className="lvl-header">
-                    <h2>Nível {newLevel}: {classData.name}</h2>
+                    <div className="lvl-header-title">
+                        <span className="lvl-badge-level">Nível {newLevel}</span>
+                        <h2>Evolução: {classData?.name}</h2>
+                    </div>
+                    <button type="button" className="lvl-close-btn" onClick={onClose} title="Fechar">
+                        <X size={18} />
+                    </button>
                 </div>
 
+                {/* Stepper Tabs */}
+                <div className="lvl-stepper">
+                    {steps.map((st, idx) => (
+                        <button
+                            key={st.id}
+                            type="button"
+                            className={`lvl-step-tab ${currentStepIdx === idx ? 'active' : ''} ${currentStepIdx > idx ? 'completed' : ''}`}
+                            onClick={() => setCurrentStepIdx(idx)}
+                        >
+                            <span>{st.label}</span>
+                            {currentStepIdx > idx && <Check size={12} color="#22c55e" />}
+                        </button>
+                    ))}
+                </div>
+
+                {/* Modal Body */}
                 <div className="lvl-body">
-                    {step === 'summary' && (
-                        <div className="step-summary">
-                            <h3>Parabéns! Você alcançou o nível {newLevel}.</h3>
-                            <div className="features-preview">
-                                <h4>Novas Habilidades:</h4>
+
+                    {/* 1. SUMMARY STEP */}
+                    {currentStep === 'summary' && (
+                        <div>
+                            <div className="lvl-overview-hero">
+                                <div>
+                                    <h3 style={{ margin: '0 0 6px 0', color: '#ffd700', fontSize: '1.25rem' }}>
+                                        Parabéns! Você alcançou o Nível {newLevel}.
+                                    </h3>
+                                    <p style={{ margin: 0, color: '#94a3b8', fontSize: '0.88rem' }}>
+                                        Seu personagem cresce em poder, desbloqueando novos dados de vida, perícias aprimoradas e recursos de combate.
+                                    </p>
+                                </div>
+                                <Sparkles size={36} color="#ffd700" />
+                            </div>
+
+                            <div className="lvl-overview-stats">
+                                <div className="lvl-stat-pill">
+                                    <span className="label">Bônus de Proficiência</span>
+                                    <span className="val">+{profBonus}</span>
+                                </div>
+                                <div className="lvl-stat-pill">
+                                    <span className="label">Novo Dado de Vida</span>
+                                    <span className="val">+1d{hitDieValue} (Total: {newLevel}d{hitDieValue})</span>
+                                </div>
+                                <div className="lvl-stat-pill">
+                                    <span className="label">Modificador de CON</span>
+                                    <span className="val">{modCon >= 0 ? `+${modCon}` : modCon}</span>
+                                </div>
+                            </div>
+
+                            <div style={{ marginTop: '20px' }}>
+                                <h4 style={{ color: '#e2e8f0', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <Award size={16} color="#ffd700" />
+                                    <span>Habilidades Desbloqueadas no Nível {newLevel}:</span>
+                                </h4>
                                 {newFeatures.length > 0 ? (
-                                    <ul>
+                                    <div className="lvl-features-list">
                                         {newFeatures.map((f, i) => (
-                                            <li key={i}><strong>{f.name}</strong>: {f.description}</li>
+                                            <div key={i} className="lvl-feature-card">
+                                                <div className="lvl-feature-card-header">
+                                                    <span className="lvl-feature-name">{f.name}</span>
+                                                    <span className={`lvl-type-badge ${f.type || 'passive'}`}>
+                                                        {f.type === 'action' ? 'Ação' : f.type === 'bonus_action' ? 'Ação Bônus' : f.type === 'reaction' ? 'Reação' : 'Passiva'}
+                                                    </span>
+                                                </div>
+                                                <p className="lvl-feature-desc">{f.description}</p>
+                                            </div>
                                         ))}
-                                    </ul>
-                                ) : <p className="text-muted">Nenhuma habilidade de classe automática neste nível.</p>}
+                                    </div>
+                                ) : (
+                                    <p style={{ color: '#888', fontStyle: 'italic' }}>
+                                        Nenhuma habilidade de classe automática neste nível.
+                                    </p>
+                                )}
                             </div>
-                            <button className="lvl-btn" onClick={() => setStep('hp')}>Avançar (HP)</button>
                         </div>
                     )}
 
-                    {step === 'hp' && (
-                        <div className="step-hp">
-                            <h3>Aumentar Vida</h3>
-                            <p>Dado: {classData.hitDie} | Con: {modCon >= 0 ? `+${modCon}` : modCon}</p>
+                    {/* 2. HP STEP */}
+                    {currentStep === 'hp' && (
+                        <div>
+                            <h3 style={{ margin: '0 0 6px 0', color: '#ffd700' }}>Aumento de Pontos de Vida (HP)</h3>
+                            <p style={{ color: '#94a3b8', fontSize: '0.88rem', margin: 0 }}>
+                                Escolha se prefere o aumento seguro pela média fixa ou arriscar uma rolagem física de dado (1d{hitDieValue}).
+                            </p>
 
-                            <div className="hp-options">
-                                <div className={`hp-card ${hpChoice === 'avg' ? 'selected' : ''}`} onClick={() => setHpChoice('avg')}>
-                                    <h4>Média Fixa</h4>
-                                    <span className="hp-val">+{avgHp} HP</span>
-                                    <small className="hp-desc">Valor seguro e garantido. (Recomendado)</small>
+                            <div className="lvl-hp-grid">
+                                <div
+                                    className={`lvl-hp-card ${hpChoice === 'avg' ? 'selected' : ''}`}
+                                    onClick={() => setHpChoice('avg')}
+                                >
+                                    <Shield size={24} color="#ffd700" />
+                                    <h4 style={{ margin: '8px 0 2px 0' }}>Média Fixa (Recomendado)</h4>
+                                    <span className="lvl-hp-val">+{avgHp} PV</span>
+                                    <small style={{ color: '#888' }}>
+                                        Metade do dado ({Math.floor(hitDieValue / 2) + 1}) + Mod. Con ({modCon >= 0 ? `+${modCon}` : modCon})
+                                        {totalBonus > 0 && ` + Bônus (${totalBonus})`}
+                                    </small>
                                 </div>
-                                <div className={`hp-card ${hpChoice === 'roll' ? 'selected' : ''}`} onClick={() => setHpChoice('roll')}>
-                                    <h4>Rolar Dado</h4>
-                                    {rolledHp === null ? (
-                                        <button className="lvl-btn small" onClick={handleRollHp}>Rolar (1d{hitDieValue})</button>
+
+                                <div
+                                    className={`lvl-hp-card ${hpChoice === 'roll' ? 'selected' : ''}`}
+                                    onClick={() => setHpChoice('roll')}
+                                >
+                                    <Dices size={24} color="#60a5fa" />
+                                    <h4 style={{ margin: '8px 0 2px 0' }}>Rolar Dado (1d{hitDieValue})</h4>
+                                    {rolledHp !== null ? (
+                                        <span className="lvl-hp-val">+{rolledHp} PV</span>
                                     ) : (
-                                        <span className="hp-val">+{rolledHp} HP</span>
+                                        <button
+                                            type="button"
+                                            className="lvl-btn-primary"
+                                            style={{ margin: '10px 0', padding: '6px 16px', fontSize: '0.85rem' }}
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setHpChoice('roll');
+                                                handleRollHp();
+                                            }}
+                                        >
+                                            <Dices size={14} /> Rolar 1d{hitDieValue}
+                                        </button>
                                     )}
-                                    <small className="hp-desc">Pode ser maior ou menor que a média. (Arriscado)</small>
+                                    <small style={{ color: '#888' }}>
+                                        Resultado do d{hitDieValue} + Mod. Con ({modCon >= 0 ? `+${modCon}` : modCon})
+                                    </small>
                                 </div>
                             </div>
 
-                            <div style={{ marginTop: '15px', color: '#888', fontStyle: 'italic', fontSize: '0.9rem' }}>
-                                Aumentar sua Constituição também aumenta seus pontos de vida retroativamente!
+                            <div className="lvl-hp-preview-bar">
+                                <div>
+                                    <span style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase' }}>PV Máximo Anterior:</span>
+                                    <strong style={{ display: 'block', fontSize: '1.2rem', color: '#fff' }}>{character.hp.max}</strong>
+                                </div>
+                                <ArrowRight size={20} color="#ffd700" />
+                                <div>
+                                    <span style={{ fontSize: '0.75rem', color: '#ffd700', textTransform: 'uppercase' }}>Novo PV Máximo:</span>
+                                    <strong style={{ display: 'block', fontSize: '1.4rem', color: '#4ade80' }}>
+                                        {character.hp.max + finalHpGain} (+{finalHpGain})
+                                    </strong>
+                                </div>
                             </div>
-
-                            <button className="lvl-btn" onClick={handleConfirmHp} disabled={hpChoice === 'roll' && rolledHp === null}>
-                                {isCaster || isAsiLevel ? 'Próximo' : 'Concluir'}
-                            </button>
                         </div>
                     )}
 
-                    {step === 'spells' && (
-                        <div className="step-spells">
-                            <h3>Aprender Nova Magia</h3>
-                            <p>Selecione 1 nova magia da lista de {classData.name}.</p>
+                    {/* 3. SKILLS & EXPERTISE STEP */}
+                    {currentStep === 'skills' && (
+                        <div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                                <div>
+                                    <h3 style={{ margin: 0, color: '#ffd700' }}>Perícias & Especialização (Expertise)</h3>
+                                    <p style={{ margin: '4px 0 0 0', color: '#94a3b8', fontSize: '0.85rem' }}>
+                                        {isBard && newLevel === 2 ? 'Bardo Nível 2: Escolha 2 perícias treinadas para Especialização (dobra o bônus de proficiência).' :
+                                         isRanger && newLevel === 2 ? 'Guardião Nível 2 (Explorador Nato): Escolha 1 perícia para Especialização.' :
+                                         isRogue && newLevel === 6 ? 'Ladino Nível 6: Escolha 2 perícias adicionais para Especialização.' :
+                                         'Selecione Especializações ou ajuste o treinamento de perícias do seu personagem.'}
+                                    </p>
+                                </div>
+                                <UserCheck size={28} color="#ffd700" />
+                            </div>
 
-                            <div className="spells-selector-container">
-                                <div className="spells-selector">
-                                    {SPELLS.filter(s => s.classes.includes(classData.id) && s.level <= Math.ceil(newLevel / 2) && s.level > 0).map(spell => {
-                                        const isOwned = character.spells.some(cs => cs.id === spell.id);
-                                        const isSelected = selectedSpells.find(s => s.id === spell.id);
-                                        return (
-                                            <div
-                                                key={spell.id}
-                                                className={`spell-item ${isSelected ? 'selected' : ''} ${isOwned ? 'disabled' : ''}`}
-                                                onClick={() => {
-                                                    // Toggle selection logic or preview? 
-                                                    // Let's make click = select, but also show details.
-                                                    if (isOwned) return;
+                            <div className="lvl-skills-grid">
+                                {workingSkills.map(skill => {
+                                    return (
+                                        <div
+                                            key={skill.name}
+                                            className={`lvl-skill-item ${skill.expertise ? 'has-expertise' : ''}`}
+                                        >
+                                            <div className="lvl-skill-info">
+                                                <span className="lvl-skill-name">{skill.name}</span>
+                                                <span className="lvl-skill-attr">{skill.attribute}</span>
+                                            </div>
 
-                                                    if (isSelected) {
-                                                        setSelectedSpells(prev => prev.filter(s => s.id !== spell.id));
-                                                    } else {
-                                                        // Replace selection if limit reached (1)? Or strict limit?
-                                                        // Code was allowing array up to count.
-                                                        if (selectedSpells.length < newSpellsCount) {
-                                                            setSelectedSpells(prev => [...prev, spell]);
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                <button
+                                                    type="button"
+                                                    className={`lvl-skill-btn-toggle ${skill.proficient ? 'active' : ''}`}
+                                                    onClick={() => toggleSkillProficiency(skill.name)}
+                                                    title="Alternar Proficiência (+PB)"
+                                                >
+                                                    {skill.proficient ? 'Treinado' : 'Não treinado'}
+                                                </button>
+
+                                                {skill.proficient && (
+                                                    <button
+                                                        type="button"
+                                                        className={`lvl-skill-btn-toggle ${skill.expertise ? 'active' : ''}`}
+                                                        style={{ background: skill.expertise ? '#ffd700' : 'rgba(255,215,0,0.1)', color: skill.expertise ? '#000' : '#ffd700', borderColor: '#ffd700' }}
+                                                        onClick={() => toggleSkillExpertise(skill.name)}
+                                                        title="Especialização (Dobra o PB)"
+                                                    >
+                                                        {skill.expertise ? 'Especialista' : '+ Expertise'}
+                                                    </button>
+                                                )}
+
+                                                <span className="lvl-skill-bonus">
+                                                    {skill.value >= 0 ? `+${skill.value}` : skill.value}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 4. CLASS CHOICES STEP (FIGHTING STYLE / INVOCATIONS / SUBCLASSES) */}
+                    {currentStep === 'choices' && (
+                        <div>
+                            {hasFightingStyleChoice && (
+                                <div>
+                                    <h3 style={{ margin: '0 0 6px 0', color: '#ffd700' }}>Escolha um Estilo de Luta</h3>
+                                    <p style={{ color: '#94a3b8', fontSize: '0.85rem', marginBottom: '14px' }}>
+                                        No 2º nível, {classData?.name} adota uma postura marcial especializada para combate.
+                                    </p>
+
+                                    <div className="lvl-choices-grid">
+                                        {FIGHTING_STYLES.map(fs => {
+                                            const isSelected = selectedFightingStyle === fs.id;
+                                            return (
+                                                <div
+                                                    key={fs.id}
+                                                    className={`lvl-choice-card ${isSelected ? 'selected' : ''}`}
+                                                    onClick={() => setSelectedFightingStyle(fs.id)}
+                                                >
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                        <h4>{fs.name}</h4>
+                                                        {isSelected && <Check size={16} color="#ffd700" />}
+                                                    </div>
+                                                    <span style={{ fontSize: '0.72rem', color: '#eab308', textTransform: 'uppercase' }}>
+                                                        {fs.category}
+                                                    </span>
+                                                    <p>{fs.description}</p>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+
+                            {hasInvocationChoice && (
+                                <div>
+                                    <h3 style={{ margin: '0 0 6px 0', color: '#ffd700' }}>Escolha uma Invocação Mística</h3>
+                                    <p style={{ color: '#94a3b8', fontSize: '0.85rem', marginBottom: '14px' }}>
+                                        No 2º nível, seu patrono concede fragmentos de poder oculto e segredos eldritch.
+                                    </p>
+
+                                    <div className="lvl-choices-grid">
+                                        {WARLOCK_INVOCATIONS.map(inv => {
+                                            const isSelected = selectedInvocation === inv.id;
+                                            return (
+                                                <div
+                                                    key={inv.id}
+                                                    className={`lvl-choice-card ${isSelected ? 'selected' : ''}`}
+                                                    onClick={() => setSelectedInvocation(inv.id)}
+                                                >
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                        <h4>{inv.name}</h4>
+                                                        {isSelected && <Check size={16} color="#ffd700" />}
+                                                    </div>
+                                                    <p>{inv.description}</p>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+
+                            {hasSubclassChoice && (
+                                <div>
+                                    <h3 style={{ margin: '0 0 6px 0', color: '#ffd700' }}>Escolha sua Subclasse (3º Nível)</h3>
+                                    <p style={{ color: '#94a3b8', fontSize: '0.85rem', marginBottom: '14px' }}>
+                                        Selecione sua arquétipo definitivo de classe.
+                                    </p>
+
+                                    <div className="lvl-choices-grid">
+                                        {(classData?.subclasses || []).map(sc => {
+                                            const isSelected = selectedSubclass === sc.id;
+                                            return (
+                                                <div
+                                                    key={sc.id}
+                                                    className={`lvl-choice-card ${isSelected ? 'selected' : ''}`}
+                                                    onClick={() => setSelectedSubclass(sc.id)}
+                                                >
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                        <h4>{sc.name}</h4>
+                                                        {isSelected && <Check size={16} color="#ffd700" />}
+                                                    </div>
+                                                    <p>{sc.description}</p>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* 5. SPELLS STEP */}
+                    {currentStep === 'spells' && (
+                        <div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                                <div>
+                                    <h3 style={{ margin: 0, color: '#ffd700' }}>Aprender Novas Magias</h3>
+                                    <p style={{ margin: '4px 0 0 0', color: '#94a3b8', fontSize: '0.85rem' }}>
+                                        Selecione até {maxSpellsAllowed} nova(s) magia(s) para o seu repertório/grimório. (Selecionadas: {selectedSpells.length}/{maxSpellsAllowed})
+                                    </p>
+                                </div>
+                                <input
+                                    type="text"
+                                    placeholder="Buscar magias..."
+                                    value={spellSearch}
+                                    onChange={e => setSpellSearch(e.target.value)}
+                                    style={{
+                                        background: 'rgba(0,0,0,0.4)',
+                                        border: '1px solid rgba(255,255,255,0.15)',
+                                        color: '#fff',
+                                        padding: '6px 12px',
+                                        borderRadius: '6px',
+                                        fontSize: '0.82rem'
+                                    }}
+                                />
+                            </div>
+
+                            <div className="lvl-spells-layout">
+                                <div className="lvl-spells-picker">
+                                    {SPELLS
+                                        .filter(s => s.classes.includes(classData?.id) && s.level <= Math.ceil(newLevel / 2) && s.level > 0)
+                                        .filter(s => !spellSearch || s.name.toLowerCase().includes(spellSearch.toLowerCase()) || s.school.toLowerCase().includes(spellSearch.toLowerCase()))
+                                        .map(spell => {
+                                            const isOwned = (character.spells || []).some(cs => cs.id === spell.id);
+                                            const isSelected = selectedSpells.some(s => s.id === spell.id);
+                                            return (
+                                                <div
+                                                    key={spell.id}
+                                                    className={`lvl-spell-row ${isSelected ? 'selected' : ''}`}
+                                                    style={isOwned ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
+                                                    onClick={() => {
+                                                        if (isOwned) return;
+                                                        if (isSelected) {
+                                                            setSelectedSpells(prev => prev.filter(s => s.id !== spell.id));
                                                         } else {
-                                                            // Auto-switch for better UX if count is 1
-                                                            if (newSpellsCount === 1) {
+                                                            if (selectedSpells.length < maxSpellsAllowed) {
+                                                                setSelectedSpells(prev => [...prev, spell]);
+                                                            } else if (maxSpellsAllowed === 1) {
                                                                 setSelectedSpells([spell]);
                                                             }
                                                         }
-                                                    }
-                                                }}
-                                                onMouseEnter={() => { }} // Could track hover for preview
-                                                title={spell.description}
-                                            >
-                                                <div className="spell-item-header">
-                                                    <strong>{spell.name}</strong>
-                                                    <span className="spell-level">{spell.level}º</span>
+                                                    }}
+                                                >
+                                                    <div>
+                                                        <strong style={{ display: 'block', fontSize: '0.88rem' }}>{spell.name}</strong>
+                                                        <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>{spell.level}º Círculo • {spell.school}</span>
+                                                    </div>
+                                                    <div>
+                                                        {isOwned ? (
+                                                            <span style={{ fontSize: '0.75rem', color: '#888' }}>Aprendida</span>
+                                                        ) : isSelected ? (
+                                                            <Check size={16} color="#ffd700" />
+                                                        ) : (
+                                                            <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>+ Adicionar</span>
+                                                        )}
+                                                    </div>
                                                 </div>
-                                                {isOwned && <small>✔ Aprendido</small>}
-                                                {isSelected && <small className="selection-mark">⚡ Selecionado</small>}
-                                            </div>
-                                        );
-                                    })}
+                                            );
+                                        })}
                                 </div>
 
-                                {/* Spell Description Preview */}
-                                <div className="spell-preview-pnl">
+                                <div className="lvl-spell-preview">
                                     {selectedSpells.length > 0 ? (
-                                        selectedSpells.map(s => (
-                                            <div key={s.id} className="preview-card">
-                                                <h4>{s.name}</h4>
-                                                <div className="spell-meta">
-                                                    <span>{s.school}</span> • <span>{s.castingTime}</span> • <span>{s.range}</span>
-                                                </div>
-                                                <p>{s.description}</p>
+                                        <div>
+                                            <h4 style={{ margin: '0 0 4px 0', color: '#ffd700' }}>{selectedSpells[selectedSpells.length - 1].name}</h4>
+                                            <div style={{ fontSize: '0.78rem', color: '#94a3b8', marginBottom: '8px' }}>
+                                                {selectedSpells[selectedSpells.length - 1].school} • Tempo: {selectedSpells[selectedSpells.length - 1].castingTime} • Alcance: {selectedSpells[selectedSpells.length - 1].range}
                                             </div>
-                                        ))
+                                            <p style={{ fontSize: '0.82rem', color: '#e2e8f0', lineHeight: 1.5 }}>
+                                                {selectedSpells[selectedSpells.length - 1].description}
+                                            </p>
+                                        </div>
                                     ) : (
-                                        <div className="preview-placeholder">
-                                            Selecione uma magia para ver os detalhes.
+                                        <div style={{ color: '#64748b', textAlign: 'center', marginTop: '60px', fontStyle: 'italic' }}>
+                                            Clique em uma magia para ver sua descrição completa e adicioná-la à sua ficha.
                                         </div>
                                     )}
                                 </div>
                             </div>
-
-                            <button
-                                className="lvl-btn"
-                                onClick={() => isAsiLevel ? setStep('feat') : handleFinish()}
-                            >
-                                {isAsiLevel ? 'Próximo' : 'Concluir'}
-                            </button>
                         </div>
                     )}
 
-                    {step === 'feat' && (
-                        <div className="step-feat">
+                    {/* 6. FEAT / ASI STEP */}
+                    {currentStep === 'feat' && isAsiLevel && (
+                        <div>
                             <div className="feat-type-selector">
                                 <button
+                                    type="button"
                                     className={`fts-btn ${progressionType === 'feat' ? 'active' : ''}`}
                                     onClick={() => setProgressionType('feat')}
                                 >
                                     Novo Talento
                                 </button>
                                 <button
+                                    type="button"
                                     className={`fts-btn ${progressionType === 'asi' ? 'active' : ''}`}
                                     onClick={() => setProgressionType('asi')}
                                 >
-                                    Melhorar Atributos
+                                    Aumento no Atributo (+2 ou +1/+1)
                                 </button>
                             </div>
 
                             {progressionType === 'feat' ? (
                                 <div className="feat-selector">
                                     {FEATS.map(feat => {
-                                        const isOwned = character.feats.some(cf => cf.id === feat.id);
+                                        const isOwned = (character.feats || []).some(cf => cf.id === feat.id);
+                                        const isSelected = selectedFeat?.id === feat.id;
                                         return (
                                             <div
                                                 key={feat.id}
-                                                className={`feat-item ${selectedFeat?.id === feat.id ? 'selected' : ''} ${isOwned ? 'disabled' : ''}`}
-                                                onClick={() => !isOwned && setSelectedFeat(feat)}
+                                                className={`feat-item ${isSelected ? 'selected' : ''}`}
                                                 style={isOwned ? { opacity: 0.5, pointerEvents: 'none' } : {}}
+                                                onClick={() => !isOwned && setSelectedFeat(feat)}
                                             >
                                                 <strong>{feat.name}</strong> {isOwned && <small>(Adquirido)</small>}
                                                 <p>{feat.description}</p>
@@ -289,11 +868,11 @@ export const LevelUpModal: React.FC<LevelUpModalProps> = ({ character, onUpdate,
                             ) : (
                                 <div className="asi-selector">
                                     <p>Escolha aumentar um atributo em +2 ou dois atributos em +1.</p>
-
                                     <div className="asi-mode-toggle">
                                         <label>
                                             <input
                                                 type="radio"
+                                                name="asi_mode"
                                                 checked={asiTargets.attr2 === null}
                                                 onChange={() => setAsiTargets({ attr1: asiTargets.attr1, attr2: null })}
                                             />
@@ -302,54 +881,107 @@ export const LevelUpModal: React.FC<LevelUpModalProps> = ({ character, onUpdate,
                                         <label>
                                             <input
                                                 type="radio"
+                                                name="asi_mode"
                                                 checked={asiTargets.attr2 !== null}
-                                                onChange={() => {
-                                                    const second = attrOptions.find(o => o.key !== asiTargets.attr1)?.key || 'dex';
-                                                    setAsiTargets({ attr1: asiTargets.attr1, attr2: second });
-                                                }}
+                                                onChange={() => setAsiTargets({ attr1: asiTargets.attr1, attr2: 'dex' })}
                                             />
                                             Distribuir (+1 em dois)
                                         </label>
                                     </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
 
-                                    <div className="asi-controls">
-                                        <div className="asi-row">
-                                            <span>Atributo 1:</span>
-                                            <select
-                                                value={asiTargets.attr1}
-                                                onChange={e => setAsiTargets({ ...asiTargets, attr1: e.target.value as keyof CharacterAttributes })}
-                                            >
-                                                {attrOptions.map(o => (
-                                                    <option key={o.key} value={o.key}>{o.label} ({character.attributes[o.key].value})</option>
-                                                ))}
-                                            </select>
-                                            <span className="badge">+{asiTargets.attr2 === null ? 2 : 1}</span>
-                                        </div>
+                    {/* 7. FINISH / REVIEW STEP */}
+                    {currentStep === 'finish' && (
+                        <div>
+                            <div className="lvl-overview-hero" style={{ marginBottom: '16px' }}>
+                                <div>
+                                    <h3 style={{ margin: '0 0 4px 0', color: '#ffd700' }}>Revisão da Evolução para o Nível {newLevel}</h3>
+                                    <p style={{ margin: 0, color: '#94a3b8', fontSize: '0.85rem' }}>
+                                        Confira as melhorias e confirme a evolução do seu personagem.
+                                    </p>
+                                </div>
+                                <Star size={32} color="#ffd700" />
+                            </div>
 
-                                        {asiTargets.attr2 !== null && (
-                                            <div className="asi-row">
-                                                <span>Atributo 2:</span>
-                                                <select
-                                                    value={asiTargets.attr2}
-                                                    onChange={e => setAsiTargets({ ...asiTargets, attr2: e.target.value as keyof CharacterAttributes })}
-                                                >
-                                                    {attrOptions.filter(o => o.key !== asiTargets.attr1).map(o => (
-                                                        <option key={o.key} value={o.key}>{o.label} ({character.attributes[o.key].value})</option>
-                                                    ))}
-                                                </select>
-                                                <span className="badge">+1</span>
-                                            </div>
-                                        )}
-                                    </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '14px' }}>
+                                <div className="lvl-stat-pill">
+                                    <span className="label">Pontos de Vida (HP)</span>
+                                    <span className="val">{character.hp.max} → {character.hp.max + finalHpGain} (+{finalHpGain} PV)</span>
+                                </div>
+                                <div className="lvl-stat-pill">
+                                    <span className="label">Dados de Vida</span>
+                                    <span className="val">{newLevel}d{hitDieValue}</span>
+                                </div>
+                                <div className="lvl-stat-pill">
+                                    <span className="label">Bônus de Proficiência</span>
+                                    <span className="val">+{profBonus}</span>
+                                </div>
+                                <div className="lvl-stat-pill">
+                                    <span className="label">Novas Habilidades de Classe</span>
+                                    <span className="val">{newFeatures.length + (selectedFightingStyle ? 1 : 0) + (selectedInvocation ? 1 : 0)} nova(s)</span>
+                                </div>
+                            </div>
+
+                            {selectedFightingStyle && (
+                                <div style={{ marginTop: '14px', background: 'rgba(0,0,0,0.3)', padding: '10px 14px', borderRadius: '6px', border: '1px solid #ffd700' }}>
+                                    <strong style={{ color: '#ffd700' }}>Estilo de Luta Escolhido:</strong> {FIGHTING_STYLES.find(f => f.id === selectedFightingStyle)?.name}
                                 </div>
                             )}
 
-                            <button className="lvl-btn" onClick={() => handleFinish()}>Concluir Evolução</button>
+                            {selectedInvocation && (
+                                <div style={{ marginTop: '14px', background: 'rgba(0,0,0,0.3)', padding: '10px 14px', borderRadius: '6px', border: '1px solid #ffd700' }}>
+                                    <strong style={{ color: '#ffd700' }}>Invocação Mística:</strong> {WARLOCK_INVOCATIONS.find(i => i.id === selectedInvocation)?.name}
+                                </div>
+                            )}
+
+                            {selectedSpells.length > 0 && (
+                                <div style={{ marginTop: '14px', background: 'rgba(0,0,0,0.3)', padding: '10px 14px', borderRadius: '6px', border: '1px solid #60a5fa' }}>
+                                    <strong style={{ color: '#60a5fa' }}>Novas Magias Aprendidas:</strong> {selectedSpells.map(s => s.name).join(', ')}
+                                </div>
+                            )}
                         </div>
                     )}
+
+                </div>
+
+                {/* Footer */}
+                <div className="lvl-footer">
+                    <div>
+                        {currentStepIdx > 0 && (
+                            <button type="button" className="lvl-btn-back" onClick={prevStep}>
+                                <ArrowLeft size={14} style={{ marginRight: '6px', verticalAlign: 'middle' }} />
+                                Voltar
+                            </button>
+                        )}
+                    </div>
+
+                    <div>
+                        {currentStepIdx < steps.length - 1 ? (
+                            <button
+                                type="button"
+                                className="lvl-btn-primary"
+                                onClick={nextStep}
+                                disabled={currentStep === 'hp' && hpChoice === 'roll' && rolledHp === null}
+                            >
+                                <span>Avançar</span>
+                                <ArrowRight size={14} />
+                            </button>
+                        ) : (
+                            <button
+                                type="button"
+                                className="lvl-btn-primary"
+                                onClick={handleFinish}
+                            >
+                                <Flame size={16} />
+                                <span>Confirmar Evolução do Personagem</span>
+                            </button>
+                        )}
+                    </div>
                 </div>
             </div>
         </div>
     );
 };
-

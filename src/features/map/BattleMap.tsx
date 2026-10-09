@@ -12,6 +12,8 @@ import { TokenSettingsModal } from './TokenSettingsModal';
 import { AssetSettingsModal } from './AssetSettingsModal';
 import { MonsterRepository } from '../monsters/MonsterRepository';
 import { EditableMonsterSheet } from '../monsters/EditableMonsterSheet';
+import { playSynthSound } from '../audio/audioSynth';
+import { Ruler, Plus, Minus } from 'lucide-react';
 
 
 
@@ -146,6 +148,9 @@ export const BattleMap: React.FC = () => {
                 const gridX = Math.round(tempTokenPos.x / config.gridSize);
                 const gridY = Math.round(tempTokenPos.y / config.gridSize);
 
+                if (token.position.x !== gridX || token.position.y !== gridY) {
+                    playSynthSound('dice', 0.2);
+                }
                 updateTokenPosition(draggingTokenId, gridX, gridY);
             }
 
@@ -442,7 +447,7 @@ export const BattleMap: React.FC = () => {
                         whiteSpace: 'nowrap',
                         transition: 'background 0.3s ease, border-color 0.3s ease'
                     }}>
-                        <span style={{ opacity: 0.7 }}>📏</span>
+                        <Ruler size={14} style={{ opacity: 0.8 }} />
                         <span>{rulerInfo.meters}m</span>
                         {rulerInfo.limit < 999 && (
                             <span style={{
@@ -612,9 +617,13 @@ export const BattleMap: React.FC = () => {
 
             {/* UI Controls */}
             <div style={{ position: 'absolute', bottom: 20, right: 20, display: 'flex', gap: 10 }}>
-                <button onClick={() => setScale(s => s * 1.2)} style={btnStyle}>➕</button>
-                <button onClick={() => setScale(1)} style={btnStyle}>Reset</button>
-                <button onClick={() => setScale(s => s * 0.8)} style={btnStyle}>➖</button>
+                <button onClick={() => setScale(s => s * 1.2)} style={{ ...btnStyle, display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Aproximar">
+                    <Plus size={14} />
+                </button>
+                <button onClick={() => setScale(1)} style={btnStyle} title="Resetar Zoom">100%</button>
+                <button onClick={() => setScale(s => s * 0.8)} style={{ ...btnStyle, display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Afastar">
+                    <Minus size={14} />
+                </button>
             </div>
 
             {/* Modals */}

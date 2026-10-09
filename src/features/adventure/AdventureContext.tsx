@@ -3,6 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db, type Campaign } from '../../db/RPGDatabase';
 import { AdventureRepository } from './adventureRepository'; // Kept for migration
 import { CampaignStorage } from '../../services/CampaignStorage'; // Kept for migration
+import { SYSTEM_SCENARIOS } from './data/systemScenarios';
 
 // Alias Campaign to Adventure for backward compatibility
 export type Adventure = Campaign;
@@ -18,7 +19,7 @@ interface AdventureContextType {
     currentAdventure: Adventure | null;
     adventures: AdventureSummary[];
     loadAdventure: (id: string) => Promise<void>;
-    createAdventure: (name: string, system?: string) => Promise<Adventure>;
+    createAdventure: (name: string, system?: string, customId?: string) => Promise<Adventure>;
     deleteAdventure: (id: string) => Promise<void>;
     closeAdventure: () => void;
     isLoading: boolean;
@@ -89,8 +90,8 @@ export const AdventureProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         checkMigration();
     }, []);
 
-    const createAdventure = async (name: string, system: string = 'dnd5e'): Promise<Adventure> => {
-        const id = crypto.randomUUID();
+    const createAdventure = async (name: string, system: string = 'dnd55e', customId?: string): Promise<Adventure> => {
+        const id = customId || crypto.randomUUID();
         const newAdv: Adventure = {
             id,
             name,
@@ -101,14 +102,27 @@ export const AdventureProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         };
 
         await db.campaigns.add(newAdv);
-        // Create initial default map entry for clean start
+
+        // Initialize with authentic system scenario, map layout, walls and monsters
+        const scenario = SYSTEM_SCENARIOS[system] || SYSTEM_SCENARIOS.dnd55e || SYSTEM_SCENARIOS.witcher || SYSTEM_SCENARIOS.dnd5e;
+        const initialMapConfig = { ...scenario.scene.config };
+        const initialTokens = JSON.parse(JSON.stringify(scenario.scene.tokens));
+        const initialWalls = JSON.parse(JSON.stringify(scenario.scene.walls));
+
         await db.maps.add({
             campaignId: id,
-            name: 'Default Map',
-            config: { width: 20, height: 20, gridSize: 50, scale: 1, offsetX: 0, offsetY: 0, backgroundColor: '#222', gridColor: '#444', fogEnabled: true, globalLight: 'dim', walls: [] },
-            tokens: [],
-            walls: []
+            name: scenario.scene.name,
+            config: initialMapConfig,
+            tokens: initialTokens,
+            walls: initialWalls
         });
+
+        // Also save as an initial scene in Scene list for the GM
+        await db.scenes.add({
+            ...scenario.scene,
+            id: crypto.randomUUID(),
+            campaignId: id
+        } as any);
 
         setCurrentAdventure(newAdv);
         return newAdv;

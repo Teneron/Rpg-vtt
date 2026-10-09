@@ -4,6 +4,7 @@ import type { Monster } from '../../monsters/monsterTypes';
 import { ITEMS } from '../data/items';
 import { useDice } from '../../dice/DiceContext';
 import type { Character } from '../characterTypes';
+import { BookOpen, FlaskConical, Shield, Compass } from 'lucide-react';
 
 interface PlayerBestiaryPanelProps {
     character?: Character;
@@ -15,16 +16,14 @@ export const PlayerBestiaryPanel: React.FC<PlayerBestiaryPanelProps> = ({ charac
     const [monsters, setMonsters] = useState<Monster[]>([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [viewingMonster, setViewingMonster] = useState<Monster | null>(null);
-    const [sourceFilter, setSourceFilter] = useState<'all' | 'witcher' | 'dnd'>('witcher');
 
     useEffect(() => {
         setMonsters(MonsterRepository.getAll());
     }, []);
 
-    // --- MONSTERS LOGIC ---
+    // --- MONSTERS LOGIC (Strictly Witcher for Witcher Lore) ---
     const filteredMonsters = monsters.filter(m => {
-        if (sourceFilter === 'witcher' && m.source !== 'Witcher') return false;
-        if (sourceFilter === 'dnd' && m.source === 'Witcher') return false;
+        if (m.source !== 'Witcher') return false;
         const isHumanoid = m.category === 'NPC' || m.category === 'Humanoid' || m.category.includes('Humanoide') || m.category.includes('Civil');
         if (isHumanoid) return false;
         const matchSearch = m.name.toLowerCase().includes(searchTerm.toLowerCase()) || (m.category || '').toLowerCase().includes(searchTerm.toLowerCase());
@@ -43,15 +42,17 @@ export const PlayerBestiaryPanel: React.FC<PlayerBestiaryPanelProps> = ({ charac
             <div style={{ display: 'flex', borderBottom: '1px solid #333', background: '#1a1a1a' }}>
                 <button
                     onClick={() => setActiveTab('monsters')}
-                    style={{ flex: 1, padding: '15px', background: activeTab === 'monsters' ? '#222' : 'transparent', color: activeTab === 'monsters' ? '#c5a059' : '#888', border: 'none', cursor: 'pointer', fontWeight: 'bold', borderBottom: activeTab === 'monsters' ? '2px solid #c5a059' : 'none' }}
+                    style={{ flex: 1, padding: '15px', background: activeTab === 'monsters' ? '#222' : 'transparent', color: activeTab === 'monsters' ? '#c5a059' : '#888', border: 'none', cursor: 'pointer', fontWeight: 'bold', borderBottom: activeTab === 'monsters' ? '2px solid #c5a059' : 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
                 >
-                    🐺 Bestiário
+                    <BookOpen size={15} />
+                    <span>Bestiário</span>
                 </button>
                 <button
                     onClick={() => setActiveTab('alchemy')}
-                    style={{ flex: 1, padding: '15px', background: activeTab === 'alchemy' ? '#222' : 'transparent', color: activeTab === 'alchemy' ? '#5f5' : '#888', border: 'none', cursor: 'pointer', fontWeight: 'bold', borderBottom: activeTab === 'alchemy' ? '2px solid #5f5' : 'none' }}
+                    style={{ flex: 1, padding: '15px', background: activeTab === 'alchemy' ? '#222' : 'transparent', color: activeTab === 'alchemy' ? '#5f5' : '#888', border: 'none', cursor: 'pointer', fontWeight: 'bold', borderBottom: activeTab === 'alchemy' ? '2px solid #5f5' : 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
                 >
-                    🧪 Alquimia & Poções
+                    <FlaskConical size={15} />
+                    <span>Alquimia & Poções</span>
                 </button>
             </div>
 
@@ -64,12 +65,7 @@ export const PlayerBestiaryPanel: React.FC<PlayerBestiaryPanelProps> = ({ charac
                         {/* Left List */}
                         <div style={{ width: '300px', borderRight: '1px solid #333', display: 'flex', flexDirection: 'column', background: '#1a1a1a' }}>
                             <div style={{ padding: '15px', borderBottom: '1px solid #333', background: '#222', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                                <div style={{ display: 'flex', gap: '5px', justifyContent: 'center' }}>
-                                    <button onClick={() => setSourceFilter('witcher')} style={{ flex: 1, padding: '6px', background: sourceFilter === 'witcher' ? '#c5a059' : '#333', color: sourceFilter === 'witcher' ? '#000' : '#888', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>🐺 Bruxo</button>
-                                    <button onClick={() => setSourceFilter('dnd')} style={{ flex: 1, padding: '6px', background: sourceFilter === 'dnd' ? '#e74c3c' : '#333', color: sourceFilter === 'dnd' ? '#fff' : '#888', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>🐉 D&D</button>
-                                    <button onClick={() => setSourceFilter('all')} style={{ flex: 1, padding: '6px', background: sourceFilter === 'all' ? '#555' : '#333', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Tudo</button>
-                                </div>
-                                <input type="text" placeholder="🔍 Pesquisar Bestiário..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #444', background: '#000', color: '#fff', fontSize: '0.9rem' }} />
+                                <input type="text" placeholder="Pesquisar Bestiário..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #444', background: '#000', color: '#fff', fontSize: '0.9rem' }} />
                             </div>
                             <div className="monster-list custom-scroll" style={{ flex: 1, overflowY: 'auto' }}>
                                 {filteredMonsters.map(monster => (
@@ -97,12 +93,12 @@ export const PlayerBestiaryPanel: React.FC<PlayerBestiaryPanelProps> = ({ charac
                                     </div>
                                     <div style={{ display: 'grid', gridTemplateColumns: 'minmax(300px, 2fr) 1fr', gap: '30px' }}>
                                         <div>
-                                            <h3 style={{ borderBottom: '1px solid #444', paddingBottom: '5px', color: '#aaa', marginTop: 0 }}>📖 Conhecimento & Lore</h3>
+                                            <h3 style={{ borderBottom: '1px solid #444', paddingBottom: '5px', color: '#aaa', marginTop: 0 }}>Conhecimento & Lore</h3>
                                             <p style={{ lineHeight: '1.6', color: '#ddd', fontSize: '1rem', whiteSpace: 'pre-wrap' }}>{viewingMonster.description || 'Nenhum registro encontrado...'}</p>
                                             <div style={{ marginTop: '20px' }}><h4 style={{ color: '#aaa', fontSize: '0.9rem', marginBottom: '5px' }}>Sentidos Conhecidos</h4><p style={{ color: '#ccc' }}>{viewingMonster.senses?.join(', ') || 'Nenhum registro.'}</p></div>
                                         </div>
                                         <div style={{ background: '#1e1e1e', padding: '20px', borderRadius: '8px', border: '1px solid #333', alignSelf: 'start' }}>
-                                            <h3 style={{ color: '#e74c3c', marginTop: 0, borderBottom: '1px solid #e74c3c', paddingBottom: '5px' }}>⚠ Oleo & Fraquezas</h3>
+                                            <h3 style={{ color: '#e74c3c', marginTop: 0, borderBottom: '1px solid #e74c3c', paddingBottom: '5px' }}>Óleo & Fraquezas</h3>
                                             <div style={{ marginTop: '15px' }}><strong style={{ display: 'block', color: '#ff6b6b', marginBottom: '5px', fontSize: '0.9rem' }}>Vulnerabilidades:</strong>{viewingMonster.damageVulnerabilities && viewingMonster.damageVulnerabilities.length > 0 ? <ul style={{ margin: '0', paddingLeft: '20px', color: '#ffaaaa' }}>{viewingMonster.damageVulnerabilities.map(v => <li key={v}>{v}</li>)}</ul> : <span style={{ color: '#666', fontStyle: 'italic' }}>Nenhuma.</span>}</div>
                                             <div style={{ marginTop: '15px' }}><strong style={{ display: 'block', color: '#feca57', marginBottom: '5px', fontSize: '0.9rem' }}>Resistências:</strong>{viewingMonster.damageResistances && viewingMonster.damageResistances.length > 0 ? <ul style={{ margin: '0', paddingLeft: '20px', color: '#ffeaa7' }}>{viewingMonster.damageResistances.map(r => <li key={r}>{r}</li>)}</ul> : <span style={{ color: '#666', fontStyle: 'italic' }}>Nenhuma.</span>}</div>
                                             <div style={{ marginTop: '15px' }}><strong style={{ display: 'block', color: '#54a0ff', marginBottom: '5px', fontSize: '0.9rem' }}>Imunidades:</strong><div style={{ color: '#9ecaff', fontSize: '0.9rem' }}>{[...(viewingMonster.damageImmunities || []), ...(viewingMonster.conditionImmunities || [])].join(', ') || <span style={{ color: '#666', fontStyle: 'italic' }}>Nenhuma.</span>}</div></div>
@@ -111,7 +107,7 @@ export const PlayerBestiaryPanel: React.FC<PlayerBestiaryPanelProps> = ({ charac
                                 </div>
                             ) : (
                                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#444' }}>
-                                    <div style={{ fontSize: '4rem', marginBottom: '20px' }}>🐺</div>
+                                    <Shield size={48} color="#444" style={{ marginBottom: '16px' }} />
                                     <p style={{ fontSize: '1.2rem' }}>Selecione uma criatura para consultar o bestiário.</p>
                                 </div>
                             )}
@@ -153,10 +149,11 @@ export const PlayerBestiaryPanel: React.FC<PlayerBestiaryPanelProps> = ({ charac
                                                 gap: '5px'
                                             }}
                                         >
-                                            🌿 Coletar (CD 15)
+                                            <Compass size={14} />
+                                            <span>Coletar (CD 15)</span>
                                         </button>
                                     )}
-                                    <input type="text" placeholder="🔍 Buscar poção..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ padding: '8px', borderRadius: '4px', border: '1px solid #444', background: '#000', color: '#fff' }} />
+                                    <input type="text" placeholder="Buscar poção..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ padding: '8px', borderRadius: '4px', border: '1px solid #444', background: '#000', color: '#fff' }} />
                                 </div>
                             </div>
 
@@ -166,7 +163,7 @@ export const PlayerBestiaryPanel: React.FC<PlayerBestiaryPanelProps> = ({ charac
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '10px' }}>
                                             <h3 style={{ margin: '0 0 5px 0', color: '#c5a059' }}>{potion.name}</h3>
                                             <div style={{ background: '#000', color: '#5f5', padding: '2px 8px', borderRadius: '4px', fontSize: '0.8rem', border: '1px solid #5f5' }}>
-                                                ☠ {potion.toxicity}
+                                                Tox: {potion.toxicity}
                                             </div>
                                         </div>
 

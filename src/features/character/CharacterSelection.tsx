@@ -1,45 +1,47 @@
 import React, { useState, useEffect } from 'react';
 import { CharacterRepository, type CharacterSummary } from './characterRepository';
 import { usePeer } from '../multiplayer/FirebaseContext';
-import './CharacterSelection.css'; // We'll create this css next
+import { useAdventure } from '../adventure/AdventureContext';
+import { User, Scroll, Shield, Plus, X, ArrowRight, Swords } from 'lucide-react';
+import './CharacterSelection.css';
 
 interface CharacterSelectionProps {
     onSelect: (characterId: string) => void;
 }
 
 export const CharacterSelection: React.FC<CharacterSelectionProps> = ({ onSelect }) => {
-    const { username, currentAdventureId, currentAdventureName } = usePeer(); // Get current player name and campaign ID
+    const { username, currentAdventureId, currentAdventureName, roomSystem } = usePeer();
+    const { currentAdventure } = useAdventure();
     const [characters, setCharacters] = useState<CharacterSummary[]>([]);
 
+    // Detect active game system strictly (witcher if room begins with WTC- or adventure is witcher, otherwise dnd55e)
+    const activeSystem: 'witcher' | 'dnd55e' = (
+        roomSystem === 'witcher' ||
+        currentAdventureId?.toUpperCase().startsWith('WTC') ||
+        currentAdventure?.system === 'witcher'
+    ) ? 'witcher' : 'dnd55e';
+
     useEffect(() => {
-        console.log('[CharacterSelection] Hook Triggered. Username:', username, 'AdvID:', currentAdventureId);
         loadList();
     }, [username, currentAdventureId]);
 
     const loadList = async () => {
         if (username) {
-            // "default" fallback is handled by Repo, but explicit is fine too
             const advId = currentAdventureId || 'default';
-            console.log('[CharacterSelection] Loading list for:', username, 'scope:', advId);
             const list = await CharacterRepository.listAllAsync(username, advId);
-            setCharacters(list);
-
-            // Auto-create if empty (User Request: Open builder direct)
-            if (list.length === 0) {
-                console.log("No characters found for this adventure, auto-creating for builder...");
-                const newChar = CharacterRepository.create(username, advId);
-                // We need to pass the ID up. But we just created it.
-                // Calling onSelect immediately might be too fast for React state updates if we relied on 'characters' state,
-                // but here we have the ID.
-                onSelect(newChar.id);
-            }
+            // Strict isolation: only show characters belonging to the active table's game system
+            const filtered = list.filter(c => {
+                const charSys = (c.system === 'witcher') ? 'witcher' : 'dnd55e';
+                return charSys === activeSystem;
+            });
+            setCharacters(filtered);
         }
     };
 
-    const handleCreate = () => {
+    const handleCreateNew = () => {
         if (!username) return;
         const advId = currentAdventureId || 'default';
-        const newChar = CharacterRepository.create(username, advId);
+        const newChar = CharacterRepository.create(username, advId, activeSystem);
         onSelect(newChar.id);
     };
 
@@ -52,52 +54,146 @@ export const CharacterSelection: React.FC<CharacterSelectionProps> = ({ onSelect
         }
     };
 
+    const getSystemBadgeColor = (sys?: string) => {
+        switch (sys) {
+            case 'witcher':
+                return '#c5a059';
+            case 'dnd55e':
+            case 'dnd5e':
+            default:
+                return '#e11d48';
+        }
+    };
+
+    const getSystemLabel = (sys?: string) => {
+        switch (sys) {
+            case 'witcher':
+                return 'The Witcher';
+            case 'dnd55e':
+            case 'dnd5e':
+            default:
+                return 'D&D 5.5e';
+        }
+    };
+
     return (
         <div className="char-selection-container">
-            <h1 className="main-title">Selecione seu Personagem</h1>
-            <div style={{
-                background: 'rgba(255, 255, 255, 0.05)',
-                padding: '10px 20px',
-                borderRadius: '50px',
-                marginBottom: '30px',
-                fontSize: '0.9rem',
-                color: '#aaa',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
-                display: 'inline-block'
-            }}>
-                <span style={{ marginRight: '15px' }}>👤 {username}</span>
-                <span>📜 Campanha: <strong style={{ color: '#fff' }}>{currentAdventureName || 'Padrão'}</strong></span>
-                <span style={{ marginLeft: '10px', fontSize: '0.8rem', opacity: 0.5 }}>(ID: {currentAdventureId?.substring(0, 6)})</span>
+            {/* Header / Session pill */}
+            <div className="char-selection-header">
+                <h1 className="main-title">Selecione seu Herói</h1>
+                <p className="subtitle">
+                    {activeSystem === 'witcher'
+                        ? 'Crie seu Bruxo caçador de monstros ou selecione uma ficha existente no Continente'
+                        : 'Crie seu aventureiro pelas regras oficiais de D&D 5.5e ou selecione uma ficha existente'}
+                </p>
+
+                <div className="session-info-pill">
+                    <span className="info-user" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <User size={13} />
+                        <span>{username || 'Jogador'}</span>
+                    </span>
+                    <span className="info-camp" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <Scroll size={13} />
+                        <span>Mesa: <strong>{currentAdventureName || (activeSystem === 'witcher' ? 'The Witcher' : 'D&D 5.5e')}</strong></span>
+                    </span>
+                    <span className="info-id" style={{ display: 'flex', alignItems: 'center', gap: '4px', fontFamily: 'monospace', color: '#ffd700', letterSpacing: '1px' }}>
+                        <Shield size={13} color="#ffd700" />
+                        <span>Sala: <strong>{currentAdventureId || 'local'}</strong></span>
+                    </span>
+                    <span className="info-system" style={{
+                        padding: '2px 8px',
+                        borderRadius: '4px',
+                        background: activeSystem === 'witcher' ? 'rgba(197, 160, 89, 0.2)' : 'rgba(225, 29, 72, 0.2)',
+                        border: `1px solid ${activeSystem === 'witcher' ? '#c5a059' : '#e11d48'}`,
+                        color: activeSystem === 'witcher' ? '#e0c070' : '#ff4d6d',
+                        fontWeight: 'bold',
+                        fontSize: '0.85rem'
+                    }}>
+                        {activeSystem === 'witcher' ? 'The Witcher' : 'D&D 5.5e'}
+                    </span>
+                </div>
             </div>
 
+            {/* Quick Actions Bar */}
+            <div className="actions-bar" style={{ justifyContent: 'center' }}>
+                <button
+                    className="btn-action-primary"
+                    onClick={handleCreateNew}
+                    style={{
+                        padding: '12px 28px',
+                        fontSize: '1.05rem',
+                        fontWeight: 'bold',
+                        background: activeSystem === 'witcher'
+                            ? 'linear-gradient(135deg, #8a6d2b 0%, #c5a059 100%)'
+                            : 'linear-gradient(135deg, #991b1b 0%, #dc2626 100%)',
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        boxShadow: '0 4px 14px rgba(0,0,0,0.4)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px'
+                    }}
+                >
+                    <Plus size={18} />
+                    <span>Criar Novo Personagem</span>
+                </button>
+            </div>
+
+            {/* Existing Characters Grid */}
             <div className="char-list">
-                {characters.map(char => (
-                    <div
-                        key={char.id}
-                        className="char-card"
-                        onClick={() => onSelect(char.id)}
-                        draggable
-                        onDragStart={(e) => {
-                            e.dataTransfer.setData('application/json', JSON.stringify({
-                                type: 'character',
-                                id: char.id
-                            }));
-                        }}
-                    >
-                        <h2 className="char-card-name">{char.name}</h2>
-                        <div className="char-card-info">
-                            <span>Lvl {char.level} {char.class}</span>
-                            <span>{char.race}</span>
-                            <span style={{ fontSize: '0.7rem', color: '#666' }}>ID da Aventura: {char.adventureId?.substring(0, 8)}</span>
+                {characters.map(char => {
+                    const badgeColor = getSystemBadgeColor(char.system);
+                    return (
+                        <div
+                            key={char.id}
+                            className="char-card"
+                            onClick={() => onSelect(char.id)}
+                            draggable
+                            onDragStart={(e) => {
+                                e.dataTransfer.setData('application/json', JSON.stringify({
+                                    type: 'character',
+                                    id: char.id
+                                }));
+                            }}
+                        >
+                            <div className="char-system-badge" style={{ backgroundColor: `${badgeColor}25`, borderColor: badgeColor, color: badgeColor }}>
+                                {getSystemLabel(char.system)}
+                            </div>
+
+                            <div className="char-avatar-circle" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                {char.system === 'witcher' ? <Shield size={24} color="#c5a059" /> : <Swords size={24} color="#e11d48" />}
+                            </div>
+
+                            <h2 className="char-card-name">{char.name}</h2>
+
+                            <div className="char-card-info">
+                                <span className="char-class-level">Nv {char.level} {char.class || 'Aventureiro'}</span>
+                                <span className="char-race">{char.race || 'Sem Raça'}</span>
+                            </div>
+
+                            <button
+                                className="delete-btn"
+                                onClick={(e) => handleDelete(e, char.id)}
+                                title="Excluir Personagem"
+                                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                            >
+                                <X size={14} />
+                            </button>
+
+                            <button className="btn-play-char" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                                <span>Entrar na Mesa</span>
+                                <ArrowRight size={14} />
+                            </button>
                         </div>
-                        <button className="delete-btn" onClick={(e) => handleDelete(e, char.id)}>✖</button>
-                    </div>
-                ))}
+                    );
+                })}
 
                 {/* Create New Card */}
-                <div className="char-card new-char" onClick={handleCreate}>
+                <div className="char-card new-char" onClick={handleCreateNew}>
                     <div className="plus-icon">+</div>
-                    <span>Novo Personagem</span>
+                    <span>Criar Novo Herói</span>
                 </div>
             </div>
         </div>

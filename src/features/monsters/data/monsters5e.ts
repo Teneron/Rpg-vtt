@@ -1093,5 +1093,54 @@ export const MONSTERS_5E: Monster[] = [
             { id: 'druid_staff', name: 'Bordão', type: 'melee', description: '+2 acerto. 1d6 (ou 1d8) concussão.', damage: '1d6', toHit: 2 },
             { id: 'druid_spells', name: 'Magia', type: 'spell', description: 'Pele de Árvore, Onda Trovejante, Enredar, Criar Chamas.' }
         ]
+    },
+    {
+        id: 'beholder',
+        name: 'Beholder (Observador)',
+        category: 'Aberração',
+        description: 'Uma aberração tirânica e paranoica flutuante com um olho central enorme que projeta um cone de antimagia e dez tentáculos oculares que disparam raios mágicos letais.',
+        cr: 13,
+        size: 'Large',
+        imageUrl: '/tokens/token_beholder.png',
+        hp: { current: 180, max: 180 },
+        ac: 18,
+        speed: 4, // 6m voo (flutuar)
+        initiativeModifier: 2,
+        attributes: {
+            str: { value: 10, modifier: 0 },
+            dex: { value: 14, modifier: 2 },
+            con: { value: 18, modifier: 4 },
+            int: { value: 17, modifier: 3 },
+            wis: { value: 15, modifier: 2 },
+            cha: { value: 17, modifier: 3 }
+        },
+        skills: ['Percepção +12'],
+        senses: ['Visão no Escuro 36m', 'Percepção Passiva 22'],
+        visionRange: 36,
+        conditionImmunities: ['Caído'],
+        source: 'DnD5e',
+        system: 'dnd5e',
+        actions: [
+            {
+                id: 'beholder_antimagic',
+                name: 'Cone de Antimagia',
+                type: 'ability',
+                description: 'O olho central emite um cone de 45 metros de antimagia suprimindo todas as magias na área.'
+            },
+            {
+                id: 'beholder_bite',
+                name: 'Mordida Voraz',
+                type: 'melee',
+                description: 'Ataque corpo a corpo: +5 para acertar. Dano: 14 (4d6) perfurante.',
+                damage: '4d6',
+                toHit: 5
+            },
+            {
+                id: 'beholder_eye_rays',
+                name: 'Raios Oculares (3 Alvos Aleatórios)',
+                type: 'ranged',
+                description: 'Dispara 3 raios oculares a até 36m (Charme CD 16, Paralisia CD 16, Medo CD 16, Desintegração 10d8 força CD 16, Raio da Morte 10d10 necrótico CD 16).'
+            }
+        ]
     }
 ];

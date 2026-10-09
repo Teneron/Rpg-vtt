@@ -1,5 +1,6 @@
 import React from 'react';
 import type { Monster } from './monsterTypes';
+import { Swords, Crosshair, Sparkles, X } from 'lucide-react';
 
 interface MonsterDetailsModalProps {
     monster: Monster;
@@ -101,11 +102,11 @@ export const MonsterDetailsModal: React.FC<MonsterDetailsModalProps> = ({ monste
                     <h3 style={{ borderBottom: '1px solid #444', paddingBottom: '5px' }}>Ações</h3>
                     {monster.actions.map((action, idx) => (
                         <div key={idx} style={{ marginBottom: '15px' }}>
-                            <div style={{ fontWeight: 'bold', color: '#fff', marginBottom: '2px' }}>
-                                {action.name}
-                                {action.type === 'melee' && ' ⚔️'}
-                                {action.type === 'ranged' && ' 🏹'}
-                                {action.type === 'spell' && ' ✨'}
+                            <div style={{ fontWeight: 'bold', color: '#fff', marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <span>{action.name}</span>
+                                {action.type === 'melee' && <span title="Corpo a corpo" style={{ display: 'inline-flex', alignItems: 'center' }}><Swords size={13} color="#f87171" /></span>}
+                                {action.type === 'ranged' && <span title="À distância" style={{ display: 'inline-flex', alignItems: 'center' }}><Crosshair size={13} color="#38bdf8" /></span>}
+                                {action.type === 'spell' && <span title="Magia" style={{ display: 'inline-flex', alignItems: 'center' }}><Sparkles size={13} color="#c084fc" /></span>}
                             </div>
                             <div style={{ fontSize: '0.9em', color: '#ddd' }}>{action.description}</div>
                             {action.damage && (
@@ -126,11 +127,12 @@ export const MonsterDetailsModal: React.FC<MonsterDetailsModalProps> = ({ monste
                         background: 'transparent',
                         border: 'none',
                         color: '#aaa',
-                        fontSize: '1.5rem',
-                        cursor: 'pointer'
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center'
                     }}
                 >
-                    &times;
+                    <X size={20} />
                 </button>
             </div>
         </div>

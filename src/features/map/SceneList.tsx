@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useScene } from './SceneContext';
-// Removed unused useMap and MapConfig
+import { Save, Trash2 } from 'lucide-react';
 
 export const SceneList: React.FC = () => {
     const { scenes, activeSceneId, createScene, activateScene, deleteScene, saveCurrentStateAsScene } = useScene();
@@ -42,12 +42,19 @@ export const SceneList: React.FC = () => {
                                         className="btn-icon"
                                         title="Salvar Estado Atual nesta Cena"
                                         onClick={() => saveCurrentStateAsScene(scene.id)}
-                                    >💾</button>
+                                        style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                                    >
+                                        <Save size={13} />
+                                    </button>
                                 )}
                                 <button
                                     className="btn-icon danger"
                                     onClick={(e) => { e.stopPropagation(); deleteScene(scene.id); }}
-                                >🗑️</button>
+                                    style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                                    title="Excluir Cena"
+                                >
+                                    <Trash2 size={13} />
+                                </button>
                             </div>
                         </div>
                     );

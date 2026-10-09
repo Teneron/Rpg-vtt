@@ -18,6 +18,7 @@ import { CharacterBuilder } from './CharacterBuilder';
 // import { usePlayerSync } from '../multiplayer/usePlayerSync';
 import { usePeer } from '../multiplayer/FirebaseContext';
 import { CharacterRepository } from './characterRepository';
+import { Save, X, Settings, Sparkles, BookOpen, Table } from 'lucide-react';
 
 // New Components
 import { AttributesPanel } from './components/AttributesPanel';
@@ -30,14 +31,17 @@ import { LevelUpModal } from './components/LevelUpModal';
 import { InventoryPanel } from './components/InventoryPanel';
 import { PlayerBestiaryPanel } from './components/PlayerBestiaryPanel';
 import { ManageSpellsModal } from './components/ManageSpellsModal';
+import { ClassProgression } from './components/ClassProgression';
+import { CLASSES } from './data/classes';
 
 interface CharacterSheetProps {
     characterId: string;
+    initialData?: Character;
     isGM?: boolean;
     onExit?: () => void;
 }
 
-export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, isGM = false, onExit }) => {
+export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, initialData, isGM = false, onExit }) => {
     const { triggerRoll } = useDice();
     const { broadcastCharacterUpdate } = usePeer();
 
@@ -52,9 +56,8 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, isG
 
     // 1. Initial Load
     const [character, setCharacter] = useState<Character>(() => {
-        // FIX: Always try to load from Local Cache first, even for GM.
-        // This ensures that if we just closed the sheet (saved to cache), we reopen with the latest state.
-        const loaded = CharacterRepository.load(characterId);
+        // FIX: Always try to load from Local Cache first, then initialData fallback (e.g. for GM viewing remote player).
+        const loaded = CharacterRepository.load(characterId) || initialData;
         if (loaded) return regenerateCharacterStats({ ...initialCharacter, ...loaded });
 
         return initialCharacter;
@@ -415,11 +418,28 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, isG
     }, [triggerRoll]);
 
     const [showBuilder, setShowBuilder] = useState(!isGM && !character.class);
-    const [showLevelModal, setShowLevelModal] = useState(false);
+    const [showLevelModal, setShowLevelModal] = useState(!isGM && (character.pendingLevelUp || false));
+
+    useEffect(() => {
+        if (!isGM && character.pendingLevelUp) {
+            setShowLevelModal(true);
+        }
+    }, [character.pendingLevelUp, isGM]);
     const [activeTab, setActiveTab] = useState<'bio' | 'spells' | 'feats' | 'abilities'>('bio');
     const [showInventory, setShowInventory] = useState(false);
     const [showBestiary, setShowBestiary] = useState(false);
     const [showManageSpells, setShowManageSpells] = useState(false);
+    const [showProgressionModal, setShowProgressionModal] = useState(false);
+
+    const currentClassData = React.useMemo(() => {
+        if (!character.class) return CLASSES[0];
+        const lowerName = character.class.toLowerCase().trim();
+        return (
+            CLASSES.find(c => c.name.toLowerCase() === lowerName || c.id.toLowerCase() === lowerName) ||
+            CLASSES.find(c => lowerName.includes(c.name.toLowerCase()) || lowerName.includes(c.id.toLowerCase())) ||
+            CLASSES[0]
+        );
+    }, [character.class]);
 
     const updateSpellSlot = React.useCallback((level: number, used: number) => {
         setCharacterWithDirty(prev => {
@@ -438,6 +458,23 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, isG
             <header className="sheet-header">
                 <div className="header-top-row">
                     <div className="char-name-block">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                            <span
+                                style={{
+                                    fontSize: '0.72rem',
+                                    fontWeight: 'bold',
+                                    padding: '2px 8px',
+                                    borderRadius: '12px',
+                                    textTransform: 'uppercase',
+                                    letterSpacing: '0.5px',
+                                    background: character.system === 'witcher' ? 'rgba(197, 160, 89, 0.2)' : 'rgba(225, 29, 72, 0.2)',
+                                    color: character.system === 'witcher' ? '#c5a059' : '#f43f5e',
+                                    border: `1px solid ${character.system === 'witcher' ? '#c5a059' : '#e11d48'}`
+                                }}
+                            >
+                                {character.system === 'witcher' ? 'The Witcher' : 'D&D 5.5e'}
+                            </span>
+                        </div>
                         <input
                             className="sheet-char-name"
                             value={character.name}
@@ -448,7 +485,33 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, isG
 
                     <div className="header-meta-grid">
                         <div className="meta-field">
-                            <label>Classe e Nível</label>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <label>Classe e Nível</label>
+                                {character.class && (
+                                    <button
+                                        type="button"
+                                        title="Ver Tabela Oficial de Progressão de Níveis 1 a 20 e Espaços de Magia"
+                                        onClick={() => setShowProgressionModal(true)}
+                                        style={{
+                                            background: 'rgba(197, 160, 89, 0.15)',
+                                            border: '1px solid rgba(197, 160, 89, 0.4)',
+                                            color: '#c5a059',
+                                            cursor: 'pointer',
+                                            fontSize: '0.68rem',
+                                            fontWeight: 600,
+                                            padding: '2px 6px',
+                                            borderRadius: '4px',
+                                            lineHeight: 1.2,
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '4px'
+                                        }}
+                                    >
+                                        <Table size={11} />
+                                        <span>1–20</span>
+                                    </button>
+                                )}
+                            </div>
                             <div className="meta-val display-flex readonly-text">
                                 {character.class || '---'} {character.level}
                             </div>
@@ -496,7 +559,14 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, isG
                                                 level: newLevel,
                                                 experience: newXP,
                                                 nextLevelExperience: nextXP,
-                                                pendingLevelUp: true
+                                                pendingLevelUp: newLevel > character.level,
+                                                hitDice: {
+                                                    ...character.hitDice,
+                                                    max: newLevel,
+                                                    current: newLevel > character.level
+                                                        ? Math.min(newLevel, (character.hitDice?.current || 1) + (newLevel - character.level))
+                                                        : Math.min(newLevel, character.hitDice?.current || 1)
+                                                }
                                             };
 
                                             // 3. Level Down HP Logic
@@ -557,12 +627,14 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, isG
                                         }
                                     }}
                                 >
-                                    ⚙️ Nível
+                                    <Settings size={13} style={{ marginRight: '4px' }} />
+                                    Nível
                                 </button>
                             )}
                             {!isGM && character.pendingLevelUp && (
                                 <button className="lvl-pending-btn animate-pulse" onClick={() => setShowLevelModal(true)}>
-                                    ✨ Configurar Nível {character.level}!
+                                    <Sparkles size={13} style={{ marginRight: '4px' }} />
+                                    Configurar Nível {character.level}!
                                 </button>
                             )}
                         </div>
@@ -571,7 +643,7 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, isG
                     {/* Actions */}
                     <div className="header-actions">
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', marginRight: '10px', fontSize: '0.8rem' }}>
-                            <span style={{ color: connectionStatusColor, fontWeight: 'bold' }}>● {connectionText}</span>
+                            <span style={{ color: connectionStatusColor, fontWeight: 'bold' }}>{connectionText}</span>
                             {saveStatus === 'saving' && <span style={{ color: '#aaa' }}>Salvando...</span>}
                             {saveStatus === 'saved' && <span style={{ color: '#4eff4e' }}>Salvo!</span>}
                             {saveStatus === 'error' && <span style={{ color: '#ff4e4e' }}>Erro ao Salvar</span>}
@@ -581,8 +653,12 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, isG
                             handleSave();
                             setTimeout(() => setSaveStatus('saved'), 500);
                             alert("Salvo!");
-                        }}>💾</button>
-                        <button className="btn-exit" onClick={onExit}>❌</button>
+                        }} title="Salvar Ficha">
+                            <Save size={16} />
+                        </button>
+                        <button className="btn-exit" onClick={onExit} title="Fechar Ficha">
+                            <X size={16} />
+                        </button>
                     </div>
                 </div>
             </header>
@@ -624,6 +700,7 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, isG
                                 return next;
                             });
                         }, [])}
+                        onUpdateCharacter={updateCharacter}
                         isGM={isGM}
                     />
                 </div>
@@ -644,39 +721,40 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, isG
                             </svg>
                             Inventário
                         </button>
-                        {(character.class && (character.class.toLowerCase().includes('bruxo') || character.class.toLowerCase().includes('witcher'))) && (
+                        {character.system === 'witcher' && (
                             <button
                                 className="btn-glow"
-                                style={{ flex: 1, padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', borderColor: '#5f5' }}
+                                style={{ flex: 1, padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', borderColor: '#c5a059', color: '#c5a059' }}
                                 onClick={() => setShowBestiary(true)}
                             >
-                                📚 Bestiário
+                                <BookOpen size={14} />
+                                <span>Bestiário</span>
                             </button>
                         )}
                     </div>
 
                     <div className="sheet-tabs">
                         <button
-                            className={`tab - btn ${activeTab === 'bio' ? 'active' : ''} `}
+                            className={`tab-btn ${activeTab === 'bio' ? 'active' : ''}`}
                             onClick={() => setActiveTab('bio')}
                         >
                             Bio
                         </button>
                         <button
-                            className={`tab - btn ${activeTab === 'spells' ? 'active' : ''} `}
+                            className={`tab-btn ${activeTab === 'spells' ? 'active' : ''}`}
                             onClick={() => setActiveTab('spells')}
                         >
                             Grimório
                         </button>
                         <button
-                            className={`tab - btn ${activeTab === 'abilities' ? 'active' : ''} `}
+                            className={`tab-btn ${activeTab === 'abilities' ? 'active' : ''}`}
                             onClick={() => setActiveTab('abilities')}
                         >
                             Habilidades
                         </button>
                         {character.feats && character.feats.length > 0 && (
                             <button
-                                className={`tab - btn ${activeTab === 'feats' ? 'active' : ''} `}
+                                className={`tab-btn ${activeTab === 'feats' ? 'active' : ''}`}
                                 onClick={() => setActiveTab('feats')}
                             >
                                 Talentos
@@ -699,7 +777,10 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, isG
                             />
                         )}
                         {activeTab === 'abilities' && (
-                            <AbilitiesPanel character={character} />
+                            <AbilitiesPanel
+                                character={character}
+                                onOpenProgression={() => setShowProgressionModal(true)}
+                            />
                         )}
                         {activeTab === 'feats' && (
                             <FeatsPanel character={character} />
@@ -763,7 +844,11 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, isG
             {showBuilder && (
                 <CharacterBuilder
                     character={character}
-                    onUpdate={setCharacterWithDirty}
+                    onUpdate={(updatedChar) => {
+                        setCharacter(updatedChar);
+                        handleSave(updatedChar);
+                        dirtyRef.current = false;
+                    }}
                     onClose={() => setShowBuilder(false)}
                 />
             )}
@@ -811,6 +896,14 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, isG
                         });
                     }}
                     onClose={() => setShowManageSpells(false)}
+                />
+            )}
+
+            {showProgressionModal && currentClassData && (
+                <ClassProgression
+                    classData={currentClassData}
+                    characterLevel={character.level}
+                    onClose={() => setShowProgressionModal(false)}
                 />
             )}
 

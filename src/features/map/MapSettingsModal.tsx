@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useMap } from './MapContext';
 import { compressImage } from '../../utils/imageUtils';
+import { Settings, X, Map, Ruler, Lightbulb, AlertTriangle, Cloud } from 'lucide-react';
 import '../../Layout.css';
 
 interface MapSettingsModalProps {
@@ -26,9 +27,14 @@ export const MapSettingsModal: React.FC<MapSettingsModalProps> = ({ isOpen, onCl
             display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3000
         }}>
             <div className="glass-panel" style={{ width: '500px', flexDirection: 'column', gap: '20px' }}>
-                <h2 style={{ borderBottom: '1px solid var(--glass-border)', paddingBottom: '10px', display: 'flex', justifyContent: 'space-between' }}>
-                    ⚙️ Configurações do Mapa
-                    <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer' }}>✕</button>
+                <h2 style={{ borderBottom: '1px solid var(--glass-border)', paddingBottom: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Settings size={18} color="#c5a059" />
+                        <span>Configurações do Mapa</span>
+                    </span>
+                    <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                        <X size={18} />
+                    </button>
                 </h2>
 
                 {/* Tabs */}
@@ -36,15 +42,27 @@ export const MapSettingsModal: React.FC<MapSettingsModalProps> = ({ isOpen, onCl
                     <button
                         className={`glass-button small ${activeTab === 'general' ? 'active' : ''}`}
                         onClick={() => setActiveTab('general')}
-                    >🗺️ Geral</button>
+                        style={{ display: 'flex', alignItems: 'center', gap: '5px' }}
+                    >
+                        <Map size={13} />
+                        <span>Geral</span>
+                    </button>
                     <button
                         className={`glass-button small ${activeTab === 'grid' ? 'active' : ''}`}
                         onClick={() => setActiveTab('grid')}
-                    >📏 Grid</button>
+                        style={{ display: 'flex', alignItems: 'center', gap: '5px' }}
+                    >
+                        <Ruler size={13} />
+                        <span>Grid</span>
+                    </button>
                     <button
                         className={`glass-button small ${activeTab === 'lighting' ? 'active' : ''}`}
                         onClick={() => setActiveTab('lighting')}
-                    >💡 Iluminação</button>
+                        style={{ display: 'flex', alignItems: 'center', gap: '5px' }}
+                    >
+                        <Lightbulb size={13} />
+                        <span>Iluminação</span>
+                    </button>
                 </div>
 
                 {/* Content */}
@@ -112,7 +130,10 @@ export const MapSettingsModal: React.FC<MapSettingsModalProps> = ({ isOpen, onCl
                                     />
                                     <small style={{ color: '#aaa', display: 'block', marginTop: '5px' }}>
                                         Suporta JPG, PNG, WEBM, MP4. <br />
-                                        <span style={{ color: '#e6bd45' }}>⚠️ Dica: Para melhor performance, use URLs externas ou arquivos pequenos!</span>
+                                        <span style={{ color: '#e6bd45', display: 'inline-flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+                                            <AlertTriangle size={12} color="#e6bd45" />
+                                            <span>Dica: Para melhor performance, use URLs externas ou arquivos pequenos!</span>
+                                        </span>
                                     </small>
                                 </div>
                             </div>
@@ -183,24 +204,25 @@ export const MapSettingsModal: React.FC<MapSettingsModalProps> = ({ isOpen, onCl
                                     onChange={e => update({ globalLight: e.target.value as any })}
                                     style={{ width: '100%', padding: '8px', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--glass-border)', color: '#fff', borderRadius: '4px' }}
                                 >
-                                    <option value="bright">☀️ Dia (Tudo Visível)</option>
-                                    <option value="dim">🌅 Penumbra (Sombra Suave)</option>
-                                    <option value="dark">🌑 Noite (Escuridão Total)</option>
+                                    <option value="bright">Dia (Tudo Visível)</option>
+                                    <option value="dim">Penumbra (Sombra Suave)</option>
+                                    <option value="dark">Noite (Escuridão Total)</option>
                                 </select>
                                 <p style={{ fontSize: '0.8em', color: '#aaa', marginTop: '5px' }}>
-                                    Em 'Noite', jogadores só veem o que suas luzes iluminam (ou Darkvision).
+                                    Em 'Noite', jogadores só veem o que suas luzes iluminam (ou Visão no Escuro).
                                 </p>
                             </div>
 
                             <div className="form-group">
-                                <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
                                     <input
                                         type="checkbox"
                                         checked={config.fogEnabled !== false}
                                         onChange={e => update({ fogEnabled: e.target.checked })}
-                                        style={{ width: '20px', height: '20px' }}
+                                        style={{ width: '18px', height: '18px' }}
                                     />
-                                    ☁️ Ativar Fog of War (Névoa de Guerra)
+                                    <Cloud size={16} color="#888" />
+                                    <span>Ativar Névoa de Guerra (Fog of War)</span>
                                 </label>
                             </div>
                         </>

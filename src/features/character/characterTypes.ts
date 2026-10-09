@@ -99,6 +99,7 @@ export interface Character {
     attributes: CharacterAttributes;
     proficiencyBonus: number;
     inspiration: boolean;
+    conditions?: string[];
 
     // Combate
     armorClass: number;
@@ -290,6 +291,7 @@ export const initialCharacter: Character = {
     },
     proficiencyBonus: 2,
     inspiration: false,
+    conditions: [],
 
     armorClass: 10,
     initiative: 0,
@@ -408,15 +410,10 @@ export const regenerateCharacterStats = (char: Character): Character => {
     // --- Auto-Calculate AC (Armor + Shield + Dex) ---
     // Start with 10 + Dex (Unarmored)
     let baseAC = 10 + newDexMod;
-    // Barbarian Unarmored Defense? Monk? 
-    // We check class features strings roughly? 'Defesa Sem Armadura'
-    const hasUnarmoredDefense = char.features?.some(f => f.name === 'Defesa Sem Armadura');
-    if (hasUnarmoredDefense && char.class === 'barbarian') {
-        const conMod = calculateModifier(newAttrs.con.value);
-        baseAC = 10 + newDexMod + conMod;
-        // Note: Shields are allowed for Barbarian UD
-    }
-    // Monk UD is Wis, no shield. Not implemented yet.
+    const className = (char.class || '').toLowerCase();
+    const isBarbarian = /b[áa]rbar/i.test(className);
+    const isMonk = /mon[kg]/i.test(className);
+    const hasUnarmoredDefense = char.features?.some(f => /defesa sem armadura|unarmored defense/i.test(f.name)) || isBarbarian || isMonk;
 
     let armorAC = 0;
     let shieldBonus = 0;
@@ -428,7 +425,8 @@ export const regenerateCharacterStats = (char: Character): Character => {
             if (!item.equipped) return;
 
             if (item.type === 'armor') {
-                if (item.name === 'Escudo' || item.id === 'escudo') {
+                const isShield = item.name === 'Escudo' || item.name === 'Escudo de Madeira' || item.id === 'escudo' || item.id === 'escudo_de_madeira' || /escudo/i.test(item.name || '');
+                if (isShield) {
                     shieldBonus += (item.ac || 2);
                 } else {
                     // It's body armor
@@ -440,16 +438,25 @@ export const regenerateCharacterStats = (char: Character): Character => {
                             dexBonus = Math.min(dexBonus, item.acMaxDex);
                         }
                     }
-                    // If negative dex, it applies to armor? Usually yes for Light/Medium, not Heavy.
-                    // 5e Rules: Heavy Armor doesn't use Dex modifiers (positive or negative).
-                    // Medium/Light do (negative applies).
-                    // My data has 'acDexBonus: false' for Heavy.
-                    if (!item.acDexBonus && dexBonus < 0) dexBonus = 0; // Heavy ignores negative dex? actually 5e PHB says "Heavy armor doesn't let you add your Dex modifier to your AC, but it also doesn't penalize you if your Dex modifier is negative." -> Confirmed.
+                    if (!item.acDexBonus && dexBonus < 0) dexBonus = 0;
 
                     armorAC = (item.ac || 10) + dexBonus;
                 }
             }
         });
+    }
+
+    if (!isArmored && hasUnarmoredDefense) {
+        if (isBarbarian) {
+            const conMod = calculateModifier(newAttrs.con.value);
+            baseAC = 10 + newDexMod + conMod;
+        } else if (isMonk) {
+            // Monk UD applies only if NOT using armor AND NOT using shield
+            if (shieldBonus === 0) {
+                const wisMod = calculateModifier(newAttrs.wis.value);
+                baseAC = 10 + newDexMod + wisMod;
+            }
+        }
     }
 
     let finalAC = isArmored ? armorAC : baseAC;
@@ -470,20 +477,14 @@ export const regenerateCharacterStats = (char: Character): Character => {
                 const isFinesse = item.properties?.includes('acuidade');
 
                 if (item.type === 'weapon') {
-                    // Check if ranged property exists or ranged values
-                    if (item.range && !item.properties?.includes('arremesso')) { // Pure ranged like Bow Use this check instead of isRanged variable
+                    if (item.range && !item.properties?.includes('arremesso')) {
                         attrMod = newAttrs.dex.modifier;
                     } else if (isFinesse) {
                         attrMod = Math.max(newAttrs.str.modifier, newAttrs.dex.modifier);
                     }
                 }
 
-                // Proficiency? Assume yes for now or check class?
-                // Simplifying: assume proficient if equipped.
                 const hitBonus = attrMod + profBonus;
-
-                // Damage: "1d8" + mod
-                // Check 'Versatile' if 2-handing? We don't track 2-handing state. Default to base.
                 const damageDice = `${item.damage || '1d4'} + ${attrMod}`;
 
                 newAttacks.push({
@@ -499,9 +500,39 @@ export const regenerateCharacterStats = (char: Character): Character => {
         });
     }
 
-    // Preserve manual attacks if any? 
-    // Ideally we merge or replace. 
-    // Replace is safer for "Sync". User can add custom items to inventory to get custom attacks.
+    // Standard Unarmed Strike (Ataque Desarmado) available to all characters
+    const unarmedAttrMod = isMonk ? Math.max(newAttrs.str.modifier, newAttrs.dex.modifier) : newAttrs.str.modifier;
+    const unarmedDamage = isMonk ? `1d6 + ${unarmedAttrMod}` : `${Math.max(1, 1 + unarmedAttrMod)}`;
+    const escapeDC = 8 + profBonus + unarmedAttrMod;
+    newAttacks.push({
+        id: 'ataque_desarmado',
+        name: isMonk ? 'Ataque Desarmado (Artes Marciais)' : 'Ataque Desarmado',
+        attackBonus: unarmedAttrMod + profBonus,
+        damageDice: unarmedDamage,
+        damageType: 'concussão',
+        range: '1,5m',
+        properties: isMonk ? 'Ágil, Ação Bônus 1 atk extra' : `Agarrar / Derrubar / Empurrar (CD ${escapeDC})`
+    });
+
+    // --- Auto-Calculate Spell Save DC & Spell Attack Bonus ---
+    let spellCastingAbility: keyof CharacterAttributes | null = null;
+    const isWitcherSystem = char.system === 'witcher' || /witcher/i.test(className);
+    if (isWitcherSystem) {
+        spellCastingAbility = 'wis';
+    } else {
+        if (/mago|wizard/i.test(className)) spellCastingAbility = 'int';
+        else if (/cl[ée]rigo|cleric|druid|druida|guardi[ãa]o|ranger/i.test(className)) spellCastingAbility = 'wis';
+        else if (/bardo|bard|bruxo|warlock|feiticeiro|sorcerer|paladino|paladin/i.test(className)) spellCastingAbility = 'cha';
+    }
+
+    let newSpellSaveDC = char.spellSaveDC || (8 + profBonus);
+    let newSpellAttackBonus = char.spellAttackBonus || profBonus;
+
+    if (spellCastingAbility && newAttrs[spellCastingAbility]) {
+        const spellMod = newAttrs[spellCastingAbility].modifier;
+        newSpellSaveDC = 8 + profBonus + spellMod;
+        newSpellAttackBonus = profBonus + spellMod;
+    }
 
     // --- Initiative ---
     const finalInitiative = newDexMod + extraInitiative;
@@ -523,10 +554,11 @@ export const regenerateCharacterStats = (char: Character): Character => {
         skills: newSkills,
         armorClass: finalAC,
         hp: { ...char.hp, max: finalHpMax },
-        // speed: finalSpeed, // Skip speed to avoid corruption
         initiative: finalInitiative,
         attacks: newAttacks,
-        pendingLevelUp: char.pendingLevelUp || false // Force existence
+        spellSaveDC: newSpellSaveDC,
+        spellAttackBonus: newSpellAttackBonus,
+        pendingLevelUp: char.pendingLevelUp || false
     };
 };
 
