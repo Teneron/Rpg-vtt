@@ -78,6 +78,7 @@ None yet.
 | 261008-meb | engine de combate e iniciativa agnostica | 2026-10-08 | 2e0050d | [261008-meb-engine-de-combate-e-iniciativa-agnostica](./quick/261008-meb-engine-de-combate-e-iniciativa-agnostica/) |
 | 261008-n1f | engine de mapa tokens e raycasting | 2026-10-08 | 70c0295 | [261008-n1f-engine-de-mapa-tokens-e-raycasting](./quick/261008-n1f-engine-de-mapa-tokens-e-raycasting/) |
 | 261008-p7q | persistencia e isolamento multi-historia | 2026-10-08 | 9b3371c | [261008-p7q-persistencia-e-isolamento-multi-historia](./quick/261008-p7q-persistencia-e-isolamento-multi-historia/) |
+| 261012-s0a | hardening do servidor socket (fase 0 auditoria) | 2026-10-12 | 87f632c | [261012-s0a-hardening-servidor-socket](./quick/261012-s0a-hardening-servidor-socket/) |
 
 ## Deferred Items
 
