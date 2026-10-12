@@ -2,7 +2,7 @@ import React, { Suspense } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { Physics, usePlane, useBox } from '@react-three/cannon';
 import { Environment } from '@react-three/drei';
-import PhysicsDie from './PhysicsDie';
+import PhysicsDie, { getRandomDieValue } from './PhysicsDie';
 
 import { useThree } from '@react-three/fiber';
 
@@ -111,7 +111,13 @@ export const DiceScene: React.FC<DiceSceneProps> = ({ dice, onRollComplete }) =>
             if (!hasNotified.current && dice.length > 0) {
                 console.warn("[DiceScene] Master Failsafe Triggered.");
                 hasNotified.current = true;
-                const finalResults = { ...dice.reduce((acc, d) => ({ ...acc, [d.id]: 1 }), {}) };
+                const finalResults = {
+                    ...results,
+                    ...dice.reduce((acc, d) => ({
+                        ...acc,
+                        [d.id]: results[d.id] !== undefined ? results[d.id] : getRandomDieValue(d.type)
+                    }), {})
+                };
                 onRollComplete(finalResults);
             }
         }, 12000);

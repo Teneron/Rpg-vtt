@@ -44,6 +44,8 @@ export const MapProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const [loadedAdventureId, setLoadedAdventureId] = useState<string | null>(null);
     const mapDbId = useRef<number | null>(null);
+    const tokensRef = useRef<MapToken[]>([]);
+    useEffect(() => { tokensRef.current = tokens; }, [tokens]);
 
     // Load Data from Dexie IndexedDB
     useEffect(() => {
@@ -92,14 +94,15 @@ export const MapProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }, [isHost, isConnected]);
 
     // Local DB Persistence (Backup/Offline optimized)
-    // (We keep this for good measure, but Cloud is now Primary for Sync)
     useEffect(() => {
         if (!safeAdventureId) return;
+        // CRÍTICO (M2): Não salvar antes que os dados desta aventura tenham sido carregados do DB
+        if (loadedAdventureId !== safeAdventureId) return;
 
-        const saveMapData = async () => {
+        let isCancelled = false;
+        const timer = setTimeout(async () => {
             try {
                 if (mapDbId.current) {
-                    // Update existing
                     await db.maps.update(mapDbId.current, {
                         config,
                         tokens,
@@ -107,33 +110,39 @@ export const MapProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                         lastUpdated: Date.now()
                     });
                 } else {
-                    // Create new if strictly Host and missing?
-                    // Yes, lazy creation if not exists.
-                    const id = await db.maps.add({
-                        campaignId: safeAdventureId,
-                        name: 'Default Map',
-                        config,
-                        tokens,
-                        walls
-                    });
-                    mapDbId.current = id as number;
+                    const existing = await db.maps.where('campaignId').equals(safeAdventureId).first();
+                    if (isCancelled) return;
+                    if (existing && existing.id) {
+                        mapDbId.current = existing.id;
+                        await db.maps.update(existing.id, {
+                            config,
+                            tokens,
+                            walls,
+                            lastUpdated: Date.now()
+                        });
+                    } else {
+                        const id = await db.maps.add({
+                            campaignId: safeAdventureId,
+                            name: 'Default Map',
+                            config,
+                            tokens,
+                            walls
+                        });
+                        if (!isCancelled) {
+                            mapDbId.current = id as number;
+                        }
+                    }
                 }
             } catch (e) {
                 console.error("Error saving map to DB", e);
             }
+        }, 300);
+
+        return () => {
+            isCancelled = true;
+            clearTimeout(timer);
         };
-
-        // Debounce? For now, raw execution.
-        // It might be too frequent if tokens move every frame.
-        // If movement is just "drop", it's fine. 
-        // If continuous drag updates state, we need debounce.
-        // Current implementation: updates state on drop/end? 
-        // Token drag usually updates state on 'stop' or 'drag'?
-        // The implementation in BattleMap usually updates on 'drag end'.
-        // So frequency is "per move", which is fine.
-
-        saveMapData();
-    }, [config, tokens, walls, isHost, safeAdventureId]);
+    }, [config, tokens, walls, safeAdventureId, loadedAdventureId]);
 
     // Request Sync when Connected (Client Only) - DEPRECATED by Cloud Listener
     // But kept as fallback if Firebase listener is slow?
@@ -163,16 +172,15 @@ export const MapProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const updateTokenPosition = (id: string, x: number, y: number) => {
         if (!id || !isValidCoord(x) || !isValidCoord(y)) return;
-        setTokens(prev => {
-            const list = prev || [];
-            const target = list.find(t => t.id === id);
-            const tokenSize = target?.size || 1;
-            const safeX = Math.max(0, Math.min(Math.round(x), Math.max(0, config.width - tokenSize)));
-            const safeY = Math.max(0, Math.min(Math.round(y), Math.max(0, config.height - tokenSize)));
+        const currentList = tokensRef.current || [];
+        const target = currentList.find(t => t.id === id);
+        const tokenSize = target?.size || 1;
+        const safeX = Math.max(0, Math.min(Math.round(x), Math.max(0, config.width - tokenSize)));
+        const safeY = Math.max(0, Math.min(Math.round(y), Math.max(0, config.height - tokenSize)));
 
-            sendUpdate({ type: 'move', data: { id, x: safeX, y: safeY } });
-            return list.map(t => t.id === id ? { ...t, position: { x: safeX, y: safeY } } : t);
-        });
+        // M1: Efeito de rede fora do updater do React
+        sendUpdate({ type: 'move', data: { id, x: safeX, y: safeY } });
+        setTokens(prev => (prev || []).map(t => t.id === id ? { ...t, position: { x: safeX, y: safeY } } : t));
     };
 
     const updateToken = (id: string, updates: Partial<MapToken>) => {

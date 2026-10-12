@@ -162,10 +162,17 @@ assert.strictEqual(combatState.currentTargetId, 'c4', 'Target set to c4');
 
 // Remove combatant c4
 function removeCombatant(state, idToRemove) {
-    const remaining = state.combatants.filter(c => c.id !== idToRemove);
+    const currentList = state.combatants || [];
+    const removedIndex = currentList.findIndex(c => c.id === idToRemove);
+    const remaining = currentList.filter(c => c.id !== idToRemove);
     let nextActiveTurnId = state.activeTurnId;
     if (state.activeTurnId === idToRemove) {
-        nextActiveTurnId = remaining.length > 0 ? remaining[0].id : null;
+        if (remaining.length === 0) {
+            nextActiveTurnId = null;
+        } else {
+            const nextIndex = (removedIndex >= 0 && removedIndex < remaining.length) ? removedIndex : 0;
+            nextActiveTurnId = remaining[nextIndex].id;
+        }
     }
     const nextTargetId = state.currentTargetId === idToRemove ? null : state.currentTargetId;
     return {
@@ -181,9 +188,20 @@ assert.strictEqual(combatState.combatants.length, 3, 'Combatant list reduced to 
 assert.strictEqual(combatState.currentTargetId, null, 'Target cleared automatically when targeted combatant was removed');
 console.log('✓ Target automatically cleared upon combatant removal');
 
-// Remove currently active combatant (c2)
+// Remove currently active combatant (c2, which is index 0) -> transitions to c3 (index 0 in remaining)
 combatState = removeCombatant(combatState, 'c2');
 assert.strictEqual(combatState.activeTurnId, 'c3', 'Active turn fallback safely moved to next remaining combatant');
-console.log('✓ Active turn fallback safely transitioned upon active combatant removal');
+
+// D1: Test removing active combatant from the middle of the list:
+// Now list is [c3, c1]. Add c5 so list is [c3, c1, c5].
+combatState.combatants = [
+    { id: 'c3', name: 'Bandido' },
+    { id: 'c1', name: 'Zumbi A' },
+    { id: 'c5', name: 'Arqueiro' }
+];
+combatState.activeTurnId = 'c1'; // Middle combatant is active
+combatState = removeCombatant(combatState, 'c1');
+assert.strictEqual(combatState.activeTurnId, 'c5', 'Removing middle combatant transitions turn to next combatant (c5), not back to beginning');
+console.log('✓ Active turn correctly preserves flow to next combatant when removing from middle (D1)');
 
 console.log('\n🎉 ALL COMBAT & INITIATIVE ENGINE TESTS PASSED SUCCESSFULLY!\n');

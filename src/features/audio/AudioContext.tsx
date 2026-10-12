@@ -26,6 +26,43 @@ interface AudioContextState {
     unlockAudio: () => void;
 }
 
+// Helper unificado para tocar sons de rolagem (crítico, falha crítica, impacto)
+const handleRollSfx = (roll: any, currentVolume: number) => {
+    if (!roll) return;
+    const formula = String(roll.formula || '').toLowerCase();
+    const rolls: number[] = Array.isArray(roll.rolls) ? roll.rolls : [];
+    const diceArray: any[] = Array.isArray(roll.dice) ? roll.dice : [];
+
+    const hasD20InDice = diceArray.some(d => String(d.type || '').toLowerCase().includes('20'));
+    const isD20 = formula.includes('d20') || hasD20InDice || (rolls.length === 1 && formula.includes('20'));
+
+    let has20 = false;
+    let has1 = false;
+
+    if (diceArray.length > 0) {
+        diceArray.forEach(d => {
+            const isDieD20 = String(d.type || '').toLowerCase().includes('20');
+            if (isDieD20) {
+                if (d.value === 20) has20 = true;
+                if (d.value === 1) has1 = true;
+            }
+        });
+    }
+
+    if (!has20 && !has1 && isD20) {
+        has20 = rolls.includes(20);
+        has1 = rolls.includes(1);
+    }
+
+    if (isD20 && has20) {
+        playSynthSound('crit', currentVolume * 0.85);
+    } else if (isD20 && has1) {
+        playSynthSound('fumble', currentVolume * 0.85);
+    } else {
+        playSynthSound('dice', currentVolume * 0.7);
+    }
+};
+
 const AudioContext = createContext<AudioContextState | undefined>(undefined);
 
 export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -154,19 +191,7 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             } else if (data.type === 'ROLL_RESULT') {
                 const roll = data.payload?.roll;
                 if (roll) {
-                    const formula = String(roll.formula || '');
-                    const rolls = Array.isArray(roll.rolls) ? roll.rolls : [];
-                    const isD20 = formula.includes('d20') || (rolls.length === 1 && (roll.total <= 20 || formula.includes('20')));
-                    const has20 = rolls.includes(20) || roll.total === 20;
-                    const has1 = rolls.includes(1);
-
-                    if (isD20 && has20) {
-                        playSynthSound('crit', volume * 0.85);
-                    } else if (isD20 && has1) {
-                        playSynthSound('fumble', volume * 0.85);
-                    } else {
-                        playSynthSound('dice', volume * 0.7);
-                    }
+                    handleRollSfx(roll, volume);
                 }
             }
         });
@@ -251,20 +276,8 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const handleRollAudio = (e: Event) => {
             const customEvent = e as CustomEvent;
             const rollData = customEvent.detail;
-            if (!rollData) return;
-
-            const formula = String(rollData.formula || '');
-            const rolls = Array.isArray(rollData.rolls) ? rollData.rolls : [];
-            const isD20 = formula.includes('d20') || (rolls.length === 1 && (rollData.total <= 20 || formula.includes('20')));
-            const has20 = rolls.includes(20) || rollData.total === 20;
-            const has1 = rolls.includes(1);
-
-            if (isD20 && has20) {
-                playSynthSound('crit', volume * 0.85);
-            } else if (isD20 && has1) {
-                playSynthSound('fumble', volume * 0.85);
-            } else {
-                playSynthSound('dice', volume * 0.7);
+            if (rollData) {
+                handleRollSfx(rollData, volume);
             }
         };
 

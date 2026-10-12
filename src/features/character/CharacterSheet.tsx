@@ -170,14 +170,16 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
         return () => clearTimeout(timer);
     }, [character, characterId]);
 
+    // R2: Ref estável para handleSave evitando stale closures em efeitos/cleanup
+    const handleSaveRef = React.useRef<((charOverride?: Character) => void) | null>(null);
+
     // FIX: Flush Clean Up (Unmount or ID Switch)
     // This ensures that if the user closes the modal or switches characters while "dirty", we force-save.
     useEffect(() => {
         return () => {
-            if (dirtyRef.current && characterRef.current) {
+            if (dirtyRef.current && characterRef.current && handleSaveRef.current) {
                 console.log("[CharacterSheet] Unmount/Switch detected with unsaved changes. Force saving...");
-                // Pass the REF content, because the 'character' state might be stale or upcoming
-                handleSave(characterRef.current);
+                handleSaveRef.current(characterRef.current);
                 dirtyRef.current = false;
             }
         };
@@ -185,10 +187,12 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
 
     // Helper to determine HOW to save
     const handleSave = (charOverride?: Character) => {
-        const charToSave = charOverride || character;
-
-        // UPDATE TIMESTAMP
-        charToSave.lastModified = Date.now();
+        const base = charOverride || character;
+        // R1: Atualização imutável do timestamp
+        const charToSave: Character = {
+            ...base,
+            lastModified: Date.now()
+        };
 
         // SAFETY GUARD: Prevent cross-contamination
         if (charToSave.id !== characterId) {
@@ -205,21 +209,19 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
             console.log("GM viewing player: Saving changes to remote player via broadcast...", charToSave.name);
 
             // Find the owner peer ID
-            // CRITICAL: We need to find the Peer ID associated with this character ID.
-            // connectedPlayersData has { peerId: { character: ... } }
             const ownerPeer = Object.values(connectedPlayersData).find(p => p.character?.id === characterId);
 
             if (ownerPeer) {
                 console.log("[DEBUG SAVE] Found Owner Peer:", ownerPeer.name, ownerPeer.peerId);
                 updateRemotePlayerCharacter(ownerPeer.peerId, charToSave);
-                // Visual Feedback for GM
+                // Visual Feedback for GM (R3: CSS corrigido sem espaços nos identificadores)
                 const toast = document.createElement('div');
                 toast.textContent = `Salvo em ${ownerPeer.name}!`;
                 toast.style.cssText = `
-    position: fixed; top: 10px; right: 10px; background: #4caf50; color: #fff;
-    padding: 10px 20px; border - radius: 4px; box - shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
-    z - index: 9999; animation: fadeOut 2s forwards;
-`;
+                    position: fixed; top: 10px; right: 10px; background: #4caf50; color: #fff;
+                    padding: 10px 20px; border-radius: 4px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+                    z-index: 9999; animation: fadeOut 2s forwards;
+                `;
                 document.body.appendChild(toast);
                 setTimeout(() => toast.remove(), 2000);
             } else {
@@ -253,6 +255,8 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
         // This ensures MapContext updates the Token immediately without waiting for Network/DB Roundtrip
         window.dispatchEvent(new CustomEvent('rpg_local_char_save', { detail: charToSave }));
     };
+
+    handleSaveRef.current = handleSave;
 
     // 5. Live Sync (Removed: Handled by handleSave and useEffect above)
     // usePlayerSync(character);

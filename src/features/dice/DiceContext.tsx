@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useRef, type ReactNode } from 'react';
+import React, { createContext, useContext, useState, useRef, useEffect, type ReactNode } from 'react';
 import { useRollHistory } from './RollHistoryContext';
 import { useChat } from '../chat/ChatContext';
 
@@ -26,6 +26,13 @@ export const DiceProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const [isRolling, setIsRolling] = useState<boolean>(false);
     const [lastModifier, setLastModifier] = useState<number>(0);
     const [lastLabel, setLastLabel] = useState<string>('');
+
+    const rollingDiceRef = useRef(rollingDice);
+    const lastModifierRef = useRef(lastModifier);
+    const lastLabelRef = useRef(lastLabel);
+    useEffect(() => { rollingDiceRef.current = rollingDice; }, [rollingDice]);
+    useEffect(() => { lastModifierRef.current = lastModifier; }, [lastModifier]);
+    useEffect(() => { lastLabelRef.current = lastLabel; }, [lastLabel]);
 
     // Safety Ref to clear timeout if roll finishes early
     const failsafeTimer = useRef<NodeJS.Timeout | null>(null);
@@ -63,17 +70,25 @@ export const DiceProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             return;
         }
 
-        const finalTotal = diceTotal + lastModifier;
+        const modifier = lastModifierRef.current;
+        const label = lastLabelRef.current;
+        const currentDice = rollingDiceRef.current;
+        const finalTotal = diceTotal + modifier;
 
-        setRollResult({ total: finalTotal, breakdown, modifier: lastModifier });
+        setRollResult({ total: finalTotal, breakdown, modifier });
+
+        const formulaStr = breakdown.length > 1
+            ? `${breakdown.join(' + ')} + ${modifier}`
+            : `${currentDice[0]?.type || 'd20'} + ${modifier}`;
 
         const rollData = {
             id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
             total: finalTotal,
-            // Capture the dice types from the state for history
-            dice: rollingDice.map(d => ({ ...d, value: results[d.id] || 0 })),
-            modifier: lastModifier,
-            label: lastLabel,
+            formula: formulaStr,
+            rolls: breakdown,
+            dice: currentDice.map(d => ({ ...d, value: results[d.id] || 0 })),
+            modifier,
+            label,
             timestamp: Date.now()
         };
 
@@ -83,20 +98,13 @@ export const DiceProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         if (sendMessage) {
             sendMessage(JSON.stringify({
                 total: finalTotal,
-                formula: breakdown.length > 1 ? `${breakdown.join('+')} + ${lastModifier}` : `d${rollingDice[0]?.type?.replace('D', '') || '?'} + ${lastModifier}`,
-                label: lastLabel,
+                formula: formulaStr,
+                label,
                 details: rollData
             }), 'roll');
         }
 
         // BROADCAST TO PEERS (For History Sync)
-        // We dispatch a custom event that PeerContext picks up?
-        // Actually PeerContext listens to window events to SEND? 
-        // Or we just dispatch the event here and PeerContext (or App) handles it?
-        // Wait, PeerContext exposes 'broadcast'. We can't usePeer() here because DiceProvider is INSIDE PeerProvider? YES.
-        // So we can usePeer hook!
-        // But to avoid circular deps or complex refactoring, let's use the Event Bus for loose coupling.
-        // SENDER logic:
         const broadcastEvent = new CustomEvent('rpg_broadcast_roll', {
             detail: JSON.parse(JSON.stringify(rollData))
         });
@@ -108,7 +116,7 @@ export const DiceProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             updateRollingDice([]);
             cleanupTimer.current = null;
         }, 8000);
-    }, [addRoll, lastModifier, lastLabel, rollingDice, sendMessage]);
+    }, [addRoll, sendMessage]);
 
     // LISTENER LOGIC (Receive Remote Rolls)
     React.useEffect(() => {

@@ -36,16 +36,24 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // Helper to add message locally
     const addMessage = useCallback((msg: ChatMessage) => {
+        let isNew = false;
         setMessages(prev => {
             // Deduplicate by ID
             if (prev.some(m => m.id === msg.id)) return prev;
-            return [...prev, msg].sort((a, b) => a.timestamp - b.timestamp);
+            isNew = true;
+            const next = [...prev, msg];
+            if (prev.length > 0 && msg.timestamp < prev[prev.length - 1].timestamp) {
+                next.sort((a, b) => a.timestamp - b.timestamp);
+            }
+            return next.length > 250 ? next.slice(-250) : next;
         });
 
-        if (!isOpen) { // If chat is closed, increment unread for everything
+        // Só incrementa não lidas se a mensagem for realmente nova, se o chat estiver fechado,
+        // e se não tiver sido enviada por mim mesmo
+        if (isNew && !isOpen && msg.senderId !== myId) {
             setUnreadCount(prev => prev + 1);
         }
-    }, [isOpen]);
+    }, [isOpen, myId]);
 
     // Handle incoming P2P messages
     useEffect(() => {

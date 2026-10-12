@@ -106,6 +106,7 @@ export interface Character {
     acOverride?: number; // GM Manual Override
     initiative: number;
     speed: number;
+    speedOverride?: number; // GM Manual Override
     visionRange: number; // Visão no Escuro (metros)
 
     // Vida
@@ -440,7 +441,8 @@ export const regenerateCharacterStats = (char: Character): Character => {
                     }
                     if (!item.acDexBonus && dexBonus < 0) dexBonus = 0;
 
-                    armorAC = (item.ac || 10) + dexBonus;
+                    const computedAC = (item.ac || 10) + dexBonus;
+                    armorAC = Math.max(armorAC, computedAC);
                 }
             }
         });
@@ -485,7 +487,8 @@ export const regenerateCharacterStats = (char: Character): Character => {
                 }
 
                 const hitBonus = attrMod + profBonus;
-                const damageDice = `${item.damage || '1d4'} + ${attrMod}`;
+                const formattedMod = attrMod >= 0 ? `+ ${attrMod}` : `- ${Math.abs(attrMod)}`;
+                const damageDice = attrMod === 0 ? (item.damage || '1d4') : `${item.damage || '1d4'} ${formattedMod}`;
 
                 newAttacks.push({
                     id: item.id,
@@ -502,7 +505,10 @@ export const regenerateCharacterStats = (char: Character): Character => {
 
     // Standard Unarmed Strike (Ataque Desarmado) available to all characters
     const unarmedAttrMod = isMonk ? Math.max(newAttrs.str.modifier, newAttrs.dex.modifier) : newAttrs.str.modifier;
-    const unarmedDamage = isMonk ? `1d6 + ${unarmedAttrMod}` : `${Math.max(1, 1 + unarmedAttrMod)}`;
+    const unarmedModStr = unarmedAttrMod >= 0 ? `+ ${unarmedAttrMod}` : `- ${Math.abs(unarmedAttrMod)}`;
+    const unarmedDamage = isMonk
+        ? (unarmedAttrMod === 0 ? '1d6' : `1d6 ${unarmedModStr}`)
+        : `${Math.max(1, 1 + unarmedAttrMod)}`;
     const escapeDC = 8 + profBonus + unarmedAttrMod;
     newAttacks.push({
         id: 'ataque_desarmado',
@@ -547,12 +553,17 @@ export const regenerateCharacterStats = (char: Character): Character => {
         finalHpMax += (conDelta * char.level);
     }
 
+    // --- Speed Calculation (R4) ---
+    const baseSpeed = char.speed || 9;
+    const finalSpeed = (char.speedOverride !== undefined) ? char.speedOverride : Math.max(0, baseSpeed + extraSpeed);
+
     return {
         ...char,
         attributes: newAttrs,
         proficiencyBonus: profBonus,
         skills: newSkills,
         armorClass: finalAC,
+        speed: finalSpeed,
         hp: { ...char.hp, max: finalHpMax },
         initiative: finalInitiative,
         attacks: newAttacks,

@@ -80,11 +80,19 @@ export const CombatProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         if (isHostRef.current) {
             const current = combatStateRef.current;
             const currentList = current.combatants || [];
+            const removedIndex = currentList.findIndex(c => c.id === id);
             const remaining = currentList.filter(c => c.id !== id);
 
             let nextActiveTurnId = current.activeTurnId;
             if (current.activeTurnId === id) {
-                nextActiveTurnId = remaining.length > 0 ? remaining[0].id : null;
+                if (remaining.length === 0) {
+                    nextActiveTurnId = null;
+                } else {
+                    // D1: Passa a vez para o combatente seguinte na ordem (o que ocupa o mesmo índice na lista remanescente),
+                    // ou para o primeiro caso o removido fosse o último.
+                    const nextIndex = (removedIndex >= 0 && removedIndex < remaining.length) ? removedIndex : 0;
+                    nextActiveTurnId = remaining[nextIndex].id;
+                }
             }
 
             const nextTargetId = current.currentTargetId === id ? null : current.currentTargetId;
@@ -226,6 +234,9 @@ export const CombatProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
         if (currentIndex !== -1) {
             prevIndex = currentIndex - 1;
+        } else {
+            // D2: Quando nenhum combatente está ativo, retrocede para o último da lista
+            prevIndex = list.length - 1;
         }
 
         let prevRound = current.round;

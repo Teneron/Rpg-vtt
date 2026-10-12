@@ -192,12 +192,34 @@ const getCachedGeometry = (type: string) => {
     return geometryCache[type];
 };
 
+// --- HELPERS PARA ROLAGEM SEGURA (Fase 2) ---
+export const getDieSides = (type: string): number => {
+    switch (type.toLowerCase()) {
+        case 'd4': return 4;
+        case 'd6': return 6;
+        case 'd8': return 8;
+        case 'd10': return 10;
+        case 'd12': return 12;
+        case 'd20': return 20;
+        case 'd100': return 100;
+        default: return 20;
+    }
+};
+
+export const getRandomDieValue = (type: string): number => {
+    const sides = getDieSides(type);
+    return Math.floor(Math.random() * sides) + 1;
+};
+
 // --- COMPONENTS ---
 interface CommonDieProps {
     id: string; position: [number, number, number]; onRest: (id: string, val: number) => void;
 }
 
 const BoxDie: React.FC<CommonDieProps> = ({ id, position, onRest }) => {
+    const onRestRef = useRef(onRest);
+    useEffect(() => { onRestRef.current = onRest; }, [onRest]);
+
     const materials = useMemo(() => [1, 6, 2, 5, 3, 4].map(n => getNumberMaterial(n, true)), []);
     const geometry = useMemo(() => createD6Geometry(), []);
 
@@ -230,7 +252,7 @@ const BoxDie: React.FC<CommonDieProps> = ({ id, position, onRest }) => {
         if (ref.current.position.y < -20) {
             console.warn(`[BoxDie:${id}] Fell into void. Forcing stop.`);
             isFinished.current = true;
-            setTimeout(() => onRest(id, Math.floor(Math.random() * 6) + 1), 0);
+            setTimeout(() => onRestRef.current(id, getRandomDieValue('d6')), 0);
         }
     });
 
@@ -268,7 +290,9 @@ const BoxDie: React.FC<CommonDieProps> = ({ id, position, onRest }) => {
                 });
 
                 console.log(`[BoxDie:${id}] Result Identified: ${bestVal}`);
-                setTimeout(() => onRest(id, bestVal), 0);
+                setTimeout(() => onRestRef.current(id, bestVal), 0);
+            } else {
+                setTimeout(() => onRestRef.current(id, getRandomDieValue('d6')), 0);
             }
         };
 
@@ -305,13 +329,16 @@ const BoxDie: React.FC<CommonDieProps> = ({ id, position, onRest }) => {
             }
         }, 8000);
         return () => { sub(); clearTimeout(tm); };
-    }, [api, id, onRest]);
+    }, [api, id]);
 
     return <mesh ref={ref} geometry={geometry} material={materials} />;
 };
 
 interface PolyDieProps extends CommonDieProps { type: string; }
 const PolyDie: React.FC<PolyDieProps> = ({ id, position, type, onRest }) => {
+    const onRestRef = useRef(onRest);
+    useEffect(() => { onRestRef.current = onRest; }, [onRest]);
+
     const [_, setTick] = useState(0);
     useEffect(() => {
         if (!isWitcherLoaded) {
@@ -343,7 +370,7 @@ const PolyDie: React.FC<PolyDieProps> = ({ id, position, type, onRest }) => {
         if (ref.current.position.y < -20) {
             console.warn(`[PhysicsDie:${id}] ${type} fell into void. Forcing stop.`);
             isFinished.current = true;
-            setTimeout(() => onRest(id, 1), 0);
+            setTimeout(() => onRestRef.current(id, getRandomDieValue(type)), 0);
         }
     });
 
@@ -373,7 +400,9 @@ const PolyDie: React.FC<PolyDieProps> = ({ id, position, type, onRest }) => {
                 let max = -Infinity; let val = 1;
                 faceData.forEach(f => { const d = f.normal.dot(localUp); if (d > max) { max = d; val = f.value; } });
                 console.log(`[PhysicsDie:${id}] ${type} Result: ${val}`);
-                setTimeout(() => onRest(id, val), 0);
+                setTimeout(() => onRestRef.current(id, val), 0);
+            } else {
+                setTimeout(() => onRestRef.current(id, getRandomDieValue(type)), 0);
             }
         };
 
@@ -410,7 +439,7 @@ const PolyDie: React.FC<PolyDieProps> = ({ id, position, type, onRest }) => {
         }, 8000);
 
         return () => { sub(); clearTimeout(tm); };
-    }, [api, id, onRest, faceData]);
+    }, [api, id, faceData, type]);
     return <mesh ref={ref} geometry={geometry} material={materials} />;
 };
 
