@@ -83,10 +83,16 @@ export const CharacterRepository = {
                     localStorage.setItem(MIGRATION_FLAG_KEY, 'true');
                 }
 
-                // 2. Hydrate cache from Dexie (the single source of truth)
+                // 2. Hydrate cache from Dexie (the single source of truth) respeitando lastModified
                 const allChars = await db.characters.toArray();
                 for (const char of allChars) {
-                    characterCache.set(char.id, char);
+                    const existing = characterCache.get(char.id);
+                    if (!existing || (char.lastModified || 0) >= (existing.lastModified || 0)) {
+                        characterCache.set(char.id, char);
+                    } else if (existing && (existing.lastModified || 0) > (char.lastModified || 0)) {
+                        // Cache mais recente que o banco (ex: editado antes do término do init assíncrono)
+                        await db.characters.put(existing);
+                    }
                 }
 
                 isInitialized = true;

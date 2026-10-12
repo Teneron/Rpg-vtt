@@ -601,15 +601,16 @@ function handleSocketLeaveRoom(socket, roomId) {
         });
     }
 
-    // If room is empty, clean it up quickly (15 seconds grace period for page reloads)
+    // Grace period para salas vazias (padrão de 10 minutos para suportar oscilações de rede e recarregamentos)
+    const gracePeriodMs = Number(process.env.ROOM_GRACE_PERIOD_MS) || (10 * 60 * 1000);
     if (room.members.size === 0) {
         setTimeout(() => {
             const currentRoom = rooms.get(roomId);
             if (currentRoom && currentRoom.members.size === 0) {
                 rooms.delete(roomId);
-                console.log(`[Room ${roomId}] Empty room expired and cleaned up.`);
+                console.log(`[Room ${roomId}] Empty room expired (${gracePeriodMs / 1000}s grace period) and cleaned up.`);
             }
-        }, 15 * 1000);
+        }, gracePeriodMs);
     }
 }
 
