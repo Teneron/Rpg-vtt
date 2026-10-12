@@ -188,6 +188,101 @@ async function main() {
         check(!childExited, 'Server survives a message flood');
         const healthRes = await fetch(`${url}/health`).then(r => r.json()).catch(() => null);
         check(healthRes && healthRes.status === 'healthy', 'Health endpoint responds after abuse');
+
+        // --- 7. Fase 1: Host authority, hostToken validation, and peer message stamping -----
+        const authHost = await connect(url);
+        const authPlayer = await connect(url);
+        const imposterHost = await connect(url);
+        sockets.push(authHost, authPlayer, imposterHost);
+
+        const authHostJoin = await join(authHost, { roomId: 'auth-room', playerName: 'MestreReal', isHost: true, userId: 'real-host-id' });
+        check(authHostJoin && authHostJoin.success && typeof authHostJoin.hostToken === 'string', 'Host receives secret hostToken upon room creation');
+        const secretToken = authHostJoin?.hostToken;
+
+        const authPlayerJoin = await join(authPlayer, { roomId: 'auth-room', playerName: 'Player1', isHost: false, userId: 'player-id-1' });
+        check(authPlayerJoin && authPlayerJoin.success && authPlayerJoin.hostToken === undefined, 'Player does NOT receive hostToken upon joining');
+
+        // Imposter tries to join as host without token
+        const imposterNoToken = await join(imposterHost, { roomId: 'auth-room', playerName: 'Imposter', isHost: true, userId: 'imposter-1' });
+        check(imposterNoToken && imposterNoToken.success === false, 'Imposter joining as isHost without hostToken is rejected');
+
+        // Imposter tries to join as host with fake token
+        const imposterBadToken = await join(imposterHost, { roomId: 'auth-room', playerName: 'Imposter', isHost: true, hostToken: 'invalid-token-1234', userId: 'imposter-1' });
+        check(imposterBadToken && imposterBadToken.success === false, 'Imposter joining with invalid hostToken is rejected');
+
+        // Collect messages received by player and host
+        const playerPeerMessages = collect(authPlayer, 'peer_message');
+        const hostPeerMessages = collect(authHost, 'peer_message');
+
+        // Player tries to send host-only messages (COMBAT_UPDATE, AUDIO_UPDATE)
+        authPlayer.emit('peer_message', {
+            roomId: 'auth-room',
+            message: { type: 'COMBAT_UPDATE', payload: { round: 99, activeIndex: 0 } }
+        });
+        authPlayer.emit('peer_message', {
+            roomId: 'auth-room',
+            message: { type: 'AUDIO_UPDATE', payload: { playing: true, track: { title: 'spoofed' } } }
+        });
+        await sleep(300);
+        check(hostPeerMessages.length === 0, 'Host-only messages (COMBAT_UPDATE, AUDIO_UPDATE) from non-host players are dropped by server');
+
+        // Player tries to send PLAYER_UPDATE spoofing another player's peerId
+        authPlayer.emit('peer_message', {
+            roomId: 'auth-room',
+            message: {
+                type: 'PLAYER_UPDATE',
+                payload: {
+                    playerName: 'Fake Victim',
+                    peerId: 'another-player-id',
+                    character: { id: 'char-victim', name: 'Victim', hp: 0 }
+                }
+            }
+        });
+        await sleep(300);
+        check(hostPeerMessages.length === 0, 'PLAYER_UPDATE spoofing another peerId is dropped by server');
+
+        // Player sends legit PLAYER_UPDATE for their own peerId
+        authPlayer.emit('peer_message', {
+            roomId: 'auth-room',
+            message: {
+                type: 'PLAYER_UPDATE',
+                payload: {
+                    playerName: 'Player1',
+                    peerId: 'player-id-1',
+                    character: { id: 'char-1', name: 'Player1 Char', hp: 20 }
+                }
+            }
+        });
+        await sleep(300);
+        check(
+            hostPeerMessages.length === 1 &&
+            hostPeerMessages[0].senderUserId === 'player-id-1' &&
+            hostPeerMessages[0].senderIsHost === false,
+            'Legit PLAYER_UPDATE from player is stamped with senderUserId and senderIsHost=false and relayed'
+        );
+
+        // Host sends COMBAT_UPDATE to room
+        authHost.emit('peer_message', {
+            roomId: 'auth-room',
+            message: { type: 'COMBAT_UPDATE', payload: { round: 1, activeIndex: 0 } }
+        });
+        await sleep(300);
+        check(
+            playerPeerMessages.length === 1 &&
+            playerPeerMessages[0].type === 'COMBAT_UPDATE' &&
+            playerPeerMessages[0].senderIsHost === true,
+            'COMBAT_UPDATE from host is stamped with senderIsHost=true and relayed to players'
+        );
+
+        // Reconnect host using valid hostToken
+        const authHostRejoin = await join(authHost, {
+            roomId: 'auth-room',
+            playerName: 'MestreReal',
+            isHost: true,
+            hostToken: secretToken,
+            userId: 'real-host-id'
+        });
+        check(authHostRejoin && authHostRejoin.success && authHostRejoin.isHost === true, 'Host can successfully reconnect and retain authority using secret hostToken');
     } finally {
         sockets.forEach(s => { try { s.disconnect(); } catch { /* ignore */ } });
         if (!childExited) child.kill();

@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useRef, useCallb
 import { io, Socket } from 'socket.io-client';
 import type { Character } from '../character/characterTypes';
 
-export type PeerMessage =
+export type PeerMessage = (
     | { type: 'JOIN_REQUEST'; payload: { name: string } }
     | { type: 'JOIN_RESPONSE'; payload: { success: boolean; error?: string; hostName?: string; adventureId?: string; adventureName?: string } }
     | { type: 'ROLL_RESULT'; payload: { playerName: string; roll: any } }
@@ -16,7 +16,18 @@ export type PeerMessage =
     | { type: 'COMBAT_ACTION'; payload: { action: string; combatantId?: string; value?: any } }
     | { type: 'SYNC_REQUEST'; payload: { target: 'MAP' | 'PLAYERS' } }
     | { type: 'AUDIO_UPDATE'; payload: { track: any; playing: boolean } }
-    | { type: 'SFX_TRIGGER'; payload: { track: any } };
+    | { type: 'SFX_TRIGGER'; payload: { track: any } }
+) & {
+    // Carimbados pelo SERVIDOR em toda mensagem retransmitida (o cliente nunca deve confiar em
+    // identidades declaradas dentro do payload).
+    senderUserId?: string;
+    senderIsHost?: boolean;
+};
+
+// Tipos que só o Mestre pode emitir (espelha HOST_ONLY_MESSAGE_TYPES do servidor; defesa em profundidade).
+const HOST_ONLY_MESSAGE_TYPES: ReadonlySet<string> = new Set([
+    'COMBAT_UPDATE', 'AUDIO_UPDATE', 'SFX_TRIGGER', 'JOIN_RESPONSE', 'WELCOME'
+]);
 
 export interface MultiplayerContextState {
     peerId: string | null;
@@ -119,6 +130,16 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
     useEffect(() => { currentAdventureIdRef.current = currentAdventureId; }, [currentAdventureId]);
 
     const messageListenersRef = useRef<Set<(data: PeerMessage) => void>>(new Set());
+    const hostTokenRef = useRef<string | null>((() => {
+        try {
+            const saved = localStorage.getItem('rpg_session');
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                return parsed.hostToken || null;
+            }
+        } catch { /* ignore */ }
+        return null;
+    })());
 
     const connections = Object.values(connectedPlayersData)
         .filter(p => p.isOnline && p.peerId !== myId)
@@ -244,12 +265,16 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
                     roomId: activeRoomId,
                     playerName: activeUsername,
                     isHost: isHostRef.current,
+                    hostToken: isHostRef.current ? (hostTokenRef.current || undefined) : undefined,
                     character: myCharacterRef.current,
                     userId: myId
                 }, (response: any) => {
                     if (response?.success) {
                         setIsConnected(true);
                         setIsConnecting(false);
+                        if (response.hostToken) {
+                            hostTokenRef.current = response.hostToken;
+                        }
                         handleRoomState(response);
                         console.log('[Socket] Successfully rejoined room after reconnect:', activeRoomId);
                     } else {
@@ -307,11 +332,26 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
         });
 
         socket.on('peer_message', (msg: PeerMessage) => {
+            // Defesa em profundidade: mensagens exclusivas do Mestre só são aceitas se carimbadas como tal pelo servidor
+            if (HOST_ONLY_MESSAGE_TYPES.has(msg.type) && !msg.senderIsHost) {
+                console.warn('[Socket] Descartando mensagem host-only não autorizada:', msg.type);
+                return;
+            }
+
             dispatchPeerMessageLocally(msg);
 
             // Handle PLAYER_UPDATE: update connectedPlayersData and local myCharacter if targeted
             if (msg.type === 'PLAYER_UPDATE') {
                 const targetPeerId = msg.payload.peerId;
+                const senderIsHost = !!msg.senderIsHost;
+                const senderUserId = msg.senderUserId;
+
+                // Segurança: apenas o Mestre ou o próprio dono da ficha podem emitir PLAYER_UPDATE para esse peerId
+                const isAuthorized = senderIsHost || (!!senderUserId && senderUserId === targetPeerId);
+                if (!isAuthorized) {
+                    console.warn('[Socket] Descartando PLAYER_UPDATE não autorizado para', targetPeerId, 'vindo de', senderUserId);
+                    return;
+                }
 
                 // 1. Update list of player data for GM and peers
                 setConnectedPlayersData(prev => {
@@ -329,10 +369,11 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
                     return prev;
                 });
 
-                // 2. Update myCharacter if this update was aimed at me (e.g. GM updated player sheet)
+                // 2. Update myCharacter if this update was aimed at me (APENAS se veio do Mestre!)
+                // Se foi edição local minha, já salvamos no momento da edição. Evita que outro jogador sobrescreva minha ficha.
                 const isForMe = targetPeerId === myId || (myCharacterRef.current && msg.payload.character?.id === myCharacterRef.current.id);
-                if (isForMe && msg.payload.character) {
-                    console.log('[Socket] Updating local character from remote PLAYER_UPDATE:', msg.payload.character.name);
+                if (isForMe && msg.payload.character && senderIsHost) {
+                    console.log('[Socket] Updating local character from remote PLAYER_UPDATE (from GM):', msg.payload.character.name);
                     setMyCharacter(msg.payload.character);
                     import('../character/characterRepository').then(({ CharacterRepository }) => {
                         CharacterRepository.save(msg.payload.character);
@@ -426,6 +467,7 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
                     roomId: session.adventureId,
                     playerName: session.username,
                     isHost: !!session.isHost,
+                    hostToken: session.isHost ? (session.hostToken || hostTokenRef.current || undefined) : undefined,
                     character: null,
                     userId: myId,
                     system: session.system || (session.adventureId?.toUpperCase().startsWith('WTC') ? 'witcher' : 'dnd55e')
@@ -433,6 +475,14 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
                     setIsConnecting(false);
                     if (response?.success) {
                         setIsConnected(true);
+                        if (response.hostToken) {
+                            hostTokenRef.current = response.hostToken;
+                            try {
+                                const s = JSON.parse(localStorage.getItem('rpg_session') || '{}');
+                                s.hostToken = response.hostToken;
+                                localStorage.setItem('rpg_session', JSON.stringify(s));
+                            } catch { /* ignore */ }
+                        }
                         if (response.system) setRoomSystem(response.system);
                         handleRoomState(response);
                         console.log('[Socket] Session restored successfully for room:', session.adventureId);
@@ -466,6 +516,7 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
                 roomId,
                 playerName: hostName,
                 isHost: true,
+                hostToken: hostTokenRef.current || undefined,
                 character: null,
                 userId: myId,
                 system
@@ -473,6 +524,9 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
                 setIsConnecting(false);
                 if (response?.success) {
                     setIsConnected(true);
+                    if (response.hostToken) {
+                        hostTokenRef.current = response.hostToken;
+                    }
                     if (response.system) setRoomSystem(response.system);
                     handleRoomState(response);
                     console.log('[Socket] Hosting room successfully:', roomId, 'System:', system);
@@ -480,6 +534,7 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
                         adventureId: roomId,
                         username: hostName,
                         isHost: true,
+                        hostToken: response.hostToken || null,
                         adventureName: initialAdventureName,
                         system
                     }));
@@ -636,6 +691,7 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
             socketRef.current.disconnect();
             socketRef.current = null;
         }
+        hostTokenRef.current = null;
         setIsConnected(false);
         setIsConnecting(false);
         setCurrentAdventureId(null);
@@ -651,6 +707,7 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
             socketRef.current.disconnect();
             socketRef.current = null;
         }
+        hostTokenRef.current = null;
         setIsConnected(false);
         setIsConnecting(false);
         setCurrentAdventureId(null);

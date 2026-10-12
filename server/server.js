@@ -5,6 +5,7 @@ import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
+import crypto from 'crypto';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -44,6 +45,16 @@ const LIMITS = {
 // Eventos que um cliente (Mestre) pode pedir para o servidor retransmitir via room_broadcast.
 // Qualquer outro nome é descartado (inclusive nomes reservados do Socket.io, que lançariam exceção).
 const ALLOWED_BROADCAST_EVENTS = new Set(['force_refresh']);
+
+// Política de autoridade das mensagens retransmitidas por `peer_message`:
+//  - HOST_ONLY: só o Mestre autenticado (hostToken) pode emitir; para jogadores é descartada.
+//  - MEMBER: qualquer membro da sala pode emitir (com regras extras em `authorizeAndStamp`).
+//  - Qualquer outro `type` é descartado.
+const HOST_ONLY_MESSAGE_TYPES = new Set(['COMBAT_UPDATE', 'AUDIO_UPDATE', 'SFX_TRIGGER', 'JOIN_RESPONSE', 'WELCOME']);
+const MEMBER_MESSAGE_TYPES = new Set([
+    'CHAT_MESSAGE', 'CHAT', 'ROLL_RESULT', 'EPHEMERAL_GESTURE', 'COMBAT_ACTION',
+    'SYNC_REQUEST', 'JOIN_REQUEST', 'PLAYER_UPDATE', 'MAP_UPDATE'
+]);
 
 const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
 const CONTROL_CHARS_GLOBAL = /[\u0000-\u001f\u007f]/g;
@@ -158,10 +169,74 @@ const safeHandler = (socket, eventName, rateLimiter, state, handler) => (...args
     }
 };
 
-/** O socket é o Mestre atual da sala? */
+/** O socket é o Mestre atual da sala? (membro marcado como host só existe após autenticar com hostToken) */
 const isRoomHost = (room, socketId) => {
     const member = room.members.get(socketId);
     return !!(member?.isHost || room.hostSocketId === socketId);
+};
+
+/** Comparação em tempo constante do hostToken informado com o da sala. */
+const tokensMatch = (expected, given) => {
+    if (typeof expected !== 'string' || typeof given !== 'string') return false;
+    const a = Buffer.from(expected);
+    const b = Buffer.from(given);
+    return a.length === b.length && crypto.timingSafeEqual(a, b);
+};
+
+/**
+ * Autoriza uma mensagem de `peer_message` e devolve uma cópia "carimbada" com a identidade REAL
+ * do remetente (o servidor não confia em senderId/playerName vindos do cliente).
+ * Retorna null quando a mensagem deve ser descartada.
+ */
+const authorizeAndStamp = (room, socketId, message) => {
+    const member = room.members.get(socketId);
+    if (!member) return null;
+
+    const fromHost = isRoomHost(room, socketId);
+    const type = message.type;
+
+    if (HOST_ONLY_MESSAGE_TYPES.has(type)) {
+        if (!fromHost) return null;
+    } else if (!MEMBER_MESSAGE_TYPES.has(type)) {
+        return null;
+    }
+
+    const stamped = { ...message, senderUserId: member.userId, senderIsHost: fromHost };
+    const payload = message.payload;
+
+    switch (type) {
+        case 'MAP_UPDATE': {
+            if (fromHost) break;
+            // Jogadores só podem mover tokens (a UI já limita aos tokens que possuem).
+            const data = isPlainObject(payload) ? payload.data : null;
+            if (!isPlainObject(payload) || payload.type !== 'move' || !isPlainObject(data)
+                || typeof data.id !== 'string' || !Number.isFinite(data.x) || !Number.isFinite(data.y)) {
+                return null;
+            }
+            break;
+        }
+        case 'PLAYER_UPDATE': {
+            if (!isPlainObject(payload) || typeof payload.peerId !== 'string') return null;
+            if (!isPlainObject(payload.character) || jsonSize(payload.character) > LIMITS.characterBytes) return null;
+            // Jogador só atualiza a PRÓPRIA ficha; o Mestre pode atualizar a de qualquer um.
+            if (!fromHost && payload.peerId !== member.userId) return null;
+            break;
+        }
+        case 'CHAT_MESSAGE': {
+            if (!isPlainObject(payload)) return null;
+            stamped.payload = { ...payload, senderId: member.userId, senderName: member.playerName };
+            break;
+        }
+        case 'ROLL_RESULT': {
+            if (!isPlainObject(payload)) return null;
+            stamped.payload = { ...payload, playerName: member.playerName };
+            break;
+        }
+        default:
+            break;
+    }
+
+    return stamped;
 };
 
 // Health check endpoint
@@ -242,6 +317,9 @@ io.on('connection', (socket) => {
             return;
         }
 
+        // Mestre só é reconhecido se criar a sala (recebe o hostToken) ou reentrar com o hostToken correto.
+        let isAuthenticatedHost = false;
+
         let room = rooms.get(cleanedRoomId);
         if (!room) {
             if (!wantsHost) {
@@ -257,6 +335,7 @@ io.on('connection', (socket) => {
             room = {
                 roomId: cleanedRoomId,
                 system: safeSystem || (cleanedRoomId.toUpperCase().startsWith('WTC') ? 'witcher' : 'dnd55e'),
+                hostToken: crypto.randomUUID(),
                 hostSocketId: socket.id,
                 hostUserId: safeUserId || null,
                 hostName: safeName || 'Mestre',
@@ -268,8 +347,16 @@ io.on('connection', (socket) => {
                 }
             };
             rooms.set(cleanedRoomId, room);
+            isAuthenticatedHost = true;
         } else {
-            if (!wantsHost && !room.hostSocketId) {
+            if (wantsHost) {
+                if (!tokensMatch(room.hostToken, payload.hostToken)) {
+                    console.warn(`[Socket] Host takeover attempt rejected for room ${cleanedRoomId} by ${socket.id}`);
+                    reply({ success: false, error: 'Esta mesa já pertence a outro Mestre (token de Mestre inválido). Escolha outro código de sala.' });
+                    return;
+                }
+                isAuthenticatedHost = true;
+            } else if (!room.hostSocketId) {
                 console.log(`[Socket] Player ${safeName || socket.id} attempted to join room with offline host: ${cleanedRoomId}`);
                 reply({ success: false, error: 'O Mestre desta mesa está desconectado no momento.' });
                 return;
@@ -283,9 +370,7 @@ io.on('connection', (socket) => {
         socket.join(cleanedRoomId);
         joinedRooms.add(cleanedRoomId);
 
-        // NOTE (Fase 1 do plano de correção): `isHost` ainda é declarado pelo cliente. A autoridade
-        // do Mestre (hostToken) será introduzida junto com o ajuste do cliente.
-        if (wantsHost) {
+        if (isAuthenticatedHost) {
             room.hostSocketId = socket.id;
             room.hostUserId = safeUserId || room.hostUserId;
             room.hostName = safeName || room.hostName;
@@ -305,8 +390,8 @@ io.on('connection', (socket) => {
         const memberData = {
             socketId: socket.id,
             userId: safeUserId || socket.id,
-            playerName: safeName || (wantsHost ? 'Mestre' : 'Jogador'),
-            isHost: wantsHost,
+            playerName: safeName || (isAuthenticatedHost ? 'Mestre' : 'Jogador'),
+            isHost: isAuthenticatedHost,
             character: character || null,
             isOnline: true
         };
@@ -325,11 +410,16 @@ io.on('connection', (socket) => {
             success: true,
             roomId: cleanedRoomId,
             system: room.system,
-            isHost: wantsHost,
+            isHost: isAuthenticatedHost,
             hostName: room.hostName,
             members: currentMembers,
             gameState: room.gameState
         };
+
+        // O hostToken é segredo do Mestre: só ele recebe (nunca jogadores, nem player_joined).
+        if (isAuthenticatedHost) {
+            responsePayload.hostToken = room.hostToken;
+        }
 
         reply(responsePayload);
         socket.emit('room_state', responsePayload);
@@ -345,25 +435,34 @@ io.on('connection', (socket) => {
         const room = rooms.get(cleanedRoomId);
         if (!room) return;
 
-        // Somente membros da sala podem enviar mensagens para ela
-        if (!room.members.has(socket.id)) return;
+        // Somente membros da sala podem enviar mensagens, e apenas tipos permitidos para o seu papel.
+        // A mensagem retransmitida é uma cópia com a identidade real do remetente.
+        const stamped = authorizeAndStamp(room, socket.id, message);
+        if (!stamped) return;
+
+        // Mantém a ficha do membro atualizada no servidor (entrada tardia / reconexão do Mestre).
+        if (stamped.type === 'PLAYER_UPDATE') {
+            for (const m of room.members.values()) {
+                if (m.userId === stamped.payload.peerId) m.character = stamped.payload.character;
+            }
+        }
 
         // Optionally cache state updates to accelerate sync for late-joining players
-        if (message.type === 'MAP_UPDATE' && message.payload?.type === 'full_sync' && isPlainObject(message.payload.data)) {
-            room.gameState.map = message.payload.data;
-        } else if (message.type === 'COMBAT_UPDATE' && isPlainObject(message.payload)) {
-            room.gameState.combat = message.payload;
-        } else if (message.type === 'CHAT_MESSAGE' && isPlainObject(message.payload)
-            && jsonSize(message.payload) <= LIMITS.chatMessageBytes) {
+        // (MAP full_sync / COMBAT_UPDATE só chegam aqui vindos do Mestre autenticado)
+        if (stamped.type === 'MAP_UPDATE' && stamped.payload?.type === 'full_sync' && isPlainObject(stamped.payload.data)) {
+            room.gameState.map = stamped.payload.data;
+        } else if (stamped.type === 'COMBAT_UPDATE' && isPlainObject(stamped.payload)) {
+            room.gameState.combat = stamped.payload;
+        } else if (stamped.type === 'CHAT_MESSAGE' && jsonSize(stamped.payload) <= LIMITS.chatMessageBytes) {
             if (!room.gameState.chatHistory) room.gameState.chatHistory = [];
-            room.gameState.chatHistory.push(message.payload);
+            room.gameState.chatHistory.push(stamped.payload);
             if (room.gameState.chatHistory.length > 100) {
                 room.gameState.chatHistory.shift();
             }
         }
 
         // Broadcast to all other peers in the room
-        socket.to(cleanedRoomId).emit('peer_message', message);
+        socket.to(cleanedRoomId).emit('peer_message', stamped);
     });
 
     // 3. BROADCAST TO ALL IN ROOM (host only, whitelisted events only)
