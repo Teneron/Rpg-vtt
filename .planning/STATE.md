@@ -80,7 +80,7 @@ None yet.
 | 261008-p7q | persistencia e isolamento multi-historia | 2026-10-08 | 9b3371c | [261008-p7q-persistencia-e-isolamento-multi-historia](./quick/261008-p7q-persistencia-e-isolamento-multi-historia/) |
 | 261012-s0a | hardening do servidor socket (fase 0 auditoria) | 2026-10-12 | 87f632c | [261012-s0a-hardening-servidor-socket](./quick/261012-s0a-hardening-servidor-socket/) |
 | 261012-s1a | autoridade do mestre e protecao de fichas (fase 1 auditoria) | 2026-10-12 | 9d89242 | [261012-s1a-autoridade-mestre-multiplayer](./quick/261012-s1a-autoridade-mestre-multiplayer/) |
-| 261012-s2a | bugs de jogo map combat sheet e dados 3d (fase 2 auditoria) | 2026-10-12 | pending | [261012-s2a-bugs-de-jogo-map-combat-sheet](./quick/261012-s2a-bugs-de-jogo-map-combat-sheet/) |
+| 261012-s2a | bugs de jogo map combat sheet e dados 3d (fase 2 auditoria) | 2026-10-12 | 50946af | [261012-s2a-bugs-de-jogo-map-combat-sheet](./quick/261012-s2a-bugs-de-jogo-map-combat-sheet/) |
 
 ## Deferred Items
 
