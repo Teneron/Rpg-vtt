@@ -17,19 +17,25 @@ export const FogOfWarLayer: React.FC<FogOfWarLayerProps> = ({ selectedTokenId, p
         const canvas = canvasRef.current;
         if (!canvas) return;
 
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
+        let rafId: number;
 
-        // Reset Canvas
-        const width = config.width * config.gridSize;
-        const height = config.height * config.gridSize;
-        canvas.width = width;
-        canvas.height = height;
+        rafId = requestAnimationFrame(() => {
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return;
 
-        // Ensure defaults
-        ctx.clearRect(0, 0, width, height); // Clear everything
-        ctx.globalAlpha = 1.0; // Force Opaque
-        ctx.globalCompositeOperation = 'source-over'; // Default mode
+            // Reset Canvas with dimension check to avoid tearing & excessive buffer reallocations
+            const width = Math.max(1, config.width * config.gridSize);
+            const height = Math.max(1, config.height * config.gridSize);
+            if (canvas.width !== width || canvas.height !== height) {
+                canvas.width = width;
+                canvas.height = height;
+            } else {
+                ctx.clearRect(0, 0, width, height);
+            }
+
+            // Ensure defaults
+            ctx.globalAlpha = 1.0;
+            ctx.globalCompositeOperation = 'source-over';
 
 
         // se Fog desativado ou Luz Brilhante Global (tudo visível)
@@ -191,7 +197,11 @@ export const FogOfWarLayer: React.FC<FogOfWarLayerProps> = ({ selectedTokenId, p
                 ctx.fill();
             }
         });
+        });
 
+        return () => {
+            if (rafId) cancelAnimationFrame(rafId);
+        };
     }, [config, tokens, walls, isHost, myCharacter, connectedPlayersData, selectedTokenId, previewMode]);
 
     // Z-INDEX LOGIC

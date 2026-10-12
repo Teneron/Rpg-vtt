@@ -3,10 +3,10 @@ import React, { useState } from 'react';
 import { D4Icon, D6Icon, D8Icon, D10Icon, D12Icon, D20Icon } from './DieIcons';
 import { useDice } from './DiceContext';
 import './DiceRoller.css';
-import { DiceScene } from './DiceScene';
-import { usePeer } from '../multiplayer/FirebaseContext';
+import { usePeer } from '../multiplayer/SocketContext';
 import { Users } from 'lucide-react';
 
+const DiceScene = React.lazy(() => import('./DiceScene').then(m => ({ default: m.DiceScene })));
 
 interface DieDefinition {
     type: string;
@@ -37,7 +37,9 @@ export const DiceOverlay: React.FC = () => {
 
     return (
         <div style={{ pointerEvents: 'none', position: 'fixed', inset: 0, zIndex: 9999 }}>
-            <DiceScene dice={rollingDice} onRollComplete={finishRoll} />
+            <React.Suspense fallback={null}>
+                <DiceScene dice={rollingDice} onRollComplete={finishRoll} />
+            </React.Suspense>
         </div>
     );
 };

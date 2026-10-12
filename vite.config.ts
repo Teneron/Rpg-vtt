@@ -13,17 +13,36 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
-          if (id.includes('node_modules')) {
-            if (id.includes('three') || id.includes('@react-three')) {
+          const norm = id.replace(/\\/g, '/');
+          if (norm.includes('preload-helper') || norm.includes('vite/')) {
+            return 'react-vendor';
+          }
+          if (norm.includes('/node_modules/')) {
+            if (
+              norm.includes('/node_modules/react/') ||
+              norm.includes('/node_modules/react-dom/') ||
+              norm.includes('/node_modules/scheduler/') ||
+              norm.includes('/node_modules/react-is/')
+            ) {
+              return 'react-vendor';
+            }
+            if (
+              norm.includes('/node_modules/three/') ||
+              norm.includes('/node_modules/@react-three/') ||
+              norm.includes('/node_modules/cannon-es/')
+            ) {
               return 'three-vendor';
             }
-            if (id.includes('lucide-react') || id.includes('react-player')) {
+            if (
+              norm.includes('/node_modules/lucide-react/') ||
+              norm.includes('/node_modules/react-player/')
+            ) {
               return 'ui-vendor';
             }
-            if (id.includes('dexie')) {
+            if (norm.includes('/node_modules/dexie/') || norm.includes('/node_modules/dexie-react-hooks/')) {
               return 'db-vendor';
             }
-            if (id.includes('socket.io-client')) {
+            if (norm.includes('/node_modules/socket.io-client/')) {
               return 'network-vendor';
             }
           }
