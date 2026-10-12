@@ -2,7 +2,7 @@ import { Component, type ErrorInfo, type ReactNode } from 'react';
 
 interface Props {
     children: ReactNode;
-    name: string;
+    name?: string;
 }
 
 interface State {
@@ -21,16 +21,16 @@ export class ErrorBoundary extends Component<Props, State> {
     }
 
     public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-        console.error(`Uncaught error in ${this.props.name}:`, error, errorInfo);
+        console.error(`Uncaught error in ${this.props.name || 'Aplicação'}:`, error, errorInfo);
     }
 
     public render() {
         if (this.state.hasError) {
             return (
-                <div style={{ padding: 20, background: '#300', color: '#f88', border: '1px solid #f00' }}>
-                    <h3>Erro em: {this.props.name}</h3>
-                    <pre>{this.state.error?.message}</pre>
-                    <pre>{this.state.error?.stack?.slice(0, 200)}...</pre>
+                <div style={{ padding: 20, background: '#1c1313', color: '#ff8888', border: '1px solid #771111', borderRadius: '8px', margin: '16px' }}>
+                    <h3 style={{ marginTop: 0 }}>Erro em: {this.props.name || 'Aplicação'}</h3>
+                    <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{this.state.error?.message}</pre>
+                    <pre style={{ opacity: 0.7, fontSize: '0.85em', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{this.state.error?.stack?.slice(0, 300)}...</pre>
                 </div>
             );
         }

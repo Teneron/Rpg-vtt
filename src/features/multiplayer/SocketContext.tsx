@@ -109,7 +109,9 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
                 if (parsed.system) return parsed.system;
                 if (parsed.adventureId?.toUpperCase().startsWith('WTC')) return 'witcher';
             }
-        } catch (e) {}
+        } catch {
+            // Ignore parse errors on cached session
+        }
         return 'dnd55e';
     });
     const [serverUrl, setServerUrl] = useState<string>(() => {
@@ -681,7 +683,7 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
     }, []);
 
     const hostAdventureId = (_id: string) => {
-        // Compatibility method
+        void _id;
     };
 
     const disconnect = useCallback(() => {

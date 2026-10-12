@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { usePeer } from '../multiplayer/FirebaseContext';
+import { usePeer } from '../multiplayer/SocketContext';
 
 export type MessageType = 'text' | 'roll' | 'system' | 'emote';
 

@@ -2,7 +2,7 @@ import React from 'react';
 import { RulebookViewer } from './RulebookViewer';
 import { getSystemRulebook } from './data';
 import { useAdventure } from '../adventure/AdventureContext';
-import { usePeer } from '../multiplayer/FirebaseContext';
+import { usePeer } from '../multiplayer/SocketContext';
 
 export const PlayerRulebook: React.FC = () => {
     const { roomSystem, currentAdventureId } = usePeer();

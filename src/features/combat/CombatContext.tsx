@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import { usePeer } from '../multiplayer/FirebaseContext';
+import { usePeer } from '../multiplayer/SocketContext';
 import type { CombatState, Combatant } from './combatTypes';
 
 interface CombatContextType {

@@ -137,7 +137,7 @@ const getCachedGeometry = (type: string) => {
             if (!bestFace || !bestFace.center) continue;
 
             const normal = bestFace.normal.clone();
-            let up = new THREE.Vector3(0, 1, 0);
+            const up = new THREE.Vector3(0, 1, 0);
             if (Math.abs(normal.dot(up)) > 0.9) up.set(0, 0, 1);
 
             const right = new THREE.Vector3().crossVectors(up, normal).normalize();

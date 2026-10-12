@@ -1,6 +1,6 @@
 import React from 'react';
 import { useMap } from './MapContext';
-import { usePeer } from '../multiplayer/FirebaseContext';
+import { usePeer } from '../multiplayer/SocketContext';
 import { MapSettingsModal } from './MapSettingsModal';
 import { AddAssetModal } from './AddAssetModal';
 import { Hand, Ruler, Sparkles, Box, Eye, EyeOff, RefreshCw, Settings, Image } from 'lucide-react';

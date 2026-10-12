@@ -82,7 +82,8 @@ None yet.
 | 261012-s1a | autoridade do mestre e protecao de fichas (fase 1 auditoria) | 2026-10-12 | 9d89242 | [261012-s1a-autoridade-mestre-multiplayer](./quick/261012-s1a-autoridade-mestre-multiplayer/) |
 | 261012-s2a | bugs de jogo map combat sheet e dados 3d (fase 2 auditoria) | 2026-10-12 | 50946af | [261012-s2a-bugs-de-jogo-map-combat-sheet](./quick/261012-s2a-bugs-de-jogo-map-combat-sheet/) |
 | 261012-s3a | persistencia dexie e resiliencia do servidor (fase 3 auditoria) | 2026-10-12 | 1f8526e | [261012-s3a-persistencia-dexie-e-resiliencia-servidor](./quick/261012-s3a-persistencia-dexie-e-resiliencia-servidor/) |
-| 261012-s4a | performance e bundle code-splitting (fase 4 auditoria) | 2026-10-12 | pending | [261012-s4a-performance-e-bundle](./quick/261012-s4a-performance-e-bundle/) |
+| 261012-s4a | performance e bundle code-splitting (fase 4 auditoria) | 2026-10-12 | 18ec8da | [261012-s4a-performance-e-bundle](./quick/261012-s4a-performance-e-bundle/) |
+| 261012-s5a | qualidade eslint e dx (fase 5 auditoria) | 2026-10-12 | pending | [261012-s5a-qualidade-eslint-dx](./quick/261012-s5a-qualidade-eslint-dx/) |
 
 ## Deferred Items
 

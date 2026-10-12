@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { CharacterRepository, type CharacterSummary } from './characterRepository';
-import { usePeer } from '../multiplayer/FirebaseContext';
+import { usePeer } from '../multiplayer/SocketContext';
 import { useAdventure } from '../adventure/AdventureContext';
 import { User, Scroll, Shield, Plus, X, ArrowRight, Swords } from 'lucide-react';
 import './CharacterSelection.css';

@@ -1,5 +1,5 @@
 import React from 'react';
-import { usePeer } from '../multiplayer/FirebaseContext';
+import { usePeer } from '../multiplayer/SocketContext';
 import { Soundboard } from '../audio/Soundboard';
 import { RefreshCw, Shield, Copy, Check, Link2, Trash2, FileText, Users, UserCheck, MapPin, TrendingUp } from 'lucide-react';
 import { getMinXPForLevel, regenerateCharacterStats, type Character } from '../character/characterTypes';

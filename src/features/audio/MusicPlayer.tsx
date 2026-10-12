@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAudio } from './AudioContext';
 import type { AudioTrack } from './AudioContext';
-import { usePeer } from '../multiplayer/FirebaseContext';
+import { usePeer } from '../multiplayer/SocketContext';
 import { Play, Pause, Square, Music, Volume2, Trash2, VolumeX, Upload, ChevronDown } from 'lucide-react';
 import { AudioRepository } from './AudioRepository';
 

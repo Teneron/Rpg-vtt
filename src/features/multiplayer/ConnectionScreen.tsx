@@ -17,7 +17,7 @@ import {
     Key,
     Loader2
 } from 'lucide-react';
-import { usePeer } from './FirebaseContext';
+import { usePeer } from './SocketContext';
 import { useAdventure } from '../adventure/AdventureContext';
 import { GAME_SYSTEMS, getGameSystem } from '../systems/gameSystems';
 import './ConnectionScreen.css';

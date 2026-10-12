@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useAudio } from './AudioContext';
-import { usePeer } from '../multiplayer/FirebaseContext';
+import { usePeer } from '../multiplayer/SocketContext';
 import { Zap, Plus, Trash2, Swords, Flame, DoorClosed, Crosshair, Square, Music, Volume2, Sparkles, Heart, Dices, Skull, X } from 'lucide-react';
 import { db } from '../../db/RPGDatabase';
 

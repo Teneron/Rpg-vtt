@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useMap } from './MapContext';
-import { usePeer } from '../multiplayer/FirebaseContext';
+import { usePeer } from '../multiplayer/SocketContext';
 import type { MapToken } from './mapTypes';
 import '../../Layout.css';
 import { useCombat } from '../combat/CombatContext';
@@ -105,7 +105,7 @@ export const TokenSettingsModal: React.FC<TokenSettingsModalProps> = ({ tokenId,
             initializedTokenId.current = tokenId;
 
             // Initialize Form State
-            let initialTokenState = { ...t };
+            const initialTokenState = { ...t };
 
             // If there is a linked combatant, prioritize its health/AC status because that's what is shown on map
             const linkedCombatant = (combatState.combatants || []).find(c => c.id === t.id || c.id === t.combatantId || (t.characterId && c.characterId === t.characterId));

@@ -1,6 +1,6 @@
 import React from 'react';
 import type { ChatMessage } from './ChatContext';
-import { usePeer } from '../multiplayer/FirebaseContext';
+import { usePeer } from '../multiplayer/SocketContext';
 import { D4Icon, D6Icon, D8Icon, D10Icon, D12Icon, D20Icon } from '../dice/DieIcons';
 
 interface ChatMessageItemProps {

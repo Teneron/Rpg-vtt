@@ -16,7 +16,7 @@ import { CharacterAvatar } from './CharacterAvatar';
 import { useDice } from '../dice/DiceContext';
 import { CharacterBuilder } from './CharacterBuilder';
 // import { usePlayerSync } from '../multiplayer/usePlayerSync';
-import { usePeer } from '../multiplayer/FirebaseContext';
+import { usePeer } from '../multiplayer/SocketContext';
 import { CharacterRepository } from './characterRepository';
 import { Save, X, Settings, Sparkles, BookOpen, Table } from 'lucide-react';
 
@@ -340,7 +340,7 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
             // Find or Create Toxicity Resource
             let resourceIndex = (character.classResources || []).findIndex(r => r.id === 'toxicity');
 
-            let nextResources = [...(character.classResources || [])];
+            const nextResources = [...(character.classResources || [])];
 
             if (resourceIndex === -1) {
                 // Initialize if missing (Witcher default)

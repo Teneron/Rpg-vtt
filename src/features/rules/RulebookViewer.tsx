@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Search } from 'lucide-react';
 import './Rulebook.css';
 
@@ -28,15 +28,13 @@ export const RulebookViewer: React.FC<RulebookViewerProps> = ({
     sections,
     headerControls
 }) => {
-    const [activeSection, setActiveSection] = useState(sections[0]?.id || '');
+    const [selectedSectionId, setSelectedSectionId] = useState(sections[0]?.id || '');
     const [searchFilter, setSearchFilter] = useState('');
 
-    // Ensure active section resets if sections change
-    useEffect(() => {
-        if (!sections.some(s => s.id === activeSection)) {
-            setActiveSection(sections[0]?.id || '');
-        }
-    }, [sections, activeSection]);
+    // Derive activeSection: if selected is invalid for current sections, fallback to first
+    const activeSection = sections.some(s => s.id === selectedSectionId)
+        ? selectedSectionId
+        : (sections[0]?.id || '');
 
     const filteredSections = searchFilter.trim() === ''
         ? sections
@@ -81,7 +79,7 @@ export const RulebookViewer: React.FC<RulebookViewerProps> = ({
                                 )}
                                 <li>
                                     <a
-                                        onClick={() => setActiveSection(section.id)}
+                                        onClick={() => setSelectedSectionId(section.id)}
                                         className={activeSection === section.id ? 'active' : ''}
                                     >
                                         {section.title}

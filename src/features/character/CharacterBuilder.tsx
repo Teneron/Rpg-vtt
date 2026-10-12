@@ -17,7 +17,7 @@ import {
     calculateModifier,
     type ClassFeature
 } from './characterTypes';
-import { usePeer } from '../multiplayer/FirebaseContext';
+import { usePeer } from '../multiplayer/SocketContext';
 import { ClassProgression } from './components/ClassProgression';
 import './CharacterBuilder.css';
 

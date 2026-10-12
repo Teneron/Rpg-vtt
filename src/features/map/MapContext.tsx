@@ -1,8 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { initialMapConfig } from './mapTypes';
 import type { MapConfig, MapToken, Wall } from './mapTypes';
-import { usePeer } from '../multiplayer/FirebaseContext';
-import type { PeerMessage } from '../multiplayer/FirebaseContext';
+import { usePeer } from '../multiplayer/SocketContext';
+import type { PeerMessage } from '../multiplayer/SocketContext';
 import { db } from '../../db/RPGDatabase'; // Import DB
 // MapContext.tsx - Powered by Socket Multiplayer & Dexie IndexedDB
 

@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { initialMapConfig } from './mapTypes';
 import type { Scene } from './mapTypes';
-import { usePeer } from '../multiplayer/FirebaseContext';
+import { usePeer } from '../multiplayer/SocketContext';
 import { useMap } from './MapContext';
 import { db } from '../../db/RPGDatabase';
 

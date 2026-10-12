@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useCombat } from './CombatContext';
-import { usePeer } from '../multiplayer/FirebaseContext';
+import { usePeer } from '../multiplayer/SocketContext';
 import { useMap } from '../map/MapContext';
 import { rollInitiative } from './combatUtils';
 import type { TacticalStatus } from './combatTypes';

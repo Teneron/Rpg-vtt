@@ -92,10 +92,13 @@ export const MonsterEditor: React.FC<MonsterEditorProps> = ({ existingMonster, o
 
     const handleSave = () => {
         if (!data.name) return alert("Nome é obrigatório");
-        if (!data.id) data.id = generateId('custom');
-        data.source = 'Custom';
+        const monsterToSave = {
+            ...data,
+            id: data.id || generateId('custom'),
+            source: 'Custom' as const
+        };
 
-        MonsterRepository.saveCustomMonster(data);
+        MonsterRepository.saveCustomMonster(monsterToSave);
         onSave();
     };
 

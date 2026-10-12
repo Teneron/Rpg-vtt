@@ -1,6 +1,6 @@
 
 import { useEffect, useRef } from 'react';
-import { usePeer } from './FirebaseContext';
+import { usePeer } from './SocketContext';
 import type { Character } from '../character/characterTypes';
 
 /**

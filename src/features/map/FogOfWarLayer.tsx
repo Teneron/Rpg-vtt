@@ -1,6 +1,6 @@
 import React, { useRef, useEffect } from 'react';
 import { useMap } from './MapContext';
-import { usePeer } from '../multiplayer/FirebaseContext';
+import { usePeer } from '../multiplayer/SocketContext';
 import { LightingSystem } from './LightingSystem';
 
 interface FogOfWarLayerProps {
@@ -17,9 +17,7 @@ export const FogOfWarLayer: React.FC<FogOfWarLayerProps> = ({ selectedTokenId, p
         const canvas = canvasRef.current;
         if (!canvas) return;
 
-        let rafId: number;
-
-        rafId = requestAnimationFrame(() => {
+        const rafId = requestAnimationFrame(() => {
             const ctx = canvas.getContext('2d');
             if (!ctx) return;
 

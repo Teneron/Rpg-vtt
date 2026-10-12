@@ -6,7 +6,7 @@ import { MonsterEditor } from './MonsterEditor';
 import { MonsterDetailsModal } from './MonsterDetailsModal';
 import { Edit2, Trash2, Swords, Move, Info } from 'lucide-react';
 
-import { usePeer } from '../multiplayer/FirebaseContext';
+import { usePeer } from '../multiplayer/SocketContext';
 import { useAdventure } from '../adventure/AdventureContext';
 
 // Helper for safe ID generation

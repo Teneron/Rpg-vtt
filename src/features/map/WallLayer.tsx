@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useMap } from './MapContext';
-import { usePeer } from '../multiplayer/FirebaseContext';
+import { usePeer } from '../multiplayer/SocketContext';
 import type { Wall } from './mapTypes';
 
 interface WallLayerProps {
