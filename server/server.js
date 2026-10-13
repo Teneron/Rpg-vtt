@@ -53,7 +53,7 @@ const ALLOWED_BROADCAST_EVENTS = new Set(['force_refresh']);
 const HOST_ONLY_MESSAGE_TYPES = new Set(['COMBAT_UPDATE', 'AUDIO_UPDATE', 'SFX_TRIGGER', 'JOIN_RESPONSE', 'WELCOME']);
 const MEMBER_MESSAGE_TYPES = new Set([
     'CHAT_MESSAGE', 'CHAT', 'ROLL_RESULT', 'EPHEMERAL_GESTURE', 'COMBAT_ACTION',
-    'SYNC_REQUEST', 'JOIN_REQUEST', 'PLAYER_UPDATE', 'MAP_UPDATE'
+    'SYNC_REQUEST', 'JOIN_REQUEST', 'PLAYER_UPDATE', 'MAP_UPDATE', 'MAP_PING'
 ]);
 
 const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
@@ -230,6 +230,15 @@ const authorizeAndStamp = (room, socketId, message) => {
         case 'ROLL_RESULT': {
             if (!isPlainObject(payload)) return null;
             stamped.payload = { ...payload, playerName: member.playerName };
+            break;
+        }
+        case 'MAP_PING': {
+            if (!isPlainObject(payload)) return null;
+            stamped.payload = {
+                ...payload,
+                senderName: member.playerName || payload.senderName || 'Jogador',
+                senderId: member.userId
+            };
             break;
         }
         default:

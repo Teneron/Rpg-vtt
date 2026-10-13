@@ -33,7 +33,12 @@ import {
   Link2,
   Loader2,
   X,
-  Sparkles
+  Sparkles,
+  Maximize,
+  Minimize,
+  PanelLeftClose,
+  PanelLeftOpen,
+  RefreshCw
 } from 'lucide-react';
 
 // Lazy loaded heavy components to optimize initial bundle size & load on demand
@@ -55,14 +60,155 @@ const LazyLoadingFallback = () => (
 
 type Tab = 'dice' | 'character' | 'map' | 'gm-screen' | 'combat' | 'bestiary' | 'rules-player' | 'rules-gm';
 
+interface ConnectionBadgeProps {
+  status: 'connected' | 'reconnecting' | 'disconnected';
+  onReconnect: () => void;
+}
+
+const ConnectionBadge: React.FC<ConnectionBadgeProps> = ({ status, onReconnect }) => {
+  if (status === 'connected') {
+    return (
+      <div
+        title="Conexão em tempo real estabelecida com o servidor"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px',
+          padding: '3px 10px',
+          borderRadius: '16px',
+          background: 'rgba(34, 197, 94, 0.12)',
+          border: '1px solid rgba(34, 197, 94, 0.35)',
+          color: '#4ade80',
+          fontSize: '0.75rem',
+          fontWeight: 600,
+          userSelect: 'none'
+        }}
+      >
+        <span className="status-dot status-dot-online" />
+        <span>Online</span>
+      </div>
+    );
+  }
+
+  if (status === 'reconnecting') {
+    return (
+      <div
+        title="Tentando restabelecer conexão com o servidor..."
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px',
+          padding: '3px 10px',
+          borderRadius: '16px',
+          background: 'rgba(234, 179, 8, 0.12)',
+          border: '1px solid rgba(234, 179, 8, 0.4)',
+          color: '#facc15',
+          fontSize: '0.75rem',
+          fontWeight: 600,
+          userSelect: 'none'
+        }}
+      >
+        <span className="status-dot status-dot-reconnecting" />
+        <span>Reconectando...</span>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+        padding: '2px 8px 2px 10px',
+        borderRadius: '16px',
+        background: 'rgba(239, 68, 68, 0.15)',
+        border: '1px solid rgba(239, 68, 68, 0.4)',
+        color: '#f87171',
+        fontSize: '0.75rem',
+        fontWeight: 600
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+        <span className="status-dot status-dot-offline" />
+        <span>Offline</span>
+      </div>
+      <button
+        type="button"
+        onClick={onReconnect}
+        title="Tentar reconectar ao servidor agora"
+        style={{
+          background: '#dc2626',
+          border: 'none',
+          color: '#fff',
+          borderRadius: '10px',
+          padding: '2px 8px',
+          fontSize: '0.7rem',
+          fontWeight: 'bold',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '4px',
+          transition: 'background 0.2s ease'
+        }}
+      >
+        <RefreshCw size={11} />
+        <span>Reconectar</span>
+      </button>
+    </div>
+  );
+};
+
 function AppContent() {
-  const { isConnected, isHost, disconnect, closeRoom, currentAdventureId, peerId, myCharacter } = usePeer();
+  const {
+    isConnected,
+    isHost,
+    disconnect,
+    closeRoom,
+    currentAdventureId,
+    peerId,
+    myCharacter,
+    connectionState,
+    reconnectNow
+  } = usePeer();
   const { closeAdventure } = useAdventure();
   const [activeTab, setActiveTab] = useState<Tab>('character');
   const [viewMode, setViewMode] = useState<'connection' | 'game' | 'character-setup' | 'rules-player' | 'rules-gm'>('connection');
   const [selectedCharacterId, setSelectedCharacterId] = useState<string | null>(() => {
     return localStorage.getItem('rpg_selected_char_id') || null;
   });
+
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
+  const toggleFullscreen = async () => {
+    try {
+      if (!document.fullscreenElement) {
+        await document.documentElement.requestFullscreen();
+      } else {
+        if (document.exitFullscreen) {
+          await document.exitFullscreen();
+        }
+      }
+    } catch (err) {
+      console.warn('[Fullscreen] Falha ao alternar tela cheia:', err);
+    }
+  };
+
+  const handleTabSelect = (tab: Tab) => {
+    setActiveTab(tab);
+    if (isSidebarCollapsed && (tab === 'dice' || tab === 'combat' || tab === 'bestiary' || tab === 'gm-screen')) {
+      setIsSidebarCollapsed(false);
+    }
+  };
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [copiedRoomCodeHeader, setCopiedRoomCodeHeader] = useState(false);
@@ -247,6 +393,12 @@ function AppContent() {
             <span>RPG Tabletop</span>
           </div>
 
+          {/* BADGE DE CONEXÃO SOCKET.IO */}
+          <ConnectionBadge
+            status={connectionState}
+            onReconnect={reconnectNow}
+          />
+
           {/* CÓDIGO DA SALA EM DESTAQUE NO HEADER */}
           {activeRoomCode && (
             <div
@@ -351,34 +503,34 @@ function AppContent() {
               </span>
             )}
           </button>
-          <button className={`nav-tab ${activeTab === 'dice' ? 'active' : ''}`} onClick={() => setActiveTab('dice')}>
+          <button className={`nav-tab ${activeTab === 'dice' ? 'active' : ''}`} onClick={() => handleTabSelect('dice')}>
             <Dices size={15} />
             <span>Dados</span>
           </button>
-          <button className={`nav-tab ${activeTab === 'combat' ? 'active' : ''}`} onClick={() => setActiveTab('combat')}>
+          <button className={`nav-tab ${activeTab === 'combat' ? 'active' : ''}`} onClick={() => handleTabSelect('combat')}>
             <Swords size={15} />
             <span>Combate</span>
           </button>
           {isHost && (
-            <button className={`nav-tab ${activeTab === 'bestiary' ? 'active' : ''}`} onClick={() => setActiveTab('bestiary')}>
+            <button className={`nav-tab ${activeTab === 'bestiary' ? 'active' : ''}`} onClick={() => handleTabSelect('bestiary')}>
               <Skull size={15} />
               <span>Monstros</span>
             </button>
           )}
           {isHost && (
-            <button className={`nav-tab ${activeTab === 'gm-screen' ? 'active' : ''}`} onClick={() => setActiveTab('gm-screen')}>
+            <button className={`nav-tab ${activeTab === 'gm-screen' ? 'active' : ''}`} onClick={() => handleTabSelect('gm-screen')}>
               <Shield size={15} />
               <span>Painel GM</span>
             </button>
           )}
         </nav>
         <nav className="nav-tabs" style={{ margin: '0 20px', borderLeft: '1px solid #333', paddingLeft: '20px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <button className={`nav-tab ${activeTab === 'rules-player' ? 'active' : ''}`} onClick={() => setActiveTab('rules-player')}>
+          <button className={`nav-tab ${activeTab === 'rules-player' ? 'active' : ''}`} onClick={() => handleTabSelect('rules-player')}>
             <BookOpen size={15} />
             <span>Regras</span>
           </button>
           {isHost && (
-            <button className={`nav-tab ${activeTab === 'rules-gm' ? 'active' : ''}`} onClick={() => setActiveTab('rules-gm')}>
+            <button className={`nav-tab ${activeTab === 'rules-gm' ? 'active' : ''}`} onClick={() => handleTabSelect('rules-gm')}>
               <Scroll size={15} />
               <span>Mestre</span>
             </button>
@@ -388,6 +540,14 @@ function AppContent() {
         {/* Map Tools & Exit Controls (Right Side) */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
           <MapHeaderControls />
+          <button
+            className="glass-button small"
+            onClick={toggleFullscreen}
+            title={isFullscreen ? "Sair da Tela Cheia (Esc / F11)" : "Tela Cheia"}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '6px 10px' }}
+          >
+            {isFullscreen ? <Minimize size={14} /> : <Maximize size={14} />}
+          </button>
           {isHost ? (
             <button
               onClick={() => {
@@ -467,7 +627,24 @@ function AppContent() {
       <div className="main-layout">
 
         {/* SIDEBAR (Glass Panel) */}
-        <div className="sidebar-panel">
+        <div className={`sidebar-panel ${isSidebarCollapsed ? 'collapsed' : ''}`}>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'flex-end',
+            padding: '6px 10px',
+            borderBottom: '1px solid var(--glass-border)'
+          }}>
+            <button
+              className="glass-button small"
+              onClick={() => setIsSidebarCollapsed(true)}
+              title="Recolher Painel Lateral"
+              style={{ padding: '3px 6px' }}
+            >
+              <PanelLeftClose size={14} />
+            </button>
+          </div>
+
           <ErrorBoundary name="SidebarContent">
             <Suspense fallback={<LazyLoadingFallback />}>
               {activeTab === 'dice' && <DiceSidebar />}
@@ -499,6 +676,16 @@ function AppContent() {
           transition: 'filter 0.3s ease',
           filter: (activeTab === 'character' && selectedCharacterId) ? 'blur(5px) brightness(0.4)' : 'none'
         }}>
+          {isSidebarCollapsed && (
+            <button
+              className="sidebar-floating-toggle"
+              onClick={() => setIsSidebarCollapsed(false)}
+              title="Expandir Painel Lateral"
+            >
+              <PanelLeftOpen size={18} />
+            </button>
+          )}
+
           <ErrorBoundary name="BattleMap"><BattleMap /></ErrorBoundary>
           <ErrorBoundary name="DiceOverlay">
             <Suspense fallback={null}>

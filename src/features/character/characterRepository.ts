@@ -1,4 +1,4 @@
-import { type Character, initialCharacter } from './characterTypes';
+import { type Character, initialCharacter, regenerateCharacterStats } from './characterTypes';
 import type { CharacterPreset } from './data/characterPresets';
 import { db } from '../../db/RPGDatabase';
 
@@ -318,6 +318,100 @@ export const CharacterRepository = {
     async deleteAsync(id: string, owner: string, adventureId: string = 'default'): Promise<void> {
         this.delete(id, owner, adventureId);
         await db.characters.delete(id);
+    },
+
+    /**
+     * Export a character as formatted JSON string with versioned backup envelope.
+     */
+    exportCharacter(id: string): string {
+        const char = this.load(id);
+        if (!char) {
+            throw new Error(`Personagem com ID "${id}" não encontrado no cache ou banco.`);
+        }
+
+        const backupPayload = {
+            version: 1,
+            type: 'rpg-character-backup',
+            exportedAt: Date.now(),
+            character: char
+        };
+
+        return JSON.stringify(backupPayload, null, 2);
+    },
+
+    /**
+     * Import a character from JSON string, validating fields, generating a new UUID to prevent collisions,
+     * binding to given owner and adventureId, and regenerating derived stats.
+     */
+    async importCharacter(jsonString: string, owner: string, adventureId: string = 'default'): Promise<Character> {
+        let parsed: any;
+        try {
+            parsed = JSON.parse(jsonString);
+        } catch (e: any) {
+            throw new Error('Arquivo JSON inválido ou corrompido: ' + (e?.message || 'erro de leitura'));
+        }
+
+        // Support both enveloped backup and direct Character object
+        const rawChar: Character = (parsed && parsed.type === 'rpg-character-backup' && parsed.character)
+            ? parsed.character
+            : parsed;
+
+        if (!rawChar || typeof rawChar !== 'object') {
+            throw new Error('Conteúdo do arquivo não corresponde a uma ficha de personagem válida.');
+        }
+
+        if (!rawChar.name || typeof rawChar.name !== 'string') {
+            throw new Error('A ficha importada não possui um nome válido.');
+        }
+
+        if (!rawChar.attributes || typeof rawChar.attributes !== 'object') {
+            throw new Error('A ficha importada não possui estrutura de atributos válida.');
+        }
+
+        const generateUUID = () => {
+            if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+                return crypto.randomUUID();
+            }
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+                const r = Math.random() * 16 | 0;
+                const v = c === 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+        };
+
+        // Merge with initialCharacter base template to ensure missing fields exist
+        const baseClone = JSON.parse(JSON.stringify(initialCharacter));
+        const mergedChar: Character = {
+            ...baseClone,
+            ...rawChar,
+            id: generateUUID(), // Always generate a fresh UUID to avoid overwriting existing characters
+            owner: owner || 'default',
+            adventureId: adventureId || 'default',
+            lastModified: Date.now()
+        };
+
+        const finalChar = regenerateCharacterStats(mergedChar);
+        await this.saveAsync(finalChar);
+        return finalChar;
+    },
+
+    /**
+     * Download character backup file in browser via Blob and anchor.
+     */
+    downloadCharacterFile(character: Character): void {
+        const jsonStr = this.exportCharacter(character.id);
+        const sanitizedName = (character.name || 'personagem').trim().replace(/[^a-zA-Z0-9_-]/g, '_');
+        const filename = `${sanitizedName}_ficha.json`;
+
+        const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
     }
 };
 

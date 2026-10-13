@@ -14,8 +14,7 @@ import { MonsterRepository } from '../monsters/MonsterRepository';
 import { EditableMonsterSheet } from '../monsters/EditableMonsterSheet';
 import { playSynthSound } from '../audio/audioSynth';
 import { Ruler, Plus, Minus } from 'lucide-react';
-
-
+import type { MapPing } from './mapTypes';
 
 const btnStyle = {
     background: '#333', color: '#fff', border: '1px solid #555',
@@ -35,11 +34,46 @@ export const BattleMap: React.FC = () => {
         interactionMode
     } = useMap();
 
-    const { isHost, myCharacter, connectedPlayersData } = usePeer();
+    const { isHost, myCharacter, connectedPlayersData, broadcast, isConnected, username } = usePeer();
 
     // Map View State
     const [scale, setScale] = useState(1);
     const [offset, setOffset] = useState({ x: 0, y: 0 });
+
+    const triggerPing = (clientX: number, clientY: number) => {
+        const rect = containerRef.current?.getBoundingClientRect();
+        if (!rect) return;
+
+        const rawX = (clientX - rect.left - offset.x) / scale;
+        const rawY = (clientY - rect.top - offset.y) / scale;
+
+        const gridX = rawX / config.gridSize;
+        const gridY = rawY / config.gridSize;
+
+        const playerName = myCharacter?.name || username || (isHost ? 'Mestre' : 'Jogador');
+        const playerColor = isHost ? '#ef4444' : '#38bdf8';
+
+        const pingPayload: MapPing = {
+            id: (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now()),
+            x: gridX,
+            y: gridY,
+            color: playerColor,
+            senderName: playerName,
+            timestamp: Date.now()
+        };
+
+        // 1. Emite localmente
+        window.dispatchEvent(new CustomEvent('rpg_map_ping', { detail: pingPayload }));
+        playSynthSound('magic', 0.25);
+
+        // 2. Transmite aos outros jogadores via socket
+        if (isConnected) {
+            broadcast({
+                type: 'MAP_PING',
+                payload: pingPayload
+            });
+        }
+    };
 
     // Panning State
     const [isPanning, setIsPanning] = useState(false);
@@ -68,6 +102,14 @@ export const BattleMap: React.FC = () => {
 
     // 1. Pan / Zoom (Wrapper)
     const handleWrapperPointerDown = (e: React.PointerEvent) => {
+        // Disparo de Ping no Mapa via Alt + Clique ou Modo Ping
+        if ((e.altKey && e.button === 0) || (interactionMode === 'ping' && e.button === 0)) {
+            e.preventDefault();
+            e.stopPropagation();
+            triggerPing(e.clientX, e.clientY);
+            return;
+        }
+
         // If middle click or spacebar mode (future), or strictly background
         if (e.button === 1 || (interactionMode === 'select' && !draggingTokenId)) {
             e.preventDefault();
@@ -161,24 +203,11 @@ export const BattleMap: React.FC = () => {
 
     // 2. Token Interaction
     const handleTokenPointerDown = (e: React.PointerEvent, token: any) => {
-        // DEBUG: Alt + Double Click (Simulated by checking mod key on down?) 
-        // No, let's use Alt + Click for Debug
-        if (e.altKey && e.button === 0) {
+        // Disparo de Ping no Mapa sobre Token
+        if ((e.altKey && e.button === 0) || (interactionMode === 'ping' && e.button === 0)) {
+            e.preventDefault();
             e.stopPropagation();
-            const linkedPeer = Object.values(connectedPlayersData).find(p => p.character?.id === token.characterId);
-            const debugInfo = {
-                TOKEN: { id: token.id, name: token.name, charId: token.characterId, img: token.imageUrl },
-                LINKED_PEER: linkedPeer ? {
-                    id: linkedPeer.peerId,
-                    name: linkedPeer.name,
-                    hasChar: !!linkedPeer.character,
-                    charImg: linkedPeer.character?.imageUrl ? (linkedPeer.character.imageUrl.substring(0, 50) + '...') : 'MISSING'
-                } : 'NOT FOUND',
-                MY_CHAR_ID: myCharacter?.id,
-                IS_ME: myCharacter?.id === token.characterId
-            };
-            console.log('[BattleMap Debug]', debugInfo);
-            alert(JSON.stringify(debugInfo, null, 2));
+            triggerPing(e.clientX, e.clientY);
             return;
         }
 

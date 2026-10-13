@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { CharacterRepository, type CharacterSummary } from './characterRepository';
 import { usePeer } from '../multiplayer/SocketContext';
 import { useAdventure } from '../adventure/AdventureContext';
-import { User, Scroll, Shield, Plus, X, ArrowRight, Swords } from 'lucide-react';
+import { User, Scroll, Shield, Plus, X, ArrowRight, Swords, Upload, Download } from 'lucide-react';
 import './CharacterSelection.css';
 
 interface CharacterSelectionProps {
@@ -38,11 +38,33 @@ export const CharacterSelection: React.FC<CharacterSelectionProps> = ({ onSelect
         }
     };
 
+    const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+
     const handleCreateNew = () => {
         if (!username) return;
         const advId = currentAdventureId || 'default';
         const newChar = CharacterRepository.create(username, advId, activeSystem);
         onSelect(newChar.id);
+    };
+
+    const handleFileImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        try {
+            const text = await file.text();
+            const imported = await CharacterRepository.importCharacter(
+                text,
+                username || 'Jogador',
+                currentAdventureId || 'default'
+            );
+            await loadList();
+            onSelect(imported.id);
+        } catch (err: any) {
+            alert('Erro ao importar ficha: ' + (err?.message || 'Arquivo inválido'));
+        } finally {
+            if (fileInputRef.current) fileInputRef.current.value = '';
+        }
     };
 
     const handleDelete = async (e: React.MouseEvent, id: string) => {
@@ -115,7 +137,7 @@ export const CharacterSelection: React.FC<CharacterSelectionProps> = ({ onSelect
             </div>
 
             {/* Quick Actions Bar */}
-            <div className="actions-bar" style={{ justifyContent: 'center' }}>
+            <div className="actions-bar" style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
                 <button
                     className="btn-action-primary"
                     onClick={handleCreateNew}
@@ -139,6 +161,37 @@ export const CharacterSelection: React.FC<CharacterSelectionProps> = ({ onSelect
                     <Plus size={18} />
                     <span>Criar Novo Personagem</span>
                 </button>
+
+                <button
+                    type="button"
+                    className="btn-action-secondary"
+                    onClick={() => fileInputRef.current?.click()}
+                    style={{
+                        padding: '12px 24px',
+                        fontSize: '0.95rem',
+                        fontWeight: 600,
+                        background: 'rgba(255, 255, 255, 0.08)',
+                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        color: '#f3f4f6',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        transition: 'all 0.2s ease'
+                    }}
+                >
+                    <Upload size={17} />
+                    <span>Importar Ficha (.json)</span>
+                </button>
+
+                <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".json"
+                    style={{ display: 'none' }}
+                    onChange={handleFileImport}
+                />
             </div>
 
             {/* Existing Characters Grid */}
@@ -172,6 +225,36 @@ export const CharacterSelection: React.FC<CharacterSelectionProps> = ({ onSelect
                                 <span className="char-class-level">Nv {char.level} {char.class || 'Aventureiro'}</span>
                                 <span className="char-race">{char.race || 'Sem Raça'}</span>
                             </div>
+
+                            {/* Export Button */}
+                            <button
+                                className="export-char-btn"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    const fullChar = CharacterRepository.load(char.id);
+                                    if (fullChar) {
+                                        CharacterRepository.downloadCharacterFile(fullChar);
+                                    }
+                                }}
+                                title="Exportar Ficha (.json)"
+                                style={{
+                                    position: 'absolute',
+                                    top: '8px',
+                                    right: '38px',
+                                    background: 'rgba(0, 0, 0, 0.45)',
+                                    border: '1px solid rgba(255, 215, 0, 0.3)',
+                                    color: '#ffd700',
+                                    borderRadius: '50%',
+                                    width: '26px',
+                                    height: '26px',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center'
+                                }}
+                            >
+                                <Download size={13} />
+                            </button>
 
                             <button
                                 className="delete-btn"

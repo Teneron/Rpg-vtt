@@ -3,7 +3,7 @@ import { useMap } from './MapContext';
 import { usePeer } from '../multiplayer/SocketContext';
 import { MapSettingsModal } from './MapSettingsModal';
 import { AddAssetModal } from './AddAssetModal';
-import { Hand, Ruler, Sparkles, Box, Eye, EyeOff, RefreshCw, Settings, Image } from 'lucide-react';
+import { Hand, Ruler, Sparkles, Box, Eye, EyeOff, RefreshCw, Settings, Image, Radio } from 'lucide-react';
 
 export const MapHeaderControls: React.FC = () => {
     const {
@@ -46,6 +46,15 @@ export const MapHeaderControls: React.FC = () => {
                         style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                     >
                         <Sparkles size={14} />
+                    </button>
+
+                    <button
+                        className={`glass-button small ${interactionMode === 'ping' ? 'active' : ''}`}
+                        onClick={() => setInteractionMode(interactionMode === 'ping' ? 'select' : 'ping')}
+                        title="Apontar / Ping no Mapa (Atalho: Alt + Clique)"
+                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    >
+                        <Radio size={14} />
                     </button>
                 </div>
 

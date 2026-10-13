@@ -15,6 +15,17 @@ export interface AdventureSummary {
     updatedAt: number;
 }
 
+export interface CampaignBundle {
+    version: number;
+    type: 'rpg-campaign-backup';
+    exportedAt: number;
+    campaign: Campaign;
+    maps: any[];
+    scenes: any[];
+    customMonsters: any[];
+    characters: any[];
+}
+
 interface AdventureContextType {
     currentAdventure: Adventure | null;
     adventures: AdventureSummary[];
@@ -22,6 +33,9 @@ interface AdventureContextType {
     createAdventure: (name: string, system?: string, customId?: string) => Promise<Adventure>;
     deleteAdventure: (id: string) => Promise<void>;
     closeAdventure: () => void;
+    exportCampaign: (campaignId: string) => Promise<string>;
+    downloadCampaignBackup: (campaignId: string) => Promise<void>;
+    importCampaign: (jsonString: string, options?: { newId?: string }) => Promise<Campaign>;
     isLoading: boolean;
 }
 
@@ -166,6 +180,120 @@ export const AdventureProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         }
     };
 
+    const exportCampaign = async (campaignId: string): Promise<string> => {
+        const campaign = await db.campaigns.get(campaignId);
+        if (!campaign) {
+            throw new Error(`Campanha com ID "${campaignId}" não encontrada.`);
+        }
+
+        const [maps, scenes, customMonsters, characters] = await Promise.all([
+            db.maps.where('campaignId').equals(campaignId).toArray(),
+            db.scenes.where('campaignId').equals(campaignId).toArray(),
+            db.customMonsters.where('campaignId').equals(campaignId).toArray(),
+            db.characters.where('adventureId').equals(campaignId).toArray()
+        ]);
+
+        // Remove auto-increment ID from maps to avoid insertion conflicts on import
+        const sanitizedMaps = maps.map(({ id, ...m }) => m);
+
+        const bundle: CampaignBundle = {
+            version: 1,
+            type: 'rpg-campaign-backup',
+            exportedAt: Date.now(),
+            campaign,
+            maps: sanitizedMaps,
+            scenes,
+            customMonsters,
+            characters
+        };
+
+        return JSON.stringify(bundle, null, 2);
+    };
+
+    const downloadCampaignBackup = async (campaignId: string): Promise<void> => {
+        const jsonStr = await exportCampaign(campaignId);
+        const campaign = await db.campaigns.get(campaignId);
+        const safeName = (campaign?.name || 'campanha').trim().replace(/[^a-zA-Z0-9_-]/g, '_');
+        const filename = `${safeName}_backup.json`;
+
+        const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    };
+
+    const importCampaign = async (jsonString: string, options?: { newId?: string }): Promise<Campaign> => {
+        let parsed: any;
+        try {
+            parsed = JSON.parse(jsonString);
+        } catch (e: any) {
+            throw new Error('Arquivo JSON inválido: ' + (e?.message || 'erro de leitura'));
+        }
+
+        if (!parsed || parsed.type !== 'rpg-campaign-backup' || !parsed.campaign) {
+            throw new Error('Formato de backup de campanha inválido. Estrutura não reconhecida.');
+        }
+
+        const originalCampaign: Campaign = parsed.campaign;
+        if (!originalCampaign.name) {
+            throw new Error('A campanha importada não possui um nome válido.');
+        }
+
+        const exists = await db.campaigns.get(originalCampaign.id);
+        const targetCampaignId = options?.newId || (exists ? crypto.randomUUID() : originalCampaign.id);
+        const isNewId = targetCampaignId !== originalCampaign.id;
+
+        const campaignToSave: Campaign = {
+            ...originalCampaign,
+            id: targetCampaignId,
+            name: isNewId ? `${originalCampaign.name} (Importada)` : originalCampaign.name,
+            updatedAt: Date.now()
+        };
+
+        const mapsToSave = (parsed.maps || []).map((m: any) => {
+            const { id: _, ...rest } = m;
+            return {
+                ...rest,
+                campaignId: targetCampaignId
+            };
+        });
+
+        const scenesToSave = (parsed.scenes || []).map((s: any) => ({
+            ...s,
+            campaignId: targetCampaignId,
+            id: isNewId ? crypto.randomUUID() : (s.id || crypto.randomUUID())
+        }));
+
+        const monstersToSave = (parsed.customMonsters || []).map((m: any) => ({
+            ...m,
+            campaignId: targetCampaignId,
+            id: isNewId ? crypto.randomUUID() : (m.id || crypto.randomUUID())
+        }));
+
+        const charactersToSave = (parsed.characters || []).map((c: any) => ({
+            ...c,
+            adventureId: targetCampaignId,
+            id: isNewId ? crypto.randomUUID() : (c.id || crypto.randomUUID())
+        }));
+
+        // Atomic Dexie transaction across all collections
+        await db.transaction('rw', [db.campaigns, db.maps, db.scenes, db.customMonsters, db.characters], async () => {
+            await db.campaigns.put(campaignToSave);
+            if (mapsToSave.length > 0) await db.maps.bulkAdd(mapsToSave);
+            if (scenesToSave.length > 0) await db.scenes.bulkPut(scenesToSave);
+            if (monstersToSave.length > 0) await db.customMonsters.bulkPut(monstersToSave);
+            if (charactersToSave.length > 0) await db.characters.bulkPut(charactersToSave);
+        });
+
+        setCurrentAdventure(campaignToSave);
+        return campaignToSave;
+    };
+
     return (
         <AdventureContext.Provider value={{
             currentAdventure,
@@ -174,6 +302,9 @@ export const AdventureProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             createAdventure,
             deleteAdventure,
             closeAdventure,
+            exportCampaign,
+            downloadCampaignBackup,
+            importCampaign,
             isLoading
         }}>
             {children}

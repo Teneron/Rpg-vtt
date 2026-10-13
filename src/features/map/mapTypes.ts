@@ -91,3 +91,15 @@ export const defaultScene: Scene = {
     tokens: [],
     walls: []
 };
+
+export type MapInteractionMode = 'select' | 'measure' | 'draw' | 'wall' | 'fog' | 'ping';
+
+export interface MapPing {
+    id: string;
+    x: number;
+    y: number;
+    color: string;
+    senderName: string;
+    timestamp: number;
+}
+

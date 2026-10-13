@@ -15,7 +15,9 @@ import {
     AlertTriangle,
     Users,
     Key,
-    Loader2
+    Loader2,
+    Download,
+    Upload
 } from 'lucide-react';
 import { usePeer } from './SocketContext';
 import { useAdventure } from '../adventure/AdventureContext';
@@ -41,7 +43,41 @@ const generateRoomCode = (systemId: string = 'dnd55e'): string => {
 
 export const ConnectionScreen: React.FC<ConnectionScreenProps> = ({ onStartGame, onOpenPlayerRules, onOpenGMRules }) => {
     const { startHosting, connectToHost, peerId, connections, peerError, currentAdventureId, serverUrl, setServerUrl, isConnecting: isPeerConnecting, isConnected } = usePeer();
-    const { adventures, createAdventure, loadAdventure, deleteAdventure, closeAdventure, currentAdventure } = useAdventure();
+    const {
+        adventures,
+        createAdventure,
+        loadAdventure,
+        deleteAdventure,
+        closeAdventure,
+        currentAdventure,
+        downloadCampaignBackup,
+        importCampaign
+    } = useAdventure();
+
+    const campaignFileInputRef = React.useRef<HTMLInputElement | null>(null);
+
+    const handleImportCampaignFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        try {
+            const text = await file.text();
+            const imported = await importCampaign(text);
+            loadAdventure(imported.id);
+            if (imported.system) {
+                setSelectedSystemId(imported.system);
+                localStorage.setItem('rpg_selected_system', imported.system);
+            }
+            if (imported.id.startsWith('DND-') || imported.id.startsWith('WTC-')) {
+                handleRoomCodeChange(imported.id);
+            }
+            alert(`Aventura "${imported.name}" importada com sucesso!`);
+        } catch (err: any) {
+            alert('Erro ao importar aventura: ' + (err?.message || 'Arquivo corrompido'));
+        } finally {
+            if (campaignFileInputRef.current) campaignFileInputRef.current.value = '';
+        }
+    };
 
     // Mode States
     const [mode, setMode] = useState<'role-selection' | 'gm-login' | 'gm-setup' | 'player-setup' | 'host' | 'join' | 'gm-rules-auth'>('role-selection');
@@ -186,7 +222,7 @@ export const ConnectionScreen: React.FC<ConnectionScreenProps> = ({ onStartGame,
         try {
             connectToHost(targetId.trim().toUpperCase(), name.trim());
             setTimeout(() => setIsConnecting(false), 5000);
-        } catch (e) {
+        } catch {
             setIsConnecting(false);
         }
     };
@@ -685,6 +721,50 @@ export const ConnectionScreen: React.FC<ConnectionScreenProps> = ({ onStartGame,
                                 </select>
                                 <button
                                     onClick={() => {
+                                        if (currentAdventure) {
+                                            downloadCampaignBackup(currentAdventure.id);
+                                        }
+                                    }}
+                                    disabled={!currentAdventure}
+                                    style={{
+                                        ...btnStyle,
+                                        padding: '0 12px',
+                                        background: currentAdventure ? '#2563eb' : '#333',
+                                        fontSize: '1rem',
+                                        cursor: currentAdventure ? 'pointer' : 'not-allowed',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center'
+                                    }}
+                                    title="Exportar Backup da Aventura (.json)"
+                                >
+                                    <Download size={16} />
+                                </button>
+                                <button
+                                    onClick={() => campaignFileInputRef.current?.click()}
+                                    style={{
+                                        ...btnStyle,
+                                        padding: '0 12px',
+                                        background: '#059669',
+                                        fontSize: '1rem',
+                                        cursor: 'pointer',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center'
+                                    }}
+                                    title="Importar Aventura Salva (.json)"
+                                >
+                                    <Upload size={16} />
+                                </button>
+                                <input
+                                    ref={campaignFileInputRef}
+                                    type="file"
+                                    accept=".json"
+                                    style={{ display: 'none' }}
+                                    onChange={handleImportCampaignFile}
+                                />
+                                <button
+                                    onClick={() => {
                                         if (currentAdventure && confirm(`Apagar aventura "${currentAdventure.name}" permanentemente?`)) {
                                             deleteAdventure(currentAdventure.id);
                                         }
@@ -692,9 +772,9 @@ export const ConnectionScreen: React.FC<ConnectionScreenProps> = ({ onStartGame,
                                     disabled={!currentAdventure}
                                     style={{
                                         ...btnStyle,
-                                        padding: '0 16px',
+                                        padding: '0 12px',
                                         background: currentAdventure ? '#b30000' : '#333',
-                                        fontSize: '1.1rem',
+                                        fontSize: '1rem',
                                         cursor: currentAdventure ? 'pointer' : 'not-allowed',
                                         display: 'inline-flex',
                                         alignItems: 'center',

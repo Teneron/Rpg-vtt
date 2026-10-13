@@ -18,7 +18,7 @@ import { CharacterBuilder } from './CharacterBuilder';
 // import { usePlayerSync } from '../multiplayer/usePlayerSync';
 import { usePeer } from '../multiplayer/SocketContext';
 import { CharacterRepository } from './characterRepository';
-import { Save, X, Settings, Sparkles, BookOpen, Table } from 'lucide-react';
+import { Save, X, Settings, Sparkles, BookOpen, Table, Download, Upload } from 'lucide-react';
 
 // New Components
 import { AttributesPanel } from './components/AttributesPanel';
@@ -455,6 +455,36 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
         });
     }, []);
 
+    const sheetFileInputRef = React.useRef<HTMLInputElement | null>(null);
+
+    const handleSheetImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        if (!confirm('Importar esta ficha substituirá os dados atuais da tela. Deseja continuar?')) {
+            if (sheetFileInputRef.current) sheetFileInputRef.current.value = '';
+            return;
+        }
+
+        try {
+            const text = await file.text();
+            const parsed = JSON.parse(text);
+            const raw = parsed.character || parsed;
+            const regened = regenerateCharacterStats({
+                ...character,
+                ...raw,
+                id: character.id // Preserva o ID atual da ficha selecionada
+            });
+            setCharacterWithDirty(regened);
+            CharacterRepository.save(regened);
+            alert('Ficha atualizada com sucesso!');
+        } catch (err: any) {
+            alert('Erro ao carregar arquivo de ficha: ' + (err?.message || 'Arquivo inválido'));
+        } finally {
+            if (sheetFileInputRef.current) sheetFileInputRef.current.value = '';
+        }
+    };
+
     // --- RENDER ---
     return (
         <div className="dnd-sheet-container">
@@ -652,6 +682,31 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
                             {saveStatus === 'saved' && <span style={{ color: '#4eff4e' }}>Salvo!</span>}
                             {saveStatus === 'error' && <span style={{ color: '#ff4e4e' }}>Erro ao Salvar</span>}
                         </div>
+                        <button
+                            type="button"
+                            className="btn-save"
+                            onClick={() => CharacterRepository.downloadCharacterFile(character)}
+                            title="Exportar Ficha (.json)"
+                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                        >
+                            <Download size={16} />
+                        </button>
+                        <button
+                            type="button"
+                            className="btn-save"
+                            onClick={() => sheetFileInputRef.current?.click()}
+                            title="Importar / Sobrescrever Ficha (.json)"
+                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                        >
+                            <Upload size={16} />
+                        </button>
+                        <input
+                            ref={sheetFileInputRef}
+                            type="file"
+                            accept=".json"
+                            style={{ display: 'none' }}
+                            onChange={handleSheetImport}
+                        />
                         <button className="btn-save" onClick={() => {
                             setSaveStatus('saving');
                             handleSave();

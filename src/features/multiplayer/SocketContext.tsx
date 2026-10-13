@@ -17,12 +17,15 @@ export type PeerMessage = (
     | { type: 'SYNC_REQUEST'; payload: { target: 'MAP' | 'PLAYERS' } }
     | { type: 'AUDIO_UPDATE'; payload: { track: any; playing: boolean } }
     | { type: 'SFX_TRIGGER'; payload: { track: any } }
+    | { type: 'MAP_PING'; payload: { id: string; x: number; y: number; color: string; senderName: string; timestamp: number } }
 ) & {
     // Carimbados pelo SERVIDOR em toda mensagem retransmitida (o cliente nunca deve confiar em
     // identidades declaradas dentro do payload).
     senderUserId?: string;
     senderIsHost?: boolean;
 };
+
+export type ConnectionState = 'connected' | 'reconnecting' | 'disconnected';
 
 // Tipos que só o Mestre pode emitir (espelha HOST_ONLY_MESSAGE_TYPES do servidor; defesa em profundidade).
 const HOST_ONLY_MESSAGE_TYPES: ReadonlySet<string> = new Set([
@@ -39,6 +42,8 @@ export interface MultiplayerContextState {
     broadcast: (msg: PeerMessage) => void;
     username: string;
     isConnected: boolean;
+    connectionState: ConnectionState;
+    reconnectNow: () => void;
     peerError: string | null;
     currentAdventureId: string | null;
     currentAdventureName: string | null;
@@ -98,6 +103,7 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
     const [currentAdventureName, setCurrentAdventureName] = useState<string | null>(null);
     const [isConnected, setIsConnected] = useState(false);
     const [isConnecting, setIsConnecting] = useState(false);
+    const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected');
     const [peerError, setPeerError] = useState<string | null>(null);
     const [connectedPlayersData, setConnectedPlayersData] = useState<Record<string, { name: string; character: Character; peerId: string; isOnline?: boolean; isHost?: boolean }>>({});
     const [myCharacter, setMyCharacter] = useState<Character | null>(null);
@@ -239,24 +245,31 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
     const initSocket = useCallback((url: string): Socket => {
         if (socketRef.current) {
             if (socketRef.current.connected) {
+                setConnectionState('connected');
                 return socketRef.current;
             }
+            setConnectionState('reconnecting');
             socketRef.current.connect();
             return socketRef.current;
         }
 
         const socket = io(url, {
             transports: ['websocket', 'polling'],
-            reconnectionAttempts: 10,
+            reconnectionAttempts: 15,
             reconnectionDelay: 1000,
+            reconnectionDelayMax: 5000,
             timeout: 10000
         });
 
         socketRef.current = socket;
+        setConnectionState('reconnecting');
 
         socket.on('connect', () => {
             console.log('[Socket] Connected to server:', url, 'Socket ID:', socket.id);
             setPeerError(null);
+            setConnectionState('connected');
+            setIsConnected(true);
+            setIsConnecting(false);
 
             // Transparent re-join if reconnecting with an existing room session
             const activeRoomId = currentAdventureIdRef.current;
@@ -274,6 +287,7 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
                     if (response?.success) {
                         setIsConnected(true);
                         setIsConnecting(false);
+                        setConnectionState('connected');
                         if (response.hostToken) {
                             hostTokenRef.current = response.hostToken;
                         }
@@ -289,15 +303,46 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
         socket.on('connect_error', (err) => {
             console.error('[Socket] Connection error:', err.message);
             setPeerError(`Erro ao conectar ao servidor (${url}): ${err.message}`);
-            setIsConnecting(false);
+            if (!socket.active) {
+                setConnectionState('disconnected');
+                setIsConnecting(false);
+            } else {
+                setConnectionState('reconnecting');
+            }
         });
 
         socket.on('disconnect', (reason) => {
             console.log('[Socket] Disconnected from server:', reason);
             setIsConnected(false);
-            if (reason === 'io server disconnect') {
-                setPeerError('Desconectado pelo servidor.');
+            if (reason === 'io server disconnect' || reason === 'io client disconnect') {
+                setConnectionState('disconnected');
+                if (reason === 'io server disconnect') {
+                    setPeerError('Desconectado pelo servidor.');
+                }
+            } else {
+                setConnectionState('reconnecting');
             }
+        });
+
+        // Socket.io Reconnection Manager Events
+        socket.io.on('reconnect_attempt', (attempt) => {
+            console.log(`[Socket] Tentativa de reconexão #${attempt}...`);
+            setConnectionState('reconnecting');
+            setIsConnecting(true);
+        });
+
+        socket.io.on('reconnect', (attempt) => {
+            console.log(`[Socket] Reconectado com sucesso na tentativa #${attempt}`);
+            setConnectionState('connected');
+            setIsConnected(true);
+            setIsConnecting(false);
+        });
+
+        socket.io.on('reconnect_failed', () => {
+            console.warn('[Socket] Falha final nas tentativas de reconexão.');
+            setConnectionState('disconnected');
+            setIsConnecting(false);
+            setPeerError('Falha ao restabelecer conexão com o servidor.');
         });
 
         socket.on('player_joined', (member) => {
@@ -414,6 +459,20 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
         return socket;
     }, [myId, handleRoomState, dispatchPeerMessageLocally]);
+
+    const reconnectNow = useCallback(() => {
+        console.log('[Socket] Reconexão manual solicitada.');
+        setConnectionState('reconnecting');
+        setIsConnecting(true);
+        setPeerError(null);
+        if (socketRef.current) {
+            if (!socketRef.current.connected) {
+                socketRef.current.connect();
+            }
+        } else {
+            initSocket(serverUrl);
+        }
+    }, [serverUrl, initSocket]);
 
     // Listen to local 3D and combat dice rolls and broadcast ROLL_RESULT to all peers
     useEffect(() => {
@@ -696,6 +755,7 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
         hostTokenRef.current = null;
         setIsConnected(false);
         setIsConnecting(false);
+        setConnectionState('disconnected');
         setCurrentAdventureId(null);
         setConnectedPlayersData({});
         localStorage.removeItem('rpg_session');
@@ -712,6 +772,7 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
         hostTokenRef.current = null;
         setIsConnected(false);
         setIsConnecting(false);
+        setConnectionState('disconnected');
         setCurrentAdventureId(null);
         setConnectedPlayersData({});
         localStorage.removeItem('rpg_session');
@@ -735,6 +796,7 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
             socketRef.current = null;
         }
         setIsConnected(false);
+        setConnectionState('disconnected');
     }, []);
 
     return (
@@ -748,6 +810,8 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
             broadcast,
             username,
             isConnected,
+            connectionState,
+            reconnectNow,
             peerError,
             currentAdventureId,
             currentAdventureName,

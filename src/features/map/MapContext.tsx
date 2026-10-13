@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { initialMapConfig } from './mapTypes';
-import type { MapConfig, MapToken, Wall } from './mapTypes';
+import type { MapConfig, MapToken, Wall, MapInteractionMode } from './mapTypes';
 import { usePeer } from '../multiplayer/SocketContext';
 import type { PeerMessage } from '../multiplayer/SocketContext';
 import { db } from '../../db/RPGDatabase'; // Import DB
@@ -22,8 +22,8 @@ interface MapContextType {
     removeWall: (id: string) => void;
     forceSync: () => void; // Debug/Manual Sync
 
-    interactionMode: 'select' | 'measure' | 'draw' | 'wall' | 'fog';
-    setInteractionMode: (mode: 'select' | 'measure' | 'draw' | 'wall' | 'fog') => void;
+    interactionMode: MapInteractionMode;
+    setInteractionMode: (mode: MapInteractionMode) => void;
     setFullState?: (config: MapConfig, tokens: MapToken[], walls: Wall[]) => void;
 }
 
@@ -40,7 +40,7 @@ export const MapProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const [config, setLocalConfig] = useState<MapConfig>(initialMapConfig);
     const [tokens, setTokens] = useState<MapToken[]>([]);
     const [walls, setWalls] = useState<Wall[]>([]);
-    const [interactionMode, setInteractionMode] = useState<'select' | 'measure' | 'draw' | 'wall' | 'fog'>('select');
+    const [interactionMode, setInteractionMode] = useState<MapInteractionMode>('select');
 
     const [loadedAdventureId, setLoadedAdventureId] = useState<string | null>(null);
     const mapDbId = useRef<number | null>(null);
