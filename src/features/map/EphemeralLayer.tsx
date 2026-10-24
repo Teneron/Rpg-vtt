@@ -22,23 +22,31 @@ export const EphemeralLayer: React.FC<EphemeralLayerProps> = ({ scale }) => {
     // Active Pings on Map
     const [pings, setPings] = useState<MapPing[]>([]);
 
-    const myColor = useRef('#' + Math.floor(Math.random() * 16777215).toString(16)).current;
+    const myColor = useRef('#' + Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0')).current;
 
-    // Throttling for broadcast
+    // Throttling for broadcast & remote audio cooldown
     const lastBroadcast = useRef(0);
     const pendingPoints = useRef<Point[]>([]);
+    const lastRemotePingAudioRef = useRef(0);
 
-    // --- Time Loop (Animation, Laser & Ping Pruning) ---
+    const hasActiveItems = pings.length > 0 || Object.keys(traces).length > 0;
+
+    // --- Time Loop (Animation, Laser & Ping Pruning — active ONLY while items exist) ---
     useEffect(() => {
+        if (!hasActiveItems) return;
+
         const interval = setInterval(() => {
             const now = Date.now();
 
             // 1. Prune traces older than 500ms
             setTraces(prev => {
+                const keys = Object.keys(prev);
+                if (keys.length === 0) return prev;
+
                 const next = { ...prev };
                 let changed = false;
 
-                Object.keys(next).forEach(key => {
+                keys.forEach(key => {
                     const filtered = next[key].filter(p => now - p.t < 500);
                     if (filtered.length !== next[key].length) {
                         next[key] = filtered;
@@ -55,33 +63,89 @@ export const EphemeralLayer: React.FC<EphemeralLayerProps> = ({ scale }) => {
 
             // 2. Prune pings older than 3500ms (3.5s)
             setPings(prev => {
+                if (prev.length === 0) return prev;
                 const active = prev.filter(p => now - p.timestamp < 3500);
                 return active.length !== prev.length ? active : prev;
             });
         }, 40);
+
         return () => clearInterval(interval);
-    }, []);
+    }, [hasActiveItems]);
 
     // --- Networking & Events ---
     useEffect(() => {
+        const enqueueSanitizedPing = (raw: any): boolean => {
+            if (!raw || typeof raw !== 'object') return false;
+            const x = Number(raw.x);
+            const y = Number(raw.y);
+            if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
+
+            const safeColor = typeof raw.color === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(raw.color)
+                ? raw.color
+                : '#38bdf8';
+            const safeSender = typeof raw.senderName === 'string' && raw.senderName.trim().length > 0
+                ? raw.senderName.trim().slice(0, 40)
+                : 'Jogador';
+            const now = Date.now();
+            const baseId = typeof raw.id === 'string' && raw.id.trim().length > 0
+                ? raw.id.trim().slice(0, 64)
+                : ((typeof crypto !== 'undefined' && crypto.randomUUID)
+                    ? crypto.randomUUID()
+                    : `ping-${now}-${Math.random().toString(36).slice(2, 8)}`);
+
+            setPings(prev => {
+                const kept = prev.slice(-14);
+                const uniqueId = kept.some(item => item.id === baseId)
+                    ? `${baseId}-${now}-${Math.random().toString(36).slice(2, 6)}`
+                    : baseId;
+
+                const sanitizedPing: MapPing = {
+                    id: uniqueId,
+                    x,
+                    y,
+                    color: safeColor,
+                    senderName: safeSender,
+                    timestamp: now // Always stamp receiver's local clock to prevent clock-skew & DoS
+                };
+                return [...kept, sanitizedPing];
+            });
+
+            return true;
+        };
+
         const handlePeerEvent = (e: CustomEvent) => {
             const msg = e.detail;
-            if (msg.type === 'EPHEMERAL_GESTURE' && msg.payload.type === 'stream_points') {
-                const key = msg.payload.id || 'unknown';
-                const newPoints = msg.payload.points.map((p: any) => ({ ...p, t: Date.now() }));
+            if (!msg || typeof msg !== 'object') return;
 
-                setTraces(prev => ({
-                    ...prev,
-                    [key]: [...(prev[key] || []), ...newPoints]
-                }));
+            if (msg.type === 'EPHEMERAL_GESTURE' && msg.payload?.type === 'stream_points' && Array.isArray(msg.payload.points)) {
+                const rawKey = typeof msg.payload.id === 'string' ? msg.payload.id : 'unknown';
+                const safeKey = /^#[0-9a-fA-F]{3,8}$/.test(rawKey) ? rawKey : 'unknown';
+                const now = Date.now();
+                const newPoints = msg.payload.points
+                    .filter((p: any) => p && Number.isFinite(Number(p.x)) && Number.isFinite(Number(p.y)))
+                    .slice(-60)
+                    .map((p: any) => ({ x: Number(p.x), y: Number(p.y), t: now }));
+
+                if (newPoints.length > 0) {
+                    setTraces(prev => ({
+                        ...prev,
+                        [safeKey]: [...(prev[safeKey] || []).slice(-180), ...newPoints]
+                    }));
+                }
             } else if (msg.type === 'MAP_PING') {
-                setPings(prev => [...prev, msg.payload]);
-                playSynthSound('magic', 0.2);
+                const accepted = enqueueSanitizedPing(msg.payload);
+                if (accepted) {
+                    const nowAudio = Date.now();
+                    if (nowAudio - lastRemotePingAudioRef.current >= 250) {
+                        lastRemotePingAudioRef.current = nowAudio;
+                        playSynthSound('magic', 0.2);
+                    }
+                }
             }
         };
 
         const handleLocalPing = (e: CustomEvent<MapPing>) => {
-            setPings(prev => [...prev, e.detail]);
+            enqueueSanitizedPing(e.detail);
         };
 
         window.addEventListener('rpg_peer_event' as any, handlePeerEvent);
@@ -192,7 +256,18 @@ const LayerRender: React.FC<{
     gridSize: number;
     scale: number;
 }> = ({ traces, pings, gridSize, scale }) => (
-    <svg width="100%" height="100%" style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }}>
+    <svg
+        width="100%"
+        height="100%"
+        style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            pointerEvents: 'none',
+            zIndex: 600,
+            overflow: 'visible'
+        }}
+    >
         <defs>
             <style>{`
                 @keyframes sonarPulse {

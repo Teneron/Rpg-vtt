@@ -1,5 +1,6 @@
 import type { Spell } from './data/spells';
 import { FEATS, type Feat } from './data/feats';
+import { RACES } from './data/races';
 
 export type { Spell, Feat };
 
@@ -105,6 +106,7 @@ export interface Character {
     armorClass: number;
     acOverride?: number; // GM Manual Override
     initiative: number;
+    baseSpeed?: number; // Deslocamento base racial (metros), sem bônus acumulativos
     speed: number;
     speedOverride?: number; // GM Manual Override
     visionRange: number; // Visão no Escuro (metros)
@@ -155,6 +157,7 @@ export interface Character {
     ideals?: string;
     bonds?: string;
     flaws?: string;
+    backstory?: string;
 
     // Currency
     currency: {
@@ -296,6 +299,7 @@ export const initialCharacter: Character = {
 
     armorClass: 10,
     initiative: 0,
+    baseSpeed: 9,
     speed: 9,
     visionRange: 0,
 
@@ -335,29 +339,78 @@ export const initialCharacter: Character = {
     ideals: '',
     bonds: '',
     flaws: '',
+    backstory: '',
     pendingLevelUp: false
 };
 
-// ... (existing imports)
+/**
+ * Determina o deslocamento racial base de forma determinística (nunca lendo `char.speed` já somado),
+ * evitando regressão de soma infinita (+3m a cada salvamento).
+ */
+export const resolveRacialBaseSpeed = (char: Partial<Character>): number => {
+    const raceStr = (char.race || '').trim();
+    if (raceStr) {
+        const raceLower = raceStr.toLowerCase();
 
-// ...
+        // Sub-raças / linhagens específicas com 10,5m (35ft)
+        if (/elfo da floresta|wood elf|aen seidhe|golias|goliath/i.test(raceStr)) {
+            return 10.5;
+        }
+
+        // Busca exata em RACES (por nome ou id)
+        const exactMatch = RACES.find(
+            r => r.name.toLowerCase() === raceLower || r.id.toLowerCase() === raceLower
+        );
+        if (exactMatch && typeof exactMatch.speed === 'number') {
+            return exactMatch.speed;
+        }
+
+        // Busca parcial para presets como "Anão (Dwarf)", "Alta Elfa (High Elf)", etc.
+        const partialMatch = RACES.find(
+            r => raceLower.includes(r.name.toLowerCase()) || raceLower.includes(r.id.toLowerCase())
+        );
+        if (partialMatch && typeof partialMatch.speed === 'number') {
+            return partialMatch.speed;
+        }
+    }
+
+    if (typeof char.baseSpeed === 'number' && Number.isFinite(char.baseSpeed) && char.baseSpeed > 0) {
+        return char.baseSpeed;
+    }
+
+    return 9;
+};
 
 // Helper para recalcular tudo (chamado ao atualizar atributos ou nível)
 export const regenerateCharacterStats = (char: Character): Character => {
-    const profBonus = calculateProficiencyBonus(char.level);
+    const safeLevel = typeof char.level === 'number' && Number.isFinite(char.level) && char.level >= 1 ? char.level : 1;
+    const profBonus = calculateProficiencyBonus(safeLevel);
 
     // Atualizar Modificadores
     // CRITICAL: Must deep clone to avoid mutating 'char' in place before we can check deltas
-    const newAttrs: CharacterAttributes = JSON.parse(JSON.stringify(char.attributes));
+    const baseAttrs = initialCharacter.attributes;
+    const rawAttrs = (char.attributes && typeof char.attributes === 'object') ? char.attributes : baseAttrs;
+    const newAttrs: CharacterAttributes = JSON.parse(JSON.stringify({
+        str: { ...baseAttrs.str, ...(rawAttrs.str || {}) },
+        dex: { ...baseAttrs.dex, ...(rawAttrs.dex || {}) },
+        con: { ...baseAttrs.con, ...(rawAttrs.con || {}) },
+        int: { ...baseAttrs.int, ...(rawAttrs.int || {}) },
+        wis: { ...baseAttrs.wis, ...(rawAttrs.wis || {}) },
+        cha: { ...baseAttrs.cha, ...(rawAttrs.cha || {}) }
+    }));
 
     (Object.keys(newAttrs) as Array<keyof CharacterAttributes>).forEach(key => {
-        newAttrs[key].modifier = calculateModifier(newAttrs[key].value);
+        const val = typeof newAttrs[key].value === 'number' && Number.isFinite(newAttrs[key].value)
+            ? newAttrs[key].value
+            : 10;
+        newAttrs[key].value = val;
+        newAttrs[key].modifier = calculateModifier(val);
     });
 
     // Atualizar Perícias
     // FIX: Rebuild skill list from scratch using SKILL_ATTRIBUTE_MAP to ensure ALL skills exist
     // Preserves existing proficiency/expertise settings.
-    const currentSkillMap = new Map((char.skills || []).map(s => [s.name, s]));
+    const currentSkillMap = new Map((Array.isArray(char.skills) ? char.skills : []).map(s => [s.name, s]));
 
     const newSkills: Skill[] = Object.keys(SKILL_ATTRIBUTE_MAP).map((key) => {
         const skillName = key as SkillName;
@@ -382,16 +435,13 @@ export const regenerateCharacterStats = (char: Character): Character => {
     });
 
     // --- Variables ---
-    // const oldDexMod = char.attributes.dex.modifier;
     const newDexMod = newAttrs.dex.modifier;
 
     // --- Feat Effects Application ---
     let extraSpeed = 0;
     let extraInitiative = 0;
-    // let extraHpPerLevel = 0;
-    // let passivePerceptionBonus = 0;
 
-    if (char.feats) {
+    if (Array.isArray(char.feats)) {
         char.feats.forEach(feat => {
             // FIX: Lookup canonical feat definition to ensure effects are up to date
             // This fixes issues where stored feats (from older saves) refer to IDs but lack the 'effects' array
@@ -402,7 +452,6 @@ export const regenerateCharacterStats = (char: Character): Character => {
                 effects.forEach(effect => {
                     if (effect.type === 'speed') extraSpeed += effect.value;
                     if (effect.type === 'initiative') extraInitiative += effect.value;
-                    // if (effect.type === 'hp_per_level') extraHpPerLevel += effect.value;
                 });
             }
         });
@@ -414,14 +463,14 @@ export const regenerateCharacterStats = (char: Character): Character => {
     const className = (char.class || '').toLowerCase();
     const isBarbarian = /b[áa]rbar/i.test(className);
     const isMonk = /mon[kg]/i.test(className);
-    const hasUnarmoredDefense = char.features?.some(f => /defesa sem armadura|unarmored defense/i.test(f.name)) || isBarbarian || isMonk;
+    const hasUnarmoredDefense = (Array.isArray(char.features) && char.features.some(f => /defesa sem armadura|unarmored defense/i.test(f.name))) || isBarbarian || isMonk;
 
     let armorAC = 0;
     let shieldBonus = 0;
     let isArmored = false;
 
     // Scan Inventory for Equipped Armor/Shield
-    if (char.inventory) {
+    if (Array.isArray(char.inventory)) {
         char.inventory.forEach(item => {
             if (!item.equipped) return;
 
@@ -471,7 +520,7 @@ export const regenerateCharacterStats = (char: Character): Character => {
 
     // --- Auto-Build Attacks from Equipped Weapons ---
     const newAttacks: Attack[] = [];
-    if (char.inventory) {
+    if (Array.isArray(char.inventory)) {
         char.inventory.forEach(item => {
             if (item.type === 'weapon' && item.equipped) {
                 // Determine Attribute (Str vs Dex)
@@ -544,27 +593,50 @@ export const regenerateCharacterStats = (char: Character): Character => {
     const finalInitiative = newDexMod + extraInitiative;
 
     // --- HP Max Update (Only Con Delta) ---
-    const oldConMod = char.attributes.con.modifier;
     const newConMod = newAttrs.con.modifier;
+    const oldConMod = typeof char.attributes?.con?.modifier === 'number' && Number.isFinite(char.attributes.con.modifier)
+        ? char.attributes.con.modifier
+        : newConMod;
     const conDelta = newConMod - oldConMod;
 
-    let finalHpMax = char.hp.max;
+    const safeHp = {
+        current: typeof char.hp?.current === 'number' && Number.isFinite(char.hp.current) ? char.hp.current : 10,
+        max: typeof char.hp?.max === 'number' && Number.isFinite(char.hp.max) ? char.hp.max : 10,
+        temp: typeof char.hp?.temp === 'number' && Number.isFinite(char.hp.temp) ? char.hp.temp : 0
+    };
+
+    let finalHpMax = safeHp.max;
     if (conDelta !== 0) {
-        finalHpMax += (conDelta * char.level);
+        finalHpMax = Math.max(1, finalHpMax + (conDelta * safeLevel));
     }
 
-    // --- Speed Calculation (R4) ---
-    const baseSpeed = char.speed || 9;
-    const finalSpeed = (char.speedOverride !== undefined) ? char.speedOverride : Math.max(0, baseSpeed + extraSpeed);
+    // --- Speed Calculation (R4: usa deslocamento base racial, nunca soma sobre char.speed!) ---
+    const racialBaseSpeed = resolveRacialBaseSpeed(char);
+    const finalSpeed = (char.speedOverride !== undefined)
+        ? char.speedOverride
+        : Math.max(0, racialBaseSpeed + extraSpeed);
 
     return {
         ...char,
+        level: safeLevel,
         attributes: newAttrs,
         proficiencyBonus: profBonus,
         skills: newSkills,
         armorClass: finalAC,
+        baseSpeed: racialBaseSpeed,
         speed: finalSpeed,
-        hp: { ...char.hp, max: finalHpMax },
+        hp: { ...safeHp, max: finalHpMax },
+        hitDice: { ...initialCharacter.hitDice, ...(char.hitDice || {}) },
+        deathSaves: { ...initialCharacter.deathSaves, ...(char.deathSaves || {}) },
+        currency: { ...initialCharacter.currency, ...(char.currency || {}) },
+        spellSlots: { ...initialCharacter.spellSlots, ...(char.spellSlots || {}) },
+        inventory: Array.isArray(char.inventory) ? char.inventory : [],
+        spells: Array.isArray(char.spells) ? char.spells : [],
+        feats: Array.isArray(char.feats) ? char.feats : [],
+        features: Array.isArray(char.features) ? char.features : [],
+        classResources: Array.isArray(char.classResources) ? char.classResources : [],
+        proficiencies: Array.isArray(char.proficiencies) ? char.proficiencies : [],
+        languages: Array.isArray(char.languages) ? char.languages : ['Comum'],
         initiative: finalInitiative,
         attacks: newAttacks,
         spellSaveDC: newSpellSaveDC,

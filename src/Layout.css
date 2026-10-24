@@ -271,3 +271,53 @@ html {
     border-radius: 16px;
     z-index: 1000;
 }
+
+
+/* --- Responsive Header for 1280px–1440px Notebooks --- */
+.app-header {
+    gap: 8px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+}
+
+.app-header::-webkit-scrollbar {
+    display: none;
+}
+
+.app-header > * {
+    flex-shrink: 0;
+}
+
+@media (max-width: 1480px) {
+    .app-header {
+        padding: 0 12px;
+        gap: 6px;
+    }
+
+    .header-nav-primary {
+        margin: 0 6px !important;
+        gap: 4px !important;
+    }
+
+    .header-nav-rules {
+        margin: 0 6px !important;
+        padding-left: 8px !important;
+        gap: 4px !important;
+    }
+
+    .nav-tab {
+        padding: 6px 10px;
+        font-size: 0.82rem;
+    }
+
+    .app-title span {
+        font-size: 1rem;
+    }
+}
+
+@media (max-width: 1200px) {
+    .app-title span {
+        display: none;
+    }
+}

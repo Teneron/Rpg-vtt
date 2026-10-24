@@ -3,7 +3,9 @@ import { initialMapConfig } from './mapTypes';
 import type { MapConfig, MapToken, Wall, MapInteractionMode } from './mapTypes';
 import { usePeer } from '../multiplayer/SocketContext';
 import type { PeerMessage } from '../multiplayer/SocketContext';
-import { db } from '../../db/RPGDatabase'; // Import DB
+import { db } from '../../db/RPGDatabase';
+import { isValidCoord, sanitizeWall, sanitizeToken } from './mapUtils';
+
 // MapContext.tsx - Powered by Socket Multiplayer & Dexie IndexedDB
 
 interface MapContextType {
@@ -27,7 +29,17 @@ interface MapContextType {
     setFullState?: (config: MapConfig, tokens: MapToken[], walls: Wall[]) => void;
 }
 
-import { isValidCoord, sanitizeWall, sanitizeToken } from './mapUtils';
+const sanitizeMapConfig = (raw: any): MapConfig => {
+    if (!raw || typeof raw !== 'object') return initialMapConfig;
+    return {
+        ...initialMapConfig,
+        ...raw,
+        width: isValidCoord(raw.width) && raw.width > 0 ? Math.min(300, Math.round(raw.width)) : initialMapConfig.width,
+        height: isValidCoord(raw.height) && raw.height > 0 ? Math.min(300, Math.round(raw.height)) : initialMapConfig.height,
+        gridSize: isValidCoord(raw.gridSize) && raw.gridSize >= 10 ? Math.min(300, Math.round(raw.gridSize)) : initialMapConfig.gridSize,
+        gridColor: typeof raw.gridColor === 'string' && raw.gridColor.trim() ? raw.gridColor : initialMapConfig.gridColor
+    };
+};
 
 const MapContext = createContext<MapContextType | undefined>(undefined);
 
@@ -47,31 +59,66 @@ export const MapProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const tokensRef = useRef<MapToken[]>([]);
     useEffect(() => { tokensRef.current = tokens; }, [tokens]);
 
-    // Load Data from Dexie IndexedDB
+    // M4: Latest state ref so event listeners never tear down / re-register on every token drag
+    const stateRef = useRef({
+        config,
+        tokens,
+        walls,
+        isHost,
+        isConnected,
+        loadedAdventureId,
+        safeAdventureId
+    });
     useEffect(() => {
+        stateRef.current = {
+            config,
+            tokens,
+            walls,
+            isHost,
+            isConnected,
+            loadedAdventureId,
+            safeAdventureId
+        };
+    }, [config, tokens, walls, isHost, isConnected, loadedAdventureId, safeAdventureId]);
+
+    const broadcastRef = useRef(broadcast);
+    useEffect(() => { broadcastRef.current = broadcast; }, [broadcast]);
+
+    // N1: Coalesce simultaneous SYNC_REQUEST bursts into a single full_sync
+    const syncReplyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const pendingHostReconnectSyncRef = useRef<boolean>(false);
+
+    // Load Data from Dexie IndexedDB (with M2 cancellation flag)
+    useEffect(() => {
+        let cancelled = false;
+
         const loadMapData = async () => {
             if (!safeAdventureId) return;
 
-            if (loadedAdventureId !== safeAdventureId) {
-                setLoadedAdventureId(null);
-            }
+            setLoadedAdventureId(prev => (prev !== safeAdventureId ? null : prev));
 
             try {
                 const mapEntry = await db.maps.where('campaignId').equals(safeAdventureId).first();
-
-                if (currentAdventureId && safeAdventureId !== currentAdventureId && safeAdventureId !== 'default') return;
+                if (cancelled) return;
 
                 if (mapEntry) {
-                    const cfg = mapEntry.config || initialMapConfig;
+                    const cfg = sanitizeMapConfig(mapEntry.config);
+                    const validTokens = (mapEntry.tokens || [])
+                        .map((t: any) => sanitizeToken(t, cfg.width, cfg.height))
+                        .filter((t: any): t is MapToken => t !== null);
+                    const validWalls = (mapEntry.walls || [])
+                        .map(sanitizeWall)
+                        .filter((w: any): w is Wall => w !== null);
+
+                    if (cancelled) return;
                     setLocalConfig(cfg);
-                    const validTokens = (mapEntry.tokens || []).map((t: any) => sanitizeToken(t, cfg.width, cfg.height)).filter((t: any): t is MapToken => t !== null);
-                    const validWalls = (mapEntry.walls || []).map(sanitizeWall).filter((w: any): w is Wall => w !== null);
                     setTokens(validTokens);
                     setWalls(validWalls);
-                    mapDbId.current = mapEntry.id!;
+                    mapDbId.current = mapEntry.id ?? null;
                     console.log(`[MapContext] Loaded map from DB for: ${safeAdventureId}`);
                     setLoadedAdventureId(safeAdventureId);
                 } else {
+                    if (cancelled) return;
                     setLocalConfig(initialMapConfig);
                     setTokens([]);
                     setWalls([]);
@@ -79,11 +126,17 @@ export const MapProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                     setLoadedAdventureId(safeAdventureId);
                 }
             } catch (e) {
-                console.error("Error loading map from IndexedDB", e);
+                if (!cancelled) {
+                    console.error("Error loading map from IndexedDB", e);
+                }
             }
         };
 
         loadMapData();
+
+        return () => {
+            cancelled = true;
+        };
     }, [safeAdventureId]);
 
     // Request initial sync when client connects
@@ -144,27 +197,20 @@ export const MapProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         };
     }, [config, tokens, walls, safeAdventureId, loadedAdventureId]);
 
-    // Request Sync when Connected (Client Only) - DEPRECATED by Cloud Listener
-    // But kept as fallback if Firebase listener is slow?
-    // Actually, onValue is immediate if cached. We can remove explicit SYNC_REQUEST or keep it for forcing.
-    useEffect(() => {
-        if (!isHost && isConnected && currentAdventureId) {
-            // Optional: Force a redownload? Not needed with onValue.
-        }
-    }, [isHost, isConnected, currentAdventureId]);
-
     // Broadcast wrapper
     const sendUpdate = (payload: { type: 'move' | 'add' | 'remove' | 'config' | 'update_token' | 'full_sync' | 'add_wall' | 'update_wall' | 'remove_wall'; data: any }) => {
-        broadcast({ type: 'MAP_UPDATE', payload });
+        broadcastRef.current({ type: 'MAP_UPDATE', payload });
     };
 
     const setConfig = (newConfig: MapConfig) => {
-        setLocalConfig(newConfig);
-        sendUpdate({ type: 'config', data: newConfig });
+        const safeConfig = sanitizeMapConfig(newConfig);
+        setLocalConfig(safeConfig);
+        sendUpdate({ type: 'config', data: safeConfig });
     };
 
     const addToken = (token: MapToken) => {
-        const safe = sanitizeToken(token, config.width, config.height);
+        const { width, height } = stateRef.current.config;
+        const safe = sanitizeToken(token, width, height);
         if (!safe) return;
         setTokens(prev => [...(prev || []), safe]);
         sendUpdate({ type: 'add', data: safe });
@@ -172,11 +218,12 @@ export const MapProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const updateTokenPosition = (id: string, x: number, y: number) => {
         if (!id || !isValidCoord(x) || !isValidCoord(y)) return;
+        const { width, height } = stateRef.current.config;
         const currentList = tokensRef.current || [];
         const target = currentList.find(t => t.id === id);
         const tokenSize = target?.size || 1;
-        const safeX = Math.max(0, Math.min(Math.round(x), Math.max(0, config.width - tokenSize)));
-        const safeY = Math.max(0, Math.min(Math.round(y), Math.max(0, config.height - tokenSize)));
+        const safeX = Math.max(0, Math.min(Math.round(x), Math.max(0, width - tokenSize)));
+        const safeY = Math.max(0, Math.min(Math.round(y), Math.max(0, height - tokenSize)));
 
         // M1: Efeito de rede fora do updater do React
         sendUpdate({ type: 'move', data: { id, x: safeX, y: safeY } });
@@ -184,7 +231,13 @@ export const MapProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     const updateToken = (id: string, updates: Partial<MapToken>) => {
-        setTokens(prev => (prev || []).map(t => t.id === id ? { ...t, ...updates } : t));
+        if (!id || !updates || typeof updates !== 'object') return;
+        const { width, height } = stateRef.current.config;
+        setTokens(prev => (prev || []).map(t => {
+            if (t.id !== id) return t;
+            const merged = { ...t, ...updates, id: t.id };
+            return sanitizeToken(merged, width, height) || t;
+        }));
         sendUpdate({ type: 'update_token', data: { id, updates } });
     };
 
@@ -202,7 +255,12 @@ export const MapProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     const updateWall = (id: string, updates: Partial<Wall>) => {
-        setWalls(prev => (prev || []).map(w => w.id === id ? { ...w, ...updates } : w));
+        if (!id || !updates || typeof updates !== 'object') return;
+        setWalls(prev => (prev || []).map(w => {
+            if (w.id !== id) return w;
+            const merged = { ...w, ...updates, id: w.id };
+            return sanitizeWall(merged) || w;
+        }));
         sendUpdate({ type: 'update_wall', data: { id, updates } });
     };
 
@@ -212,15 +270,68 @@ export const MapProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     // -----------------------
 
-    // Listen for Peer Events
+    // H3: Repopulate server map state when Host reconnects (e.g., after server restart or Wi-Fi blip)
+    useEffect(() => {
+        const handleHostReconnected = () => {
+            const {
+                isHost: curIsHost,
+                loadedAdventureId: curLoadedId,
+                safeAdventureId: curSafeId,
+                config: curConfig,
+                tokens: curTokens,
+                walls: curWalls
+            } = stateRef.current;
+
+            if (!curIsHost) return;
+
+            if (curLoadedId === curSafeId) {
+                pendingHostReconnectSyncRef.current = false;
+                console.log('[MapContext] Host reconnected -> Broadcasting MAP_UPDATE (full_sync)');
+                broadcastRef.current({
+                    type: 'MAP_UPDATE',
+                    payload: {
+                        type: 'full_sync',
+                        data: { config: curConfig, tokens: curTokens, walls: curWalls }
+                    }
+                });
+            } else {
+                // DB load still in flight; flush immediately once loadedAdventureId catches up
+                pendingHostReconnectSyncRef.current = true;
+            }
+        };
+
+        window.addEventListener('rpg_host_reconnected', handleHostReconnected);
+        return () => window.removeEventListener('rpg_host_reconnected', handleHostReconnected);
+    }, []);
+
+    // Flush deferred Host reconnect sync once DB finishes loading the active adventure
+    useEffect(() => {
+        if (pendingHostReconnectSyncRef.current && isHost && isConnected && loadedAdventureId === safeAdventureId) {
+            pendingHostReconnectSyncRef.current = false;
+            console.log('[MapContext] Flushing deferred Host reconnect MAP_UPDATE (full_sync)');
+            broadcastRef.current({
+                type: 'MAP_UPDATE',
+                payload: {
+                    type: 'full_sync',
+                    data: { config, tokens, walls }
+                }
+            });
+        }
+    }, [isHost, isConnected, loadedAdventureId, safeAdventureId, config, tokens, walls]);
+
+    // Listen for Peer Events (M4: stable listener using stateRef; N1: 250ms coalesced SYNC_REQUEST; M3: sanitized merges)
     useEffect(() => {
         const handlePeerEvent = (e: CustomEvent<PeerMessage>) => {
-            if (e.detail.type === 'MAP_UPDATE') {
-                const { type, data } = e.detail.payload;
+            const detail = e.detail;
+            if (!detail) return;
+
+            if (detail.type === 'MAP_UPDATE' && detail.payload) {
+                const { type, data } = detail.payload;
+                const { width: mapW, height: mapH } = stateRef.current.config;
 
                 switch (type) {
                     case 'add': {
-                        const safe = sanitizeToken(data, config.width, config.height);
+                        const safe = sanitizeToken(data, mapW, mapH);
                         if (safe) {
                             setTokens(prev => {
                                 if ((prev || []).some(t => t.id === safe.id)) return prev;
@@ -235,17 +346,25 @@ export const MapProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                                 const list = prev || [];
                                 const target = list.find(t => t.id === data.id);
                                 const tokenSize = target?.size || 1;
-                                const safeX = Math.max(0, Math.min(Math.round(data.x), Math.max(0, config.width - tokenSize)));
-                                const safeY = Math.max(0, Math.min(Math.round(data.y), Math.max(0, config.height - tokenSize)));
+                                const safeX = Math.max(0, Math.min(Math.round(data.x), Math.max(0, mapW - tokenSize)));
+                                const safeY = Math.max(0, Math.min(Math.round(data.y), Math.max(0, mapH - tokenSize)));
                                 return list.map(t => t.id === data.id ? { ...t, position: { x: safeX, y: safeY } } : t);
                             });
                         }
                         break;
                     case 'update_token':
-                        setTokens(prev => (prev || []).map(t => t.id === data.id ? { ...t, ...data.updates } : t));
+                        if (data && data.id && data.updates && typeof data.updates === 'object') {
+                            setTokens(prev => (prev || []).map(t => {
+                                if (t.id !== data.id) return t;
+                                const merged = { ...t, ...data.updates, id: t.id };
+                                return sanitizeToken(merged, mapW, mapH) || t;
+                            }));
+                        }
                         break;
                     case 'remove':
-                        setTokens(prev => (prev || []).filter(t => t.id !== data.id));
+                        if (data && data.id) {
+                            setTokens(prev => (prev || []).filter(t => t.id !== data.id));
+                        }
                         break;
 
                     // Walls
@@ -257,18 +376,29 @@ export const MapProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                         break;
                     }
                     case 'update_wall':
-                        setWalls(prev => (prev || []).map(w => w.id === data.id ? { ...w, ...data.updates } : w));
+                        if (data && data.id && data.updates && typeof data.updates === 'object') {
+                            setWalls(prev => (prev || []).map(w => {
+                                if (w.id !== data.id) return w;
+                                const merged = { ...w, ...data.updates, id: w.id };
+                                return sanitizeWall(merged) || w;
+                            }));
+                        }
                         break;
                     case 'remove_wall':
-                        setWalls(prev => (prev || []).filter(w => w.id !== data.id));
+                        if (data && data.id) {
+                            setWalls(prev => (prev || []).filter(w => w.id !== data.id));
+                        }
                         break;
 
                     case 'config':
-                        setLocalConfig(data);
+                        if (data && typeof data === 'object') {
+                            setLocalConfig(sanitizeMapConfig(data));
+                        }
                         break;
                     case 'full_sync': {
+                        if (!data || typeof data !== 'object') break;
                         console.log('[MapContext] Received Full Sync');
-                        const syncConfig = data.config || initialMapConfig;
+                        const syncConfig = sanitizeMapConfig(data.config);
                         setLocalConfig(syncConfig);
                         if (Array.isArray(data.tokens)) {
                             const sanitizedTokens = data.tokens
@@ -285,24 +415,43 @@ export const MapProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                         break;
                     }
                 }
-            } else if (e.detail.type === 'SYNC_REQUEST' && isHost) {
-                const req = e.detail.payload;
-                if (req.target === 'MAP') {
-                    console.log('[MapContext] Received SYNC_REQUEST. Broadcasting Full State...');
-                    broadcast({
-                        type: 'MAP_UPDATE',
-                        payload: {
-                            type: 'full_sync',
-                            data: { config, tokens, walls }
-                        }
-                    });
+            } else if (detail.type === 'SYNC_REQUEST' && stateRef.current.isHost) {
+                const req = detail.payload;
+                if (req && req.target === 'MAP') {
+                    // N1: Coalesce multiple SYNC_REQUESTs within 250ms into a single full_sync broadcast
+                    if (!syncReplyTimerRef.current) {
+                        syncReplyTimerRef.current = setTimeout(() => {
+                            syncReplyTimerRef.current = null;
+                            const {
+                                isHost: curIsHost,
+                                config: curConfig,
+                                tokens: curTokens,
+                                walls: curWalls
+                            } = stateRef.current;
+                            if (!curIsHost) return;
+                            console.log('[MapContext] Coalesced SYNC_REQUEST -> Broadcasting single Full State');
+                            broadcastRef.current({
+                                type: 'MAP_UPDATE',
+                                payload: {
+                                    type: 'full_sync',
+                                    data: { config: curConfig, tokens: curTokens, walls: curWalls }
+                                }
+                            });
+                        }, 250);
+                    }
                 }
             }
         };
 
         window.addEventListener('rpg_peer_event' as any, handlePeerEvent);
-        return () => window.removeEventListener('rpg_peer_event' as any, handlePeerEvent);
-    }, [isHost, config, tokens, walls]);
+        return () => {
+            window.removeEventListener('rpg_peer_event' as any, handlePeerEvent);
+            if (syncReplyTimerRef.current) {
+                clearTimeout(syncReplyTimerRef.current);
+                syncReplyTimerRef.current = null;
+            }
+        };
+    }, []);
 
     const forceSync = () => {
         if (isHost) {
@@ -311,7 +460,7 @@ export const MapProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     const setFullState = (newConfig: MapConfig, newTokens: MapToken[], newWalls: Wall[]) => {
-        const validConfig = newConfig || initialMapConfig;
+        const validConfig = sanitizeMapConfig(newConfig);
         const validTokens = (newTokens || [])
             .map(t => sanitizeToken(t, validConfig.width, validConfig.height))
             .filter((t): t is MapToken => t !== null);
@@ -333,20 +482,17 @@ export const MapProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         });
     };
 
-
-
     // 7. TOKEN HEALTH SYNC (Host Strategy: Event-Based)
     // We listen for Character Updates (Local or Remote) and update the Tokens directly.
     // This avoids "Presence Loops" and supports NPCs/Offline Characters.
 
     const handleCharacterUpdateForTokens = React.useCallback((character: any) => {
-        if (!character || !character.id) return;
+        if (!character || !character.id || !character.hp) return;
 
         setTokens(prevTokens => {
             let hasChanges = false;
             const newTokens = prevTokens.map(t => {
                 if (t.characterId === character.id) {
-                    // Check if update is needed
                     const charHp = character.hp.current;
                     const charMax = character.hp.max;
 
@@ -368,13 +514,9 @@ export const MapProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
             return hasChanges ? newTokens : prevTokens;
         });
-    }, []); // No deps, functional update
+    }, []);
 
     useEffect(() => {
-        // Only HOST syncs Map State to DB.
-        // But Clients might want to see update instantly visually?
-        // Actually, if Host updates 'tokens', it saves to DB, then DB syncs to Clients.
-        // So Clients just wait for DB. Host drives the change.
         if (!isHost) return;
 
         // A. Listen for Local Saves (GM editing Sheet)
@@ -386,7 +528,7 @@ export const MapProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // B. Listen for Remote Updates (Player editing Sheet)
         const handleRemoteEvent = (e: Event) => {
             const data = (e as CustomEvent).detail;
-            if (data.type === 'PLAYER_UPDATE' && data.payload?.character) {
+            if (data?.type === 'PLAYER_UPDATE' && data.payload?.character) {
                 handleCharacterUpdateForTokens(data.payload.character);
             }
         };

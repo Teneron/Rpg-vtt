@@ -168,34 +168,62 @@ function AppContent() {
     currentAdventureId,
     peerId,
     myCharacter,
+    connectedPlayersData,
     connectionState,
     reconnectNow
   } = usePeer();
   const { closeAdventure } = useAdventure();
   const [activeTab, setActiveTab] = useState<Tab>('character');
   const [viewMode, setViewMode] = useState<'connection' | 'game' | 'character-setup' | 'rules-player' | 'rules-gm'>('connection');
+  const getScopedCharStorageKey = (roomId?: string | null) =>
+    roomId && roomId !== 'default' ? `rpg_selected_char_id_${roomId}` : 'rpg_selected_char_id';
+
   const [selectedCharacterId, setSelectedCharacterId] = useState<string | null>(() => {
-    return localStorage.getItem('rpg_selected_char_id') || null;
+    try {
+      const sessionRaw = localStorage.getItem('rpg_session');
+      const sessionRoom = sessionRaw ? JSON.parse(sessionRaw)?.roomId : null;
+      return (
+        (sessionRoom && localStorage.getItem(`rpg_selected_char_id_${sessionRoom}`)) ||
+        localStorage.getItem('rpg_selected_char_id') ||
+        null
+      );
+    } catch {
+      return localStorage.getItem('rpg_selected_char_id') || null;
+    }
   });
+  const [offlineSheetChar, setOfflineSheetChar] = useState<any>(undefined);
 
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
   useEffect(() => {
     const handleFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement);
+      const doc = document as any;
+      setIsFullscreen(Boolean(doc.fullscreenElement || doc.webkitFullscreenElement));
     };
     document.addEventListener('fullscreenchange', handleFullscreenChange);
-    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+    };
   }, []);
 
   const toggleFullscreen = async () => {
     try {
-      if (!document.fullscreenElement) {
-        await document.documentElement.requestFullscreen();
+      const doc = document as any;
+      const el = document.documentElement as any;
+      if (!doc.fullscreenElement && !doc.webkitFullscreenElement) {
+        if (el.requestFullscreen) {
+          await el.requestFullscreen();
+        } else if (el.webkitRequestFullscreen) {
+          await el.webkitRequestFullscreen();
+        }
       } else {
-        if (document.exitFullscreen) {
-          await document.exitFullscreen();
+        if (doc.exitFullscreen) {
+          await doc.exitFullscreen();
+        } else if (doc.webkitExitFullscreen) {
+          await doc.webkitExitFullscreen();
         }
       }
     } catch (err) {
@@ -205,7 +233,14 @@ function AppContent() {
 
   const handleTabSelect = (tab: Tab) => {
     setActiveTab(tab);
-    if (isSidebarCollapsed && (tab === 'dice' || tab === 'combat' || tab === 'bestiary' || tab === 'gm-screen')) {
+    if (
+      isSidebarCollapsed &&
+      (tab === 'dice' ||
+        tab === 'combat' ||
+        tab === 'bestiary' ||
+        tab === 'gm-screen' ||
+        (tab === 'character' && !selectedCharacterId))
+    ) {
       setIsSidebarCollapsed(false);
     }
   };
@@ -248,7 +283,9 @@ function AppContent() {
 
     // Se for PLAYER e conectar/restaurar
     if (isConnected && !isHost && viewMode === 'connection') {
-      const savedCharId = localStorage.getItem('rpg_selected_char_id');
+      const savedCharId =
+        localStorage.getItem(getScopedCharStorageKey(currentAdventureId)) ||
+        localStorage.getItem('rpg_selected_char_id');
       if (savedCharId) {
         console.log("Player reconnected with saved character, going to game...");
         setSelectedCharacterId(savedCharId);
@@ -258,7 +295,23 @@ function AppContent() {
         setViewMode('character-setup');
       }
     }
-  }, [isConnected, isHost, viewMode]);
+  }, [isConnected, isHost, viewMode, currentAdventureId]);
+
+  // Load offline sheet fallback from Dexie when GM selects a character not currently online
+  useEffect(() => {
+    if (!isHost || !selectedCharacterId) {
+      setOfflineSheetChar(undefined);
+      return;
+    }
+    let cancelled = false;
+    import('./features/character/characterRepository').then(async ({ CharacterRepository }) => {
+      const char = await CharacterRepository.loadAsync(selectedCharacterId);
+      if (!cancelled) {
+        setOfflineSheetChar(char || undefined);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [isHost, selectedCharacterId]);
 
   // Listen for room closure from host
   useEffect(() => {
@@ -374,6 +427,7 @@ function AppContent() {
         <Suspense fallback={<LazyLoadingFallback />}>
           <CharacterSelection onSelect={(charId) => {
             setSelectedCharacterId(charId);
+            localStorage.setItem(getScopedCharStorageKey(currentAdventureId), charId);
             localStorage.setItem('rpg_selected_char_id', charId);
             setActiveTab('character'); // Force tab switch
             setViewMode('game');
@@ -481,8 +535,8 @@ function AppContent() {
         </div>
 
         {/* NAVEGAÇÃO PROFISSIONAL COM ÍCONES VETORIAIS */}
-        <nav className="nav-tabs" style={{ margin: '0 20px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <button className={`nav-tab ${activeTab === 'character' ? 'active' : ''}`} onClick={() => setActiveTab('character')}>
+        <nav className="nav-tabs header-nav-primary" style={{ margin: '0 20px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <button className={`nav-tab ${activeTab === 'character' ? 'active' : ''}`} onClick={() => handleTabSelect('character')}>
             <User size={15} />
             <span>Ficha</span>
             {!isHost && myCharacter?.pendingLevelUp && (
@@ -524,7 +578,7 @@ function AppContent() {
             </button>
           )}
         </nav>
-        <nav className="nav-tabs" style={{ margin: '0 20px', borderLeft: '1px solid #333', paddingLeft: '20px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <nav className="nav-tabs header-nav-rules" style={{ margin: '0 20px', borderLeft: '1px solid #333', paddingLeft: '20px', display: 'flex', alignItems: 'center', gap: '6px' }}>
           <button className={`nav-tab ${activeTab === 'rules-player' ? 'active' : ''}`} onClick={() => handleTabSelect('rules-player')}>
             <BookOpen size={15} />
             <span>Regras</span>
@@ -573,6 +627,7 @@ function AppContent() {
             <button
               onClick={() => {
                 if (confirm("Deseja sair da mesa?")) {
+                  localStorage.removeItem(getScopedCharStorageKey(currentAdventureId));
                   localStorage.removeItem('rpg_selected_char_id');
                   sessionStorage.removeItem('rpg_game_started');
                   disconnect();
@@ -713,6 +768,10 @@ function AppContent() {
               <Suspense fallback={<LazyLoadingFallback />}>
                 <CharacterSheet
                   characterId={selectedCharacterId}
+                  initialData={
+                    Object.values(connectedPlayersData).find(p => p.character?.id === selectedCharacterId)?.character ||
+                    offlineSheetChar
+                  }
                   isGM={isHost}
                   onExit={() => {
                     if (isHost) {

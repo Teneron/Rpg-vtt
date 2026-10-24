@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { CharacterRepository, type CharacterSummary } from './characterRepository';
 import { usePeer } from '../multiplayer/SocketContext';
 import { useAdventure } from '../adventure/AdventureContext';
@@ -8,6 +8,13 @@ import './CharacterSelection.css';
 interface CharacterSelectionProps {
     onSelect: (characterId: string) => void;
 }
+
+const normalizeSystemId = (sys?: string): 'witcher' | 'dnd55e' => {
+    const cleaned = (sys || '').trim().toLowerCase();
+    if (cleaned === 'witcher') return 'witcher';
+    // Treat dnd5e, dnd55e, dnd2024, or undefined as compatible D&D system IDs
+    return 'dnd55e';
+};
 
 export const CharacterSelection: React.FC<CharacterSelectionProps> = ({ onSelect }) => {
     const { username, currentAdventureId, currentAdventureName, roomSystem } = usePeer();
@@ -21,24 +28,50 @@ export const CharacterSelection: React.FC<CharacterSelectionProps> = ({ onSelect
         currentAdventure?.system === 'witcher'
     ) ? 'witcher' : 'dnd55e';
 
-    useEffect(() => {
-        loadList();
-    }, [username, currentAdventureId]);
-
-    const loadList = async () => {
+    const loadList = useCallback(async () => {
         if (username) {
             const advId = currentAdventureId || 'default';
             const list = await CharacterRepository.listAllAsync(username, advId);
-            // Strict isolation: only show characters belonging to the active table's game system
-            const filtered = list.filter(c => {
-                const charSys = (c.system === 'witcher') ? 'witcher' : 'dnd55e';
-                return charSys === activeSystem;
-            });
+            // Filter by normalized system family (dnd5e and dnd55e treated as compatible)
+            const filtered = list.filter(c => normalizeSystemId(c.system) === activeSystem);
             setCharacters(filtered);
+        }
+    }, [username, currentAdventureId, activeSystem]);
+
+    useEffect(() => {
+        loadList();
+    }, [loadList]);
+
+    // Refresh character list automatically whenever repository cache reloads or updates
+    useEffect(() => {
+        const handleUpdated = () => {
+            loadList();
+        };
+        window.addEventListener('rpg_characters_updated', handleUpdated);
+        return () => window.removeEventListener('rpg_characters_updated', handleUpdated);
+    }, [loadList]);
+
+    const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+
+    const getSystemBadgeColor = (sys?: string) => {
+        switch (normalizeSystemId(sys)) {
+            case 'witcher':
+                return '#c5a059';
+            case 'dnd55e':
+            default:
+                return '#e11d48';
         }
     };
 
-    const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+    const getSystemLabel = (sys?: string) => {
+        switch (normalizeSystemId(sys)) {
+            case 'witcher':
+                return 'The Witcher';
+            case 'dnd55e':
+            default:
+                return 'D&D 5.5e';
+        }
+    };
 
     const handleCreateNew = () => {
         if (!username) return;
@@ -53,11 +86,38 @@ export const CharacterSelection: React.FC<CharacterSelectionProps> = ({ onSelect
 
         try {
             const text = await file.text();
+
+            // Pre-check system compatibility (while letting importCharacter validate JSON & backup type)
+            try {
+                const parsed = JSON.parse(text);
+                if (parsed && parsed.type !== 'rpg-campaign-backup' && !(parsed.campaign && Array.isArray(parsed.maps))) {
+                    const rawChar = (parsed.type === 'rpg-character-backup' && parsed.character) ? parsed.character : parsed;
+                    if (rawChar && typeof rawChar === 'object' && rawChar.system) {
+                        const importedSys = normalizeSystemId(rawChar.system);
+                        if (importedSys !== activeSystem) {
+                            const proceed = confirm(
+                                `Aviso: A ficha "${rawChar.name || 'Importada'}" foi criada para ${getSystemLabel(rawChar.system)}, mas a sala atual usa ${getSystemLabel(activeSystem)}.\n\nDeseja adaptar o sistema desta ficha para ${getSystemLabel(activeSystem)} e importá-la nesta mesa?`
+                            );
+                            if (!proceed) return;
+                        }
+                    }
+                }
+            } catch {
+                // Invalid JSON will be caught cleanly by CharacterRepository.importCharacter below
+            }
+
             const imported = await CharacterRepository.importCharacter(
                 text,
                 username || 'Jogador',
                 currentAdventureId || 'default'
             );
+
+            // Normalize system to active room system (e.g. dnd5e -> dnd55e or confirmed cross-system adaptation)
+            if (imported.system !== activeSystem) {
+                imported.system = activeSystem;
+                await CharacterRepository.saveAsync(imported);
+            }
+
             await loadList();
             onSelect(imported.id);
         } catch (err: any) {
@@ -73,28 +133,6 @@ export const CharacterSelection: React.FC<CharacterSelectionProps> = ({ onSelect
             const advId = currentAdventureId || 'default';
             await CharacterRepository.deleteAsync(id, username, advId);
             await loadList();
-        }
-    };
-
-    const getSystemBadgeColor = (sys?: string) => {
-        switch (sys) {
-            case 'witcher':
-                return '#c5a059';
-            case 'dnd55e':
-            case 'dnd5e':
-            default:
-                return '#e11d48';
-        }
-    };
-
-    const getSystemLabel = (sys?: string) => {
-        switch (sys) {
-            case 'witcher':
-                return 'The Witcher';
-            case 'dnd55e':
-            case 'dnd5e':
-            default:
-                return 'D&D 5.5e';
         }
     };
 
@@ -216,7 +254,7 @@ export const CharacterSelection: React.FC<CharacterSelectionProps> = ({ onSelect
                             </div>
 
                             <div className="char-avatar-circle" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                {char.system === 'witcher' ? <Shield size={24} color="#c5a059" /> : <Swords size={24} color="#e11d48" />}
+                                {normalizeSystemId(char.system) === 'witcher' ? <Shield size={24} color="#c5a059" /> : <Swords size={24} color="#e11d48" />}
                             </div>
 
                             <h2 className="char-card-name">{char.name}</h2>

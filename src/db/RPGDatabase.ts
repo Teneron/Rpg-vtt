@@ -7,13 +7,17 @@ import type { Monster } from '../features/monsters/monsterTypes';
 // --- Interfaces ---
 
 export interface Campaign {
-    id: string; // UUID
+    id: string; // UUID or Room Code (e.g. DND-8K2P)
     name: string;
     createdAt: number;
     updatedAt: number;
-    logs: RollEvent[]; // Chat/Roll logs stored here
-    system?: string; // Rule system (e.g. "dnd5e", "witcher", "cyberpunk", "custom")
+    logs: RollEvent[]; // Roll logs stored here
+    system?: string; // Rule system (e.g. "dnd5e", "dnd55e", "witcher", "cyberpunk", "custom")
     description?: string;
+    journal?: string; // Diário da Campanha / História / Notas de Sessões do Mestre
+    activeSceneId?: string | null; // Cena atualmente ativa nesta campanha
+    combatState?: any; // Estado do combate ativo (isActive, combatants, activeTurnId, round, currentTargetId)
+    chatHistory?: any[]; // Histórico recente de mensagens de chat persistido na campanha
 }
 
 export interface MapData {

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useCombat } from './CombatContext';
 import { usePeer } from '../multiplayer/SocketContext';
 import { useMap } from '../map/MapContext';
+import { useChat } from '../chat/ChatContext';
 import { rollInitiative } from './combatUtils';
 import type { TacticalStatus } from './combatTypes';
 import { Shield, FastForward, Eye, Users, SkipForward, Dices, Swords, Crosshair, X } from 'lucide-react';
@@ -23,10 +24,12 @@ export const InitiativeTracker: React.FC = () => {
     } = useCombat();
     const { isHost, myCharacter, connectedPlayersData, updateRemotePlayerCharacter } = usePeer();
     const { tokens, updateToken } = useMap();
+    const { sendMessage } = useChat();
 
     const [npcName, setNpcName] = useState('');
     const [npcInit, setNpcInit] = useState('');
     const [npcHp, setNpcHp] = useState('10');
+    const [isEndingTurn, setIsEndingTurn] = useState(false);
 
     // Check if my character is already in combat
     const isMyCharacter = !!myCharacter;
@@ -64,8 +67,9 @@ export const InitiativeTracker: React.FC = () => {
             ? Object.values(connectedPlayersData).find(p => p.character?.id === c.characterId)
             : null;
         const linkedChar = linkedPlayer?.character || (myCharacter?.id === c.characterId ? myCharacter : null);
-        const max = c.hp?.max ?? linkedChar?.hp?.max ?? 10;
-        const cur = c.hp?.current ?? linkedChar?.hp?.current ?? max;
+        // P1: Prioriza o PV ao vivo da ficha vinculada para não usar valor estagnado de c.hp
+        const max = linkedChar?.hp?.max ?? c.hp?.max ?? 10;
+        const cur = linkedChar?.hp?.current ?? c.hp?.current ?? max;
         const newCurrent = Math.max(0, Math.min(max, cur + delta));
 
         // 1. Atualiza combatente no rastreador (sincroniza COMBAT_UPDATE para todos)
@@ -119,6 +123,13 @@ export const InitiativeTracker: React.FC = () => {
             }
         });
         window.dispatchEvent(event);
+
+        // Publica também no Chat Global para todos acompanharem a iniciativa
+        sendMessage(
+            `Rolou **Iniciativa**: **${total}** (${formula} → [${roll}]${bonus >= 0 ? ` + ${bonus}` : ` - ${Math.abs(bonus)}`})`,
+            'roll',
+            { formula, total, rolls: [roll], modifier: bonus, label: 'Iniciativa' }
+        );
 
         if (myCombatant) {
             updateCombatant(myCombatant.id, { initiative: total, roll, bonus });
@@ -246,8 +257,8 @@ export const InitiativeTracker: React.FC = () => {
                                     ? Object.values(connectedPlayersData).find(p => p.character?.id === c.characterId)
                                     : null;
                                 const linkedChar = linkedPlayer?.character || (myCharacter?.id === c.characterId ? myCharacter : null);
-                                const hpCurrent = c.hp?.current ?? linkedChar?.hp?.current;
-                                const hpMax = c.hp?.max ?? linkedChar?.hp?.max;
+                                const hpCurrent = linkedChar?.hp?.current ?? c.hp?.current;
+                                const hpMax = linkedChar?.hp?.max ?? c.hp?.max;
                                 const hasHp = hpCurrent !== undefined && hpMax !== undefined && hpMax > 0;
 
                                 if (!hasHp) return null;
@@ -344,8 +355,25 @@ export const InitiativeTracker: React.FC = () => {
                     </div>
                     <button
                         className="control-btn primary"
-                        style={{ marginTop: '8px', width: '100%', background: '#2c5e3b', borderColor: '#438a56', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
-                        onClick={nextTurn}
+                        disabled={isEndingTurn}
+                        style={{
+                            marginTop: '8px',
+                            width: '100%',
+                            background: '#2c5e3b',
+                            borderColor: '#438a56',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '6px',
+                            opacity: isEndingTurn ? 0.6 : 1,
+                            cursor: isEndingTurn ? 'not-allowed' : 'pointer'
+                        }}
+                        onClick={() => {
+                            if (isEndingTurn) return;
+                            setIsEndingTurn(true);
+                            nextTurn();
+                            setTimeout(() => setIsEndingTurn(false), 500);
+                        }}
                         title="Passar vez para o próximo combatente"
                     >
                         <SkipForward size={14} /> Encerrar Meu Turno

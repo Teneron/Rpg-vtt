@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
 import type { Character } from '../character/characterTypes';
+import { CharacterRepository } from '../character/characterRepository';
 
 export type PeerMessage = (
     | { type: 'JOIN_REQUEST'; payload: { name: string } }
@@ -17,12 +18,13 @@ export type PeerMessage = (
     | { type: 'SYNC_REQUEST'; payload: { target: 'MAP' | 'PLAYERS' } }
     | { type: 'AUDIO_UPDATE'; payload: { track: any; playing: boolean } }
     | { type: 'SFX_TRIGGER'; payload: { track: any } }
-    | { type: 'MAP_PING'; payload: { id: string; x: number; y: number; color: string; senderName: string; timestamp: number } }
+    | { type: 'MAP_PING'; payload: { id: string; x: number; y: number; color: string; senderName: string; senderId?: string; timestamp: number } }
 ) & {
     // Carimbados pelo SERVIDOR em toda mensagem retransmitida (o cliente nunca deve confiar em
     // identidades declaradas dentro do payload).
     senderUserId?: string;
     senderIsHost?: boolean;
+    fromHistory?: boolean;
 };
 
 export type ConnectionState = 'connected' | 'reconnecting' | 'disconnected';
@@ -31,6 +33,22 @@ export type ConnectionState = 'connected' | 'reconnecting' | 'disconnected';
 const HOST_ONLY_MESSAGE_TYPES: ReadonlySet<string> = new Set([
     'COMBAT_UPDATE', 'AUDIO_UPDATE', 'SFX_TRIGGER', 'JOIN_RESPONSE', 'WELCOME'
 ]);
+
+const MAX_PLAYER_REJOIN_RETRIES = 20;
+const PLAYER_REJOIN_RETRY_DELAY_MS = 3000;
+
+const isTransientPlayerRoomError = (errMsg?: string): boolean => {
+    if (!errMsg) return false;
+    const lower = errMsg.toLowerCase();
+    return (
+        lower.includes('não existe') ||
+        lower.includes('nao existe') ||
+        lower.includes('não abriu') ||
+        lower.includes('nao abriu') ||
+        lower.includes('desconectado') ||
+        lower.includes('offline')
+    );
+};
 
 export interface MultiplayerContextState {
     peerId: string | null;
@@ -78,25 +96,48 @@ export const useMultiplayer = () => {
 
 export const usePeer = useMultiplayer;
 
-const getMyId = () => {
-    let id = localStorage.getItem('rpg_my_id');
-    if (!id) {
-        id = crypto.randomUUID();
-        localStorage.setItem('rpg_my_id', id);
+const getMyId = (): string => {
+    try {
+        let id = localStorage.getItem('rpg_my_id');
+        if (!id) {
+            id = crypto.randomUUID();
+            localStorage.setItem('rpg_my_id', id);
+        }
+        return id;
+    } catch {
+        return crypto.randomUUID();
     }
-    return id;
 };
 
-const getDefaultServerUrl = () => {
+const getDefaultServerUrl = (): string => {
     if (import.meta.env.VITE_SOCKET_SERVER_URL) {
-        return import.meta.env.VITE_SOCKET_SERVER_URL;
+        return String(import.meta.env.VITE_SOCKET_SERVER_URL).trim().replace(/\/+$/, '');
     }
     const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
     return isLocalhost ? 'http://localhost:3001' : window.location.origin;
 };
 
+const getInitialServerUrl = (): string => {
+    const envUrl = import.meta.env.VITE_SOCKET_SERVER_URL
+        ? String(import.meta.env.VITE_SOCKET_SERVER_URL).trim().replace(/\/+$/, '')
+        : '';
+    try {
+        if (envUrl) {
+            // Em builds de produção com VITE_SOCKET_SERVER_URL definido, ignora entradas antigas de localhost
+            // em rpg_server_url, respeitando apenas um override manual explícito do usuário.
+            const override = localStorage.getItem('rpg_server_url_override')?.trim().replace(/\/+$/, '');
+            return override || envUrl;
+        }
+        const saved = localStorage.getItem('rpg_server_url')?.trim().replace(/\/+$/, '');
+        if (saved) return saved;
+    } catch {
+        // Ignore storage errors
+    }
+    return getDefaultServerUrl();
+};
+
 export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const [myId] = useState(getMyId());
+    const [myId] = useState(getMyId);
     const [username, setUsername] = useState('');
     const [isHost, setIsHost] = useState(false);
     const [currentAdventureId, setCurrentAdventureId] = useState<string | null>(null);
@@ -120,9 +161,7 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
         }
         return 'dnd55e';
     });
-    const [serverUrl, setServerUrl] = useState<string>(() => {
-        return localStorage.getItem('rpg_server_url') || getDefaultServerUrl();
-    });
+    const [serverUrl, setServerUrl] = useState<string>(getInitialServerUrl);
 
     const socketRef = useRef<Socket | null>(null);
     const myCharacterRef = useRef<Character | null>(null);
@@ -136,6 +175,16 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
     const currentAdventureIdRef = useRef(currentAdventureId);
     useEffect(() => { currentAdventureIdRef.current = currentAdventureId; }, [currentAdventureId]);
+
+    const roomSystemRef = useRef<string>(roomSystem);
+    useEffect(() => { roomSystemRef.current = roomSystem; }, [roomSystem]);
+
+    const pendingExplicitJoinRef = useRef(false);
+    const isJoinedRoomRef = useRef(false);
+    const rejoinRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const rejoinRetryCountRef = useRef(0);
+    const hostReconnectSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const hasAttemptedSessionRestoreRef = useRef(false);
 
     const messageListenersRef = useRef<Set<(data: PeerMessage) => void>>(new Set());
     const hostTokenRef = useRef<string | null>((() => {
@@ -158,6 +207,57 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
     const hostConnection = !isHost && isConnected ? { open: true } : null;
 
+    const clearRejoinTimer = useCallback(() => {
+        if (rejoinRetryTimerRef.current) {
+            clearTimeout(rejoinRetryTimerRef.current);
+            rejoinRetryTimerRef.current = null;
+        }
+    }, []);
+
+    const clearHostReconnectSyncTimer = useCallback(() => {
+        if (hostReconnectSyncTimerRef.current) {
+            clearTimeout(hostReconnectSyncTimerRef.current);
+            hostReconnectSyncTimerRef.current = null;
+        }
+    }, []);
+
+    const persistHostToken = useCallback((token: string, fallbackSession?: Record<string, any>) => {
+        hostTokenRef.current = token;
+        try {
+            const raw = localStorage.getItem('rpg_session');
+            const parsed = raw ? JSON.parse(raw) : (fallbackSession ? { ...fallbackSession } : null);
+            if (parsed && typeof parsed === 'object') {
+                parsed.hostToken = token;
+                localStorage.setItem('rpg_session', JSON.stringify(parsed));
+            }
+        } catch {
+            // Ignore localStorage quota/access errors
+        }
+    }, []);
+
+    const mirrorPlayerCharacterForHost = useCallback((char: Character | null | undefined, advIdOverride?: string | null) => {
+        if (!char || !char.id) return;
+        try {
+            CharacterRepository.save({
+                ...char,
+                adventureId: advIdOverride || currentAdventureIdRef.current || char.adventureId || 'default'
+            });
+        } catch (e) {
+            console.error('[Socket] Error mirroring player character on host:', e);
+        }
+    }, []);
+
+    const scheduleHostReconnectedSync = useCallback(() => {
+        clearHostReconnectSyncTimer();
+        hostReconnectSyncTimerRef.current = setTimeout(() => {
+            hostReconnectSyncTimerRef.current = null;
+            if (isHostRef.current && isJoinedRoomRef.current) {
+                console.log('[Socket] Dispatching rpg_host_reconnected to push authoritative map/combat state');
+                window.dispatchEvent(new CustomEvent('rpg_host_reconnected'));
+            }
+        }, 500);
+    }, [clearHostReconnectSyncTimer]);
+
     // Dispatch message locally to both the CustomEvent DOM bus and registered onMessage callbacks
     const dispatchPeerMessageLocally = useCallback((msg: PeerMessage) => {
         window.dispatchEvent(new CustomEvent('rpg_peer_event', { detail: msg }));
@@ -170,11 +270,12 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
         });
     }, []);
 
-    // Apply remote game state (map, combat, chat history) to local contexts
-    const applyGameState = useCallback((gameState: any) => {
+    // Apply remote game state (map, combat, audio, chat history) to local contexts
+    const applyGameState = useCallback((gameState: any, forHost: boolean = isHostRef.current) => {
         if (!gameState) return;
 
-        if (gameState.map) {
+        // CRÍTICO: O Mestre NUNCA deve sobrescrever seu mapa local (db.maps / MapContext) com gameState.map do servidor!
+        if (!forHost && gameState.map) {
             console.log('[Socket] Applying initial map gameState');
             dispatchPeerMessageLocally({
                 type: 'MAP_UPDATE',
@@ -183,10 +284,22 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
         }
 
         if (gameState.combat) {
-            console.log('[Socket] Applying initial combat gameState');
+            const shouldApplyCombat = !forHost || Boolean(gameState.combat.isActive || gameState.combat.isInCombat);
+            if (shouldApplyCombat) {
+                console.log('[Socket] Applying initial combat gameState');
+                dispatchPeerMessageLocally({
+                    type: 'COMBAT_UPDATE',
+                    payload: gameState.combat
+                });
+            }
+        }
+
+        if (!forHost && gameState.audio) {
+            console.log('[Socket] Applying initial audio gameState');
             dispatchPeerMessageLocally({
-                type: 'COMBAT_UPDATE',
-                payload: gameState.combat
+                type: 'AUDIO_UPDATE',
+                payload: gameState.audio,
+                senderIsHost: true
             });
         }
 
@@ -195,7 +308,8 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
             gameState.chatHistory.forEach((chatMsg: any) => {
                 dispatchPeerMessageLocally({
                     type: 'CHAT_MESSAGE',
-                    payload: chatMsg
+                    payload: chatMsg,
+                    fromHistory: true
                 });
             });
         }
@@ -204,6 +318,9 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
     // Handle full room state update (members + gameState)
     const handleRoomState = useCallback((state: any) => {
         if (!state) return;
+
+        const forHost = Boolean(state.isHost ?? isHostRef.current);
+        const roomAdvId = state.roomId || currentAdventureIdRef.current;
 
         if (state.members && Array.isArray(state.members)) {
             const mapped: Record<string, any> = {};
@@ -215,93 +332,163 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
                     isOnline: m.isOnline,
                     isHost: !!m.isHost
                 };
+                if (forHost && !m.isHost && m.character) {
+                    mirrorPlayerCharacterForHost(m.character, roomAdvId);
+                }
             });
             setConnectedPlayersData(mapped);
 
             if (mapped[myId]?.character && !myCharacterRef.current) {
+                myCharacterRef.current = mapped[myId].character;
                 setMyCharacter(mapped[myId].character);
             }
         }
 
         if (state.system) {
             console.log('[Socket] Setting roomSystem from server state:', state.system);
+            roomSystemRef.current = state.system;
             setRoomSystem(state.system);
         }
 
         if (state.gameState) {
-            applyGameState(state.gameState);
+            applyGameState(state.gameState, forHost);
         }
-    }, [myId, applyGameState]);
+    }, [myId, applyGameState, mirrorPlayerCharacterForHost]);
 
-    // Disconnect cleanup on unmount
+    // Disconnect & timer cleanup on unmount
     useEffect(() => {
         return () => {
+            clearRejoinTimer();
+            clearHostReconnectSyncTimer();
             if (socketRef.current) {
                 socketRef.current.disconnect();
             }
         };
-    }, []);
+    }, [clearRejoinTimer, clearHostReconnectSyncTimer]);
+
+    const attemptRejoinRoomRef = useRef<(socket: Socket) => void>(() => {});
+
+    const attemptRejoinRoom = useCallback((socket: Socket) => {
+        const activeRoomId = currentAdventureIdRef.current;
+        const activeUsername = usernameRef.current;
+        if (!activeRoomId || !activeUsername) return;
+
+        console.log('[Socket] Re-joining room:', activeRoomId);
+        setConnectionState('reconnecting');
+        setIsConnecting(true);
+
+        socket.emit('join_room', {
+            roomId: activeRoomId,
+            playerName: activeUsername,
+            isHost: isHostRef.current,
+            hostToken: isHostRef.current ? (hostTokenRef.current || undefined) : undefined,
+            character: myCharacterRef.current,
+            userId: myId,
+            system: roomSystemRef.current || undefined
+        }, (response: any) => {
+            if (response?.success) {
+                isJoinedRoomRef.current = true;
+                rejoinRetryCountRef.current = 0;
+                clearRejoinTimer();
+                setPeerError(null);
+                setIsConnected(true);
+                setIsConnecting(false);
+                setConnectionState('connected');
+
+                if (response.hostToken) {
+                    persistHostToken(response.hostToken);
+                }
+                if (response.system) {
+                    roomSystemRef.current = response.system;
+                    setRoomSystem(response.system);
+                }
+                handleRoomState(response);
+
+                if (response.isHost || isHostRef.current) {
+                    scheduleHostReconnectedSync();
+                }
+                console.log('[Socket] Successfully rejoined room:', activeRoomId);
+            } else {
+                console.warn('[Socket] Reconnect join_room failed:', response?.error);
+                isJoinedRoomRef.current = false;
+                setIsConnected(false);
+                setIsConnecting(false);
+                setPeerError(response?.error || 'Não foi possível entrar na sala.');
+
+                if (
+                    !isHostRef.current &&
+                    isTransientPlayerRoomError(response?.error) &&
+                    currentAdventureIdRef.current &&
+                    rejoinRetryCountRef.current < MAX_PLAYER_REJOIN_RETRIES
+                ) {
+                    rejoinRetryCountRef.current += 1;
+                    setConnectionState('reconnecting');
+                    clearRejoinTimer();
+                    rejoinRetryTimerRef.current = setTimeout(() => {
+                        rejoinRetryTimerRef.current = null;
+                        if (currentAdventureIdRef.current && socketRef.current?.connected && !isJoinedRoomRef.current) {
+                            attemptRejoinRoomRef.current(socketRef.current);
+                        }
+                    }, PLAYER_REJOIN_RETRY_DELAY_MS);
+                } else {
+                    setConnectionState('disconnected');
+                }
+            }
+        });
+    }, [myId, clearRejoinTimer, persistHostToken, handleRoomState, scheduleHostReconnectedSync]);
+
+    useEffect(() => {
+        attemptRejoinRoomRef.current = attemptRejoinRoom;
+    }, [attemptRejoinRoom]);
 
     const initSocket = useCallback((url: string): Socket => {
         if (socketRef.current) {
-            if (socketRef.current.connected) {
-                setConnectionState('connected');
-                return socketRef.current;
+            if (!socketRef.current.connected) {
+                setConnectionState('reconnecting');
+                socketRef.current.connect();
+            } else if (!isJoinedRoomRef.current) {
+                setConnectionState('reconnecting');
             }
-            setConnectionState('reconnecting');
-            socketRef.current.connect();
             return socketRef.current;
         }
 
         const socket = io(url, {
-            transports: ['websocket', 'polling'],
-            reconnectionAttempts: 15,
+            transports: ['polling', 'websocket'],
+            reconnection: true,
+            reconnectionAttempts: Infinity,
             reconnectionDelay: 1000,
             reconnectionDelayMax: 5000,
-            timeout: 10000
+            timeout: 20000
         });
 
         socketRef.current = socket;
         setConnectionState('reconnecting');
 
         socket.on('connect', () => {
-            console.log('[Socket] Connected to server:', url, 'Socket ID:', socket.id);
+            console.log('[Socket] Transport connected to server:', url, 'Socket ID:', socket.id);
             setPeerError(null);
-            setConnectionState('connected');
-            setIsConnected(true);
-            setIsConnecting(false);
 
-            // Transparent re-join if reconnecting with an existing room session
+            // Se startHosting, connectToHost ou a restauração de montagem já enfileiraram um join_room explícito,
+            // não dispara um segundo join_room duplicado nem marca 'connected' antes do ACK da sala!
+            if (pendingExplicitJoinRef.current) {
+                setConnectionState('reconnecting');
+                return;
+            }
+
             const activeRoomId = currentAdventureIdRef.current;
             const activeUsername = usernameRef.current;
             if (activeRoomId && activeUsername) {
-                console.log('[Socket] Re-joining room after reconnect:', activeRoomId);
-                socket.emit('join_room', {
-                    roomId: activeRoomId,
-                    playerName: activeUsername,
-                    isHost: isHostRef.current,
-                    hostToken: isHostRef.current ? (hostTokenRef.current || undefined) : undefined,
-                    character: myCharacterRef.current,
-                    userId: myId
-                }, (response: any) => {
-                    if (response?.success) {
-                        setIsConnected(true);
-                        setIsConnecting(false);
-                        setConnectionState('connected');
-                        if (response.hostToken) {
-                            hostTokenRef.current = response.hostToken;
-                        }
-                        handleRoomState(response);
-                        console.log('[Socket] Successfully rejoined room after reconnect:', activeRoomId);
-                    } else {
-                        console.warn('[Socket] Reconnect join_room failed:', response?.error);
-                    }
-                });
+                setConnectionState('reconnecting');
+                attemptRejoinRoomRef.current(socket);
+            } else {
+                setIsConnecting(false);
             }
         });
 
         socket.on('connect_error', (err) => {
             console.error('[Socket] Connection error:', err.message);
+            isJoinedRoomRef.current = false;
+            setIsConnected(false);
             setPeerError(`Erro ao conectar ao servidor (${url}): ${err.message}`);
             if (!socket.active) {
                 setConnectionState('disconnected');
@@ -313,9 +500,14 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
         socket.on('disconnect', (reason) => {
             console.log('[Socket] Disconnected from server:', reason);
+            isJoinedRoomRef.current = false;
+            pendingExplicitJoinRef.current = false;
+            clearRejoinTimer();
+            clearHostReconnectSyncTimer();
             setIsConnected(false);
             if (reason === 'io server disconnect' || reason === 'io client disconnect') {
                 setConnectionState('disconnected');
+                setIsConnecting(false);
                 if (reason === 'io server disconnect') {
                     setPeerError('Desconectado pelo servidor.');
                 }
@@ -324,7 +516,7 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
             }
         });
 
-        // Socket.io Reconnection Manager Events
+        // Socket.io Reconnection Manager Events (apenas transporte; estado 'connected' depende do join_room ACK)
         socket.io.on('reconnect_attempt', (attempt) => {
             console.log(`[Socket] Tentativa de reconexão #${attempt}...`);
             setConnectionState('reconnecting');
@@ -332,14 +524,16 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
         });
 
         socket.io.on('reconnect', (attempt) => {
-            console.log(`[Socket] Reconectado com sucesso na tentativa #${attempt}`);
-            setConnectionState('connected');
-            setIsConnected(true);
-            setIsConnecting(false);
+            console.log(`[Socket] Transporte reconectado na tentativa #${attempt}; aguardando confirmação da sala...`);
+            if (currentAdventureIdRef.current) {
+                setConnectionState('reconnecting');
+            }
         });
 
         socket.io.on('reconnect_failed', () => {
             console.warn('[Socket] Falha final nas tentativas de reconexão.');
+            isJoinedRoomRef.current = false;
+            setIsConnected(false);
             setConnectionState('disconnected');
             setIsConnecting(false);
             setPeerError('Falha ao restabelecer conexão com o servidor.');
@@ -347,11 +541,14 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
         socket.on('player_joined', (member) => {
             console.log('[Socket] Player joined:', member.playerName);
+            if (isHostRef.current && !member.isHost && member.character) {
+                mirrorPlayerCharacterForHost(member.character);
+            }
             setConnectedPlayersData(prev => ({
                 ...prev,
                 [member.userId]: {
                     name: member.playerName,
-                    character: member.character,
+                    character: member.character || prev[member.userId]?.character || null,
                     peerId: member.userId,
                     isOnline: true,
                     isHost: !!member.isHost
@@ -387,7 +584,7 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
             dispatchPeerMessageLocally(msg);
 
-            // Handle PLAYER_UPDATE: update connectedPlayersData and local myCharacter if targeted
+            // Handle PLAYER_UPDATE: update connectedPlayersData, mirror on Host DB, and update local myCharacter if targeted
             if (msg.type === 'PLAYER_UPDATE') {
                 const targetPeerId = msg.payload.peerId;
                 const senderIsHost = !!msg.senderIsHost;
@@ -400,7 +597,12 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
                     return;
                 }
 
-                // 1. Update list of player data for GM and peers
+                // Espelha a ficha do jogador no IndexedDB do Mestre para entrar nos Backups .json da campanha
+                if (isHostRef.current && msg.payload.character) {
+                    mirrorPlayerCharacterForHost(msg.payload.character);
+                }
+
+                // 1. Update list of player data for GM and peers (cria entrada caso ainda não exista)
                 setConnectedPlayersData(prev => {
                     const existing = prev[targetPeerId];
                     if (existing) {
@@ -413,7 +615,15 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
                             }
                         };
                     }
-                    return prev;
+                    return {
+                        ...prev,
+                        [targetPeerId]: {
+                            name: msg.payload.playerName || msg.payload.character?.name || 'Jogador',
+                            character: msg.payload.character,
+                            peerId: targetPeerId,
+                            isOnline: true
+                        }
+                    };
                 });
 
                 // 2. Update myCharacter if this update was aimed at me (APENAS se veio do Mestre!)
@@ -421,19 +631,28 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
                 const isForMe = targetPeerId === myId || (myCharacterRef.current && msg.payload.character?.id === myCharacterRef.current.id);
                 if (isForMe && msg.payload.character && senderIsHost) {
                     console.log('[Socket] Updating local character from remote PLAYER_UPDATE (from GM):', msg.payload.character.name);
+                    myCharacterRef.current = msg.payload.character;
                     setMyCharacter(msg.payload.character);
-                    import('../character/characterRepository').then(({ CharacterRepository }) => {
+                    try {
                         CharacterRepository.save(msg.payload.character);
-                    }).catch(e => console.error('[Socket] Error saving remote character update:', e));
+                    } catch (e) {
+                        console.error('[Socket] Error saving remote character update:', e);
+                    }
                 }
             }
         });
 
         socket.on('player_kicked', (data: { reason?: string }) => {
             console.log('[Socket] Player was removed from room:', data);
+            clearRejoinTimer();
+            clearHostReconnectSyncTimer();
+            isJoinedRoomRef.current = false;
+            pendingExplicitJoinRef.current = false;
             alert(data?.reason || 'Você foi removido da mesa pelo Mestre.');
             setIsConnected(false);
             setIsConnecting(false);
+            setConnectionState('disconnected');
+            currentAdventureIdRef.current = null;
             setCurrentAdventureId(null);
             setConnectedPlayersData({});
             localStorage.removeItem('rpg_session');
@@ -448,8 +667,14 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
         socket.on('room_closed', (data: { roomId: string; reason?: string }) => {
             console.log('[Socket] Room closed event received from server:', data);
+            clearRejoinTimer();
+            clearHostReconnectSyncTimer();
+            isJoinedRoomRef.current = false;
+            pendingExplicitJoinRef.current = false;
             setIsConnected(false);
             setIsConnecting(false);
+            setConnectionState('disconnected');
+            currentAdventureIdRef.current = null;
             setCurrentAdventureId(null);
             setConnectedPlayersData({});
             localStorage.removeItem('rpg_session');
@@ -458,21 +683,35 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
         });
 
         return socket;
-    }, [myId, handleRoomState, dispatchPeerMessageLocally]);
+    }, [myId, handleRoomState, dispatchPeerMessageLocally, clearRejoinTimer, clearHostReconnectSyncTimer, mirrorPlayerCharacterForHost]);
 
     const reconnectNow = useCallback(() => {
         console.log('[Socket] Reconexão manual solicitada.');
-        setConnectionState('reconnecting');
-        setIsConnecting(true);
+        clearRejoinTimer();
+        rejoinRetryCountRef.current = 0;
         setPeerError(null);
+
         if (socketRef.current) {
-            if (!socketRef.current.connected) {
+            if (socketRef.current.connected) {
+                if (currentAdventureIdRef.current && usernameRef.current) {
+                    setConnectionState('reconnecting');
+                    setIsConnecting(true);
+                    attemptRejoinRoomRef.current(socketRef.current);
+                } else {
+                    setIsConnecting(false);
+                    setConnectionState(isJoinedRoomRef.current ? 'connected' : 'disconnected');
+                }
+            } else {
+                setConnectionState('reconnecting');
+                setIsConnecting(true);
                 socketRef.current.connect();
             }
         } else {
+            setConnectionState('reconnecting');
+            setIsConnecting(true);
             initSocket(serverUrl);
         }
-    }, [serverUrl, initSocket]);
+    }, [serverUrl, initSocket, clearRejoinTimer]);
 
     // Listen to local 3D and combat dice rolls and broadcast ROLL_RESULT to all peers
     useEffect(() => {
@@ -505,52 +744,102 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
     // Session auto-recovery on mount
     useEffect(() => {
-        const savedSession = localStorage.getItem('rpg_session');
+        if (hasAttemptedSessionRestoreRef.current) return;
+        hasAttemptedSessionRestoreRef.current = true;
+
+        let savedSession: string | null = null;
+        try {
+            savedSession = localStorage.getItem('rpg_session');
+        } catch {
+            return;
+        }
         if (!savedSession) return;
 
         try {
             const session = JSON.parse(savedSession);
             if (session?.adventureId && session?.username) {
                 console.log('[Socket] Restoring session from localStorage:', session);
+                const restoredHost = !!session.isHost;
+                const restoredSystem = session.system || (session.adventureId?.toUpperCase().startsWith('WTC') ? 'witcher' : 'dnd55e');
+                const preferredHostToken = restoredHost ? (hostTokenRef.current || session.hostToken || undefined) : undefined;
+
+                if (preferredHostToken) {
+                    hostTokenRef.current = preferredHostToken;
+                }
+
+                usernameRef.current = session.username;
+                isHostRef.current = restoredHost;
+                currentAdventureIdRef.current = session.adventureId;
+                roomSystemRef.current = restoredSystem;
+
                 setUsername(session.username);
-                setIsHost(!!session.isHost);
+                setIsHost(restoredHost);
                 setCurrentAdventureId(session.adventureId);
                 setCurrentAdventureName(session.adventureName || null);
-                if (session.system) {
-                    setRoomSystem(session.system);
-                } else if (session.adventureId?.toUpperCase().startsWith('WTC')) {
-                    setRoomSystem('witcher');
-                }
+                setRoomSystem(restoredSystem);
                 setIsConnecting(true);
+                setConnectionState('reconnecting');
+
+                pendingExplicitJoinRef.current = true;
+                isJoinedRoomRef.current = false;
 
                 const socket = initSocket(serverUrl);
                 socket.emit('join_room', {
                     roomId: session.adventureId,
                     playerName: session.username,
-                    isHost: !!session.isHost,
-                    hostToken: session.isHost ? (session.hostToken || hostTokenRef.current || undefined) : undefined,
-                    character: null,
+                    isHost: restoredHost,
+                    hostToken: preferredHostToken,
+                    character: myCharacterRef.current || null,
                     userId: myId,
-                    system: session.system || (session.adventureId?.toUpperCase().startsWith('WTC') ? 'witcher' : 'dnd55e')
+                    system: restoredSystem
                 }, (response: any) => {
-                    setIsConnecting(false);
+                    pendingExplicitJoinRef.current = false;
                     if (response?.success) {
+                        isJoinedRoomRef.current = true;
+                        rejoinRetryCountRef.current = 0;
+                        clearRejoinTimer();
+                        setPeerError(null);
                         setIsConnected(true);
+                        setIsConnecting(false);
+                        setConnectionState('connected');
+
                         if (response.hostToken) {
-                            hostTokenRef.current = response.hostToken;
-                            try {
-                                const s = JSON.parse(localStorage.getItem('rpg_session') || '{}');
-                                s.hostToken = response.hostToken;
-                                localStorage.setItem('rpg_session', JSON.stringify(s));
-                            } catch { /* ignore */ }
+                            persistHostToken(response.hostToken, session);
                         }
-                        if (response.system) setRoomSystem(response.system);
+                        if (response.system) {
+                            roomSystemRef.current = response.system;
+                            setRoomSystem(response.system);
+                        }
                         handleRoomState(response);
+
+                        if (response.isHost || restoredHost) {
+                            scheduleHostReconnectedSync();
+                        }
                         console.log('[Socket] Session restored successfully for room:', session.adventureId);
                     } else {
                         console.warn('[Socket] Session recovery failed on server:', response?.error);
-                        localStorage.removeItem('rpg_session');
+                        isJoinedRoomRef.current = false;
                         setIsConnected(false);
+                        setIsConnecting(false);
+                        setPeerError(response?.error || 'Não foi possível entrar na sala.');
+
+                        if (!restoredHost && isTransientPlayerRoomError(response?.error) && currentAdventureIdRef.current) {
+                            // Cold-start / Mestre reconectando: mantém sessão e tenta novamente a cada 3s
+                            rejoinRetryCountRef.current = 1;
+                            setConnectionState('reconnecting');
+                            clearRejoinTimer();
+                            rejoinRetryTimerRef.current = setTimeout(() => {
+                                rejoinRetryTimerRef.current = null;
+                                if (currentAdventureIdRef.current && socketRef.current?.connected && !isJoinedRoomRef.current) {
+                                    attemptRejoinRoomRef.current(socketRef.current);
+                                }
+                            }, PLAYER_REJOIN_RETRY_DELAY_MS);
+                        } else {
+                            localStorage.removeItem('rpg_session');
+                            currentAdventureIdRef.current = null;
+                            setCurrentAdventureId(null);
+                            setConnectionState('disconnected');
+                        }
                     }
                 });
             }
@@ -558,13 +847,25 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
             console.error('[Socket] Failed to parse saved session:', e);
             localStorage.removeItem('rpg_session');
         }
-    }, [myId, serverUrl, initSocket, handleRoomState]);
+    }, [myId, serverUrl, initSocket, handleRoomState, clearRejoinTimer, persistHostToken, scheduleHostReconnectedSync]);
 
     const startHosting = async (hostName: string, _initialAdventureId = 'default', initialAdventureName = 'Aventura Padrão', system = 'dnd55e') => {
+        clearRejoinTimer();
+        clearHostReconnectSyncTimer();
+        rejoinRetryCountRef.current = 0;
+        isJoinedRoomRef.current = false;
+        setIsConnected(false);
         setIsConnecting(true);
+        setConnectionState('reconnecting');
         setPeerError(null);
 
         const roomId = (_initialAdventureId && _initialAdventureId !== 'default') ? _initialAdventureId : myId;
+
+        usernameRef.current = hostName;
+        isHostRef.current = true;
+        currentAdventureIdRef.current = roomId;
+        roomSystemRef.current = system;
+
         setUsername(hostName);
         setIsHost(true);
         setCurrentAdventureId(roomId);
@@ -572,6 +873,7 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
         setRoomSystem(system);
 
         try {
+            pendingExplicitJoinRef.current = true;
             const socket = initSocket(serverUrl);
             socket.emit('join_room', {
                 roomId,
@@ -582,47 +884,84 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
                 userId: myId,
                 system
             }, (response: any) => {
+                pendingExplicitJoinRef.current = false;
                 setIsConnecting(false);
                 if (response?.success) {
+                    isJoinedRoomRef.current = true;
+                    rejoinRetryCountRef.current = 0;
+                    clearRejoinTimer();
+                    setPeerError(null);
                     setIsConnected(true);
-                    if (response.hostToken) {
-                        hostTokenRef.current = response.hostToken;
+                    setConnectionState('connected');
+
+                    const finalHostToken = response.hostToken || hostTokenRef.current || null;
+                    if (finalHostToken) {
+                        hostTokenRef.current = finalHostToken;
                     }
-                    if (response.system) setRoomSystem(response.system);
+                    const finalSystem = response.system || system;
+                    roomSystemRef.current = finalSystem;
+                    setRoomSystem(finalSystem);
+
+                    try {
+                        localStorage.setItem('rpg_session', JSON.stringify({
+                            adventureId: roomId,
+                            username: hostName,
+                            isHost: true,
+                            hostToken: finalHostToken,
+                            adventureName: initialAdventureName,
+                            system: finalSystem
+                        }));
+                    } catch {
+                        // Ignore localStorage quota/access errors
+                    }
+
                     handleRoomState(response);
-                    console.log('[Socket] Hosting room successfully:', roomId, 'System:', system);
-                    localStorage.setItem('rpg_session', JSON.stringify({
-                        adventureId: roomId,
-                        username: hostName,
-                        isHost: true,
-                        hostToken: response.hostToken || null,
-                        adventureName: initialAdventureName,
-                        system
-                    }));
+                    console.log('[Socket] Hosting room successfully:', roomId, 'System:', finalSystem);
                 } else {
+                    isJoinedRoomRef.current = false;
+                    setIsConnected(false);
+                    setConnectionState('disconnected');
+                    currentAdventureIdRef.current = null;
+                    setCurrentAdventureId(null);
                     setPeerError(response?.error || 'Erro ao criar sala no servidor.');
                 }
             });
         } catch (err: any) {
+            pendingExplicitJoinRef.current = false;
+            isJoinedRoomRef.current = false;
             console.error('[Socket] Start hosting error:', err);
             setPeerError(err.message || 'Erro ao conectar ao servidor.');
+            setIsConnected(false);
             setIsConnecting(false);
+            setConnectionState('disconnected');
         }
     };
 
     const connectToHost = async (targetId: string, playerName: string) => {
+        clearRejoinTimer();
+        clearHostReconnectSyncTimer();
+        rejoinRetryCountRef.current = 0;
+        isJoinedRoomRef.current = false;
+        setIsConnected(false);
         setIsConnecting(true);
+        setConnectionState('reconnecting');
         setPeerError(null);
 
         const cleanTargetId = targetId.trim().toUpperCase();
         const derivedSystem = cleanTargetId.startsWith('WTC') ? 'witcher' : 'dnd55e';
-        setRoomSystem(derivedSystem);
 
+        usernameRef.current = playerName;
+        isHostRef.current = false;
+        currentAdventureIdRef.current = cleanTargetId;
+        roomSystemRef.current = derivedSystem;
+
+        setRoomSystem(derivedSystem);
         setUsername(playerName);
         setIsHost(false);
         setCurrentAdventureId(cleanTargetId);
 
         try {
+            pendingExplicitJoinRef.current = true;
             const socket = initSocket(serverUrl);
             socket.emit('join_room', {
                 roomId: cleanTargetId,
@@ -632,31 +971,53 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
                 userId: myId,
                 system: derivedSystem
             }, (response: any) => {
+                pendingExplicitJoinRef.current = false;
                 setIsConnecting(false);
                 if (response?.success) {
+                    isJoinedRoomRef.current = true;
+                    rejoinRetryCountRef.current = 0;
+                    clearRejoinTimer();
+                    setPeerError(null);
                     setIsConnected(true);
+                    setConnectionState('connected');
+
                     const finalSystem = response.system || derivedSystem;
+                    roomSystemRef.current = finalSystem;
                     setRoomSystem(finalSystem);
                     handleRoomState(response);
                     setCurrentAdventureName(response.hostName ? `Mesa de ${response.hostName}` : 'Aventura');
                     console.log('[Socket] Connected to host room successfully:', cleanTargetId, 'System:', finalSystem);
-                    localStorage.setItem('rpg_session', JSON.stringify({
-                        adventureId: cleanTargetId,
-                        username: playerName,
-                        isHost: false,
-                        adventureName: response.hostName || 'Aventura',
-                        system: finalSystem
-                    }));
+
+                    try {
+                        localStorage.setItem('rpg_session', JSON.stringify({
+                            adventureId: cleanTargetId,
+                            username: playerName,
+                            isHost: false,
+                            adventureName: response.hostName || 'Aventura',
+                            system: finalSystem
+                        }));
+                    } catch {
+                        // Ignore localStorage quota/access errors
+                    }
                 } else {
+                    isJoinedRoomRef.current = false;
+                    setIsConnected(false);
+                    setConnectionState('disconnected');
+                    currentAdventureIdRef.current = null;
                     setCurrentAdventureId(null);
                     setPeerError(response?.error || 'Erro ao ingressar na sala. Verifique o ID.');
                 }
             });
         } catch (err: any) {
+            pendingExplicitJoinRef.current = false;
+            isJoinedRoomRef.current = false;
             console.error('[Socket] Connect to host error:', err);
+            currentAdventureIdRef.current = null;
             setCurrentAdventureId(null);
             setPeerError(err.message || 'Erro ao conectar ao servidor.');
+            setIsConnected(false);
             setIsConnecting(false);
+            setConnectionState('disconnected');
         }
     };
 
@@ -671,6 +1032,7 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
     }, []);
 
     const broadcastCharacterUpdate = useCallback((character: Character) => {
+        myCharacterRef.current = character;
         setMyCharacter(character);
         const roomId = currentAdventureIdRef.current;
         if (!roomId || !socketRef.current) return;
@@ -686,10 +1048,15 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
     }, [broadcast, myId]);
 
     const updateMyCharacter = useCallback((char: Character) => {
+        myCharacterRef.current = char;
         setMyCharacter(char);
     }, []);
 
     const updateRemotePlayerCharacter = useCallback((targetPeerId: string, char: Character) => {
+        if (isHostRef.current && char) {
+            mirrorPlayerCharacterForHost(char);
+        }
+
         // Also update GM local state immediately
         setConnectedPlayersData(prev => {
             const existing = prev[targetPeerId];
@@ -703,7 +1070,15 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
                     }
                 };
             }
-            return prev;
+            return {
+                ...prev,
+                [targetPeerId]: {
+                    name: char.name || 'Jogador',
+                    character: char,
+                    peerId: targetPeerId,
+                    isOnline: true
+                }
+            };
         });
 
         broadcast({
@@ -714,7 +1089,7 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
                 peerId: targetPeerId
             }
         });
-    }, [broadcast]);
+    }, [broadcast, mirrorPlayerCharacterForHost]);
 
     const removePlayer = useCallback(async (targetPeerId: string) => {
         const roomId = currentAdventureIdRef.current;
@@ -746,13 +1121,23 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
     };
 
     const disconnect = useCallback(() => {
+        clearRejoinTimer();
+        clearHostReconnectSyncTimer();
+        isJoinedRoomRef.current = false;
+        pendingExplicitJoinRef.current = false;
+        rejoinRetryCountRef.current = 0;
+
         const roomId = currentAdventureIdRef.current;
         if (socketRef.current && roomId) {
             socketRef.current.emit('leave_room', { roomId, closeRoom: isHostRef.current });
             socketRef.current.disconnect();
             socketRef.current = null;
+        } else if (socketRef.current) {
+            socketRef.current.disconnect();
+            socketRef.current = null;
         }
         hostTokenRef.current = null;
+        currentAdventureIdRef.current = null;
         setIsConnected(false);
         setIsConnecting(false);
         setConnectionState('disconnected');
@@ -760,16 +1145,26 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
         setConnectedPlayersData({});
         localStorage.removeItem('rpg_session');
         sessionStorage.removeItem('rpg_game_started');
-    }, []);
+    }, [clearRejoinTimer, clearHostReconnectSyncTimer]);
 
     const closeRoom = useCallback(() => {
+        clearRejoinTimer();
+        clearHostReconnectSyncTimer();
+        isJoinedRoomRef.current = false;
+        pendingExplicitJoinRef.current = false;
+        rejoinRetryCountRef.current = 0;
+
         const roomId = currentAdventureIdRef.current;
         if (socketRef.current && roomId) {
             socketRef.current.emit('close_room', { roomId });
             socketRef.current.disconnect();
             socketRef.current = null;
+        } else if (socketRef.current) {
+            socketRef.current.disconnect();
+            socketRef.current = null;
         }
         hostTokenRef.current = null;
+        currentAdventureIdRef.current = null;
         setIsConnected(false);
         setIsConnecting(false);
         setConnectionState('disconnected');
@@ -778,7 +1173,7 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
         localStorage.removeItem('rpg_session');
         sessionStorage.removeItem('rpg_game_started');
         window.dispatchEvent(new CustomEvent('rpg_room_closed', { detail: { reason: 'Você encerrou a mesa.' } }));
-    }, []);
+    }, [clearRejoinTimer, clearHostReconnectSyncTimer]);
 
     const onMessage = useCallback((callback: (data: PeerMessage) => void) => {
         messageListenersRef.current.add(callback);
@@ -788,16 +1183,32 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
     }, []);
 
     const handleSetServerUrl = useCallback((url: string) => {
-        const trimmed = url.trim();
-        setServerUrl(trimmed);
-        localStorage.setItem('rpg_server_url', trimmed);
+        const trimmed = url.trim().replace(/\/+$/, '');
+        const finalUrl = trimmed || getDefaultServerUrl();
+        setServerUrl(finalUrl);
+        try {
+            if (trimmed) {
+                localStorage.setItem('rpg_server_url', finalUrl);
+                localStorage.setItem('rpg_server_url_override', finalUrl);
+            } else {
+                localStorage.removeItem('rpg_server_url');
+                localStorage.removeItem('rpg_server_url_override');
+            }
+        } catch {
+            // Ignore storage errors
+        }
+        clearRejoinTimer();
+        clearHostReconnectSyncTimer();
+        isJoinedRoomRef.current = false;
+        pendingExplicitJoinRef.current = false;
         if (socketRef.current) {
             socketRef.current.disconnect();
             socketRef.current = null;
         }
         setIsConnected(false);
+        setIsConnecting(false);
         setConnectionState('disconnected');
-    }, []);
+    }, [clearRejoinTimer, clearHostReconnectSyncTimer]);
 
     return (
         <MultiplayerContext.Provider value={{

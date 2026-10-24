@@ -1,9 +1,12 @@
 import React, { useState } from 'react';
 import type { Monster, MonsterAction } from './monsterTypes';
 import { MonsterRepository } from './MonsterRepository';
+import { useMultiplayer } from '../multiplayer/SocketContext';
 
 interface MonsterEditorProps {
     existingMonster?: Monster | null;
+    campaignId?: string | null;
+    system?: string;
     onSave: () => void;
     onCancel: () => void;
 }
@@ -38,7 +41,9 @@ const generateId = (prefix: string) => {
         : `${prefix}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 };
 
-export const MonsterEditor: React.FC<MonsterEditorProps> = ({ existingMonster, onSave, onCancel }) => {
+export const MonsterEditor: React.FC<MonsterEditorProps> = ({ existingMonster, campaignId, system, onSave, onCancel }) => {
+    const { currentAdventureId, roomSystem } = useMultiplayer();
+
     const [data, setData] = useState<Monster>(() => {
         if (existingMonster) {
             return JSON.parse(JSON.stringify(existingMonster));
@@ -55,7 +60,8 @@ export const MonsterEditor: React.FC<MonsterEditorProps> = ({ existingMonster, o
     };
 
     const handleHpChange = (val: number) => {
-        setData(prev => ({ ...prev, hp: { current: val, max: val } }));
+        const safeHp = Number.isFinite(val) ? Math.max(1, val) : 10;
+        setData(prev => ({ ...prev, hp: { current: safeHp, max: safeHp } }));
     };
 
     const handleAttrChange = (attr: keyof typeof data.attributes, val: number) => {
@@ -92,10 +98,12 @@ export const MonsterEditor: React.FC<MonsterEditorProps> = ({ existingMonster, o
 
     const handleSave = () => {
         if (!data.name) return alert("Nome é obrigatório");
-        const monsterToSave = {
+        const monsterToSave: Monster = {
             ...data,
             id: data.id || generateId('custom'),
-            source: 'Custom' as const
+            source: 'Custom' as const,
+            campaignId: existingMonster?.campaignId || data.campaignId || campaignId || currentAdventureId || 'default',
+            system: existingMonster?.system || data.system || system || roomSystem || 'dnd55e'
         };
 
         MonsterRepository.saveCustomMonster(monsterToSave);
@@ -123,29 +131,31 @@ export const MonsterEditor: React.FC<MonsterEditorProps> = ({ existingMonster, o
 
             <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
                 <label>HP Max: <input type="number" value={data.hp.max} onChange={e => handleHpChange(parseInt(e.target.value))} style={{ width: '60px' }} /></label>
-                <label>AC: <input type="number" value={data.ac} onChange={e => handleChange('ac', parseInt(e.target.value))} style={{ width: '60px' }} /></label>
-                <label>Speed (m): <input type="number" value={data.speed} onChange={e => handleChange('speed', parseInt(e.target.value))} style={{ width: '60px' }} /></label>
-                <label>CR: <input type="number" value={data.cr} onChange={e => handleChange('cr', parseFloat(e.target.value))} style={{ width: '60px' }} /></label>
+                <label>AC: <input type="number" value={data.ac} onChange={e => handleChange('ac', parseInt(e.target.value) || 10)} style={{ width: '60px' }} /></label>
+                <label>Speed (m): <input type="number" value={data.speed} onChange={e => handleChange('speed', parseInt(e.target.value) || 9)} style={{ width: '60px' }} /></label>
+                <label>CR: <input type="number" value={data.cr} onChange={e => handleChange('cr', parseFloat(e.target.value) || 0)} style={{ width: '60px' }} /></label>
             </div>
 
             <h4>Atributos</h4>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '5px' }}>
-                {(Object.keys(data.attributes) as Array<keyof typeof data.attributes>).map(attr => (
-                    (attr !== 'ref' && attr !== 'will') && (
+                {(Object.keys(data.attributes) as Array<keyof typeof data.attributes>).map(attr => {
+                    const attrData = data.attributes[attr];
+                    if (attr === 'ref' || attr === 'will' || !attrData) return null;
+                    return (
                         <div key={attr} style={{ textAlign: 'center' }}>
                             <div style={{ textTransform: 'uppercase', fontSize: '0.8rem' }}>{attr}</div>
                             <input
                                 type="number"
-                                value={data.attributes[attr].value}
+                                value={attrData.value}
                                 onChange={e => handleAttrChange(attr, parseInt(e.target.value) || 10)}
                                 style={{ width: '100%', textAlign: 'center' }}
                             />
                             <div style={{ fontSize: '0.8rem', color: '#aaa' }}>
-                                {data.attributes[attr].modifier >= 0 ? '+' : ''}{data.attributes[attr].modifier}
+                                {attrData.modifier >= 0 ? '+' : ''}{attrData.modifier}
                             </div>
                         </div>
-                    )
-                ))}
+                    );
+                })}
             </div>
 
             <h4>Ações</h4>

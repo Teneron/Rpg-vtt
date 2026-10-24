@@ -41,6 +41,12 @@ if (typeof window !== 'undefined' && window.localStorage) {
     }
 }
 
+const dispatchCharactersUpdated = () => {
+    if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('rpg_characters_updated'));
+    }
+};
+
 export const CharacterRepository = {
     /**
      * Initializes the repository, migrates legacy localStorage data to Dexie,
@@ -105,18 +111,63 @@ export const CharacterRepository = {
     },
 
     /**
+     * Reloads the in-memory character cache directly from IndexedDB (Dexie),
+     * used after campaign backup import or campaign deletion.
+     */
+    async reloadFromDb(): Promise<void> {
+        if (!isInitialized) {
+            await this.init();
+        }
+
+        try {
+            characterCache.clear();
+            const allChars = await db.characters.toArray();
+            for (const char of allChars) {
+                if (char && char.id) {
+                    characterCache.set(char.id, char);
+                }
+            }
+
+            // Remove orphaned localStorage fallback entries that were deleted from Dexie
+            if (typeof window !== 'undefined' && window.localStorage) {
+                try {
+                    const keysToRemove: string[] = [];
+                    for (let i = 0; i < localStorage.length; i++) {
+                        const key = localStorage.key(i);
+                        if (key && key.startsWith(STORAGE_KEY_PREFIX) && !key.startsWith(INDEX_KEY) && key !== MIGRATION_FLAG_KEY) {
+                            const id = key.slice(STORAGE_KEY_PREFIX.length);
+                            if (id && !characterCache.has(id)) {
+                                keysToRemove.push(key);
+                            }
+                        }
+                    }
+                    keysToRemove.forEach(k => localStorage.removeItem(k));
+                } catch {
+                    // Ignore localStorage cleanup errors
+                }
+            }
+
+            isInitialized = true;
+            dispatchCharactersUpdated();
+        } catch (err) {
+            console.error('[CharacterRepo] Failed to reload characters from IndexedDB:', err);
+        }
+    },
+
+    /**
      * Synchronous list of all characters matching owner and adventureId from cache.
+     * Matching is resilient to casing and leading/trailing whitespace.
      */
     listAll(owner: string, adventureId: string = 'default'): CharacterSummary[] {
-        if (!owner) return [];
+        if (!owner || !owner.trim()) return [];
 
-        const targetOwner = owner || 'default';
-        const targetAdvId = adventureId || 'default';
+        const targetOwner = (owner || 'default').trim().toLowerCase();
+        const targetAdvId = (adventureId || 'default').trim().toLowerCase();
         const summaries: CharacterSummary[] = [];
 
         for (const char of characterCache.values()) {
-            const cOwner = char.owner || 'default';
-            const cAdvId = char.adventureId || 'default';
+            const cOwner = (char.owner || 'default').trim().toLowerCase();
+            const cAdvId = (char.adventureId || 'default').trim().toLowerCase();
             if (cOwner === targetOwner && cAdvId === targetAdvId) {
                 summaries.push({
                     id: char.id,
@@ -124,7 +175,7 @@ export const CharacterRepository = {
                     race: char.race || '',
                     class: char.class || '',
                     level: typeof char.level === 'number' && Number.isFinite(char.level) ? char.level : 1,
-                    adventureId: cAdvId,
+                    adventureId: char.adventureId || 'default',
                     system: char.system
                 });
             }
@@ -179,10 +230,12 @@ export const CharacterRepository = {
 
     /**
      * Asynchronous version of save waiting for IndexedDB completion.
+     * Persists the exact stamped record from characterCache so lastModified is never reverted.
      */
     async saveAsync(character: Character): Promise<void> {
         this.save(character);
-        await db.characters.put(character);
+        const charToPersist = characterCache.get(character.id) || { ...character, lastModified: Date.now() };
+        await db.characters.put(charToPersist);
     },
 
     /**
@@ -248,13 +301,14 @@ export const CharacterRepository = {
         const newChar: Character = {
             ...clone,
             id: generateUUID(),
-            owner: owner || 'default',
+            owner: (owner || 'default').trim(),
             adventureId: adventureId || 'default',
             system,
             lastModified: Date.now()
         };
 
         this.save(newChar);
+        dispatchCharactersUpdated();
         return newChar;
     },
 
@@ -283,12 +337,13 @@ export const CharacterRepository = {
         const newChar: Character = {
             ...clone,
             id: generateUUID(),
-            owner: owner || 'default',
+            owner: (owner || 'default').trim(),
             adventureId: adventureId || 'default',
             lastModified: Date.now()
         };
 
         this.save(newChar);
+        dispatchCharactersUpdated();
         return newChar;
     },
 
@@ -310,6 +365,8 @@ export const CharacterRepository = {
         } catch (e) {
             console.error('[CharacterRepo] Error deleting from localStorage fallback:', e);
         }
+
+        dispatchCharactersUpdated();
     },
 
     /**
@@ -351,20 +408,24 @@ export const CharacterRepository = {
             throw new Error('Arquivo JSON inválido ou corrompido: ' + (e?.message || 'erro de leitura'));
         }
 
+        if (parsed && (parsed.type === 'rpg-campaign-backup' || (parsed.campaign && Array.isArray(parsed.maps)))) {
+            throw new Error("Este arquivo é um Backup de Campanha. Use 'Importar Aventura' no painel do Mestre.");
+        }
+
         // Support both enveloped backup and direct Character object
-        const rawChar: Character = (parsed && parsed.type === 'rpg-character-backup' && parsed.character)
+        const rawChar: any = (parsed && parsed.type === 'rpg-character-backup' && parsed.character)
             ? parsed.character
             : parsed;
 
-        if (!rawChar || typeof rawChar !== 'object') {
+        if (!rawChar || typeof rawChar !== 'object' || Array.isArray(rawChar)) {
             throw new Error('Conteúdo do arquivo não corresponde a uma ficha de personagem válida.');
         }
 
-        if (!rawChar.name || typeof rawChar.name !== 'string') {
+        if (!rawChar.name || typeof rawChar.name !== 'string' || !rawChar.name.trim()) {
             throw new Error('A ficha importada não possui um nome válido.');
         }
 
-        if (!rawChar.attributes || typeof rawChar.attributes !== 'object') {
+        if (rawChar.attributes !== undefined && (typeof rawChar.attributes !== 'object' || Array.isArray(rawChar.attributes))) {
             throw new Error('A ficha importada não possui estrutura de atributos válida.');
         }
 
@@ -379,19 +440,45 @@ export const CharacterRepository = {
             });
         };
 
-        // Merge with initialCharacter base template to ensure missing fields exist
-        const baseClone = JSON.parse(JSON.stringify(initialCharacter));
+        // Deep merge with initialCharacter base template to ensure missing nested fields exist
+        const baseClone: Character = JSON.parse(JSON.stringify(initialCharacter));
+        const rawAttrs = (rawChar.attributes && typeof rawChar.attributes === 'object') ? rawChar.attributes : {};
+        const mergedAttributes: Character['attributes'] = {
+            str: { ...baseClone.attributes.str, ...(rawAttrs.str || {}) },
+            dex: { ...baseClone.attributes.dex, ...(rawAttrs.dex || {}) },
+            con: { ...baseClone.attributes.con, ...(rawAttrs.con || {}) },
+            int: { ...baseClone.attributes.int, ...(rawAttrs.int || {}) },
+            wis: { ...baseClone.attributes.wis, ...(rawAttrs.wis || {}) },
+            cha: { ...baseClone.attributes.cha, ...(rawAttrs.cha || {}) }
+        };
+
         const mergedChar: Character = {
             ...baseClone,
             ...rawChar,
+            attributes: mergedAttributes,
+            hp: { ...baseClone.hp, ...(rawChar.hp && typeof rawChar.hp === 'object' ? rawChar.hp : {}) },
+            hitDice: { ...baseClone.hitDice, ...(rawChar.hitDice && typeof rawChar.hitDice === 'object' ? rawChar.hitDice : {}) },
+            deathSaves: { ...baseClone.deathSaves, ...(rawChar.deathSaves && typeof rawChar.deathSaves === 'object' ? rawChar.deathSaves : {}) },
+            currency: { ...baseClone.currency, ...(rawChar.currency && typeof rawChar.currency === 'object' ? rawChar.currency : {}) },
+            spellSlots: { ...baseClone.spellSlots, ...(rawChar.spellSlots && typeof rawChar.spellSlots === 'object' ? rawChar.spellSlots : {}) },
+            skills: Array.isArray(rawChar.skills) ? rawChar.skills : baseClone.skills,
+            inventory: Array.isArray(rawChar.inventory) ? rawChar.inventory : [],
+            spells: Array.isArray(rawChar.spells) ? rawChar.spells : [],
+            feats: Array.isArray(rawChar.feats) ? rawChar.feats : [],
+            features: Array.isArray(rawChar.features) ? rawChar.features : [],
+            classResources: Array.isArray(rawChar.classResources) ? rawChar.classResources : [],
+            proficiencies: Array.isArray(rawChar.proficiencies) ? rawChar.proficiencies : [],
+            languages: Array.isArray(rawChar.languages) ? rawChar.languages : ['Comum'],
+            conditions: Array.isArray(rawChar.conditions) ? rawChar.conditions : [],
             id: generateUUID(), // Always generate a fresh UUID to avoid overwriting existing characters
-            owner: owner || 'default',
+            owner: (owner || 'default').trim(),
             adventureId: adventureId || 'default',
             lastModified: Date.now()
         };
 
         const finalChar = regenerateCharacterStats(mergedChar);
         await this.saveAsync(finalChar);
+        dispatchCharactersUpdated();
         return finalChar;
     },
 

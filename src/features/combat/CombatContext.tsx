@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { usePeer } from '../multiplayer/SocketContext';
+import { db } from '../../db/RPGDatabase';
 import type { CombatState, Combatant } from './combatTypes';
 
 interface CombatContextType {
@@ -16,24 +17,104 @@ interface CombatContextType {
     setTarget: (targetId: string | null) => void;
 }
 
+const DEFAULT_COMBAT_STATE: CombatState = {
+    isActive: false,
+    round: 1,
+    activeTurnId: null,
+    currentTargetId: null,
+    combatants: []
+};
+
+const sortCombatantList = (list: Combatant[]): Combatant[] => {
+    return [...list].sort((a, b) => {
+        if (b.initiative !== a.initiative) {
+            return b.initiative - a.initiative;
+        }
+        const bonusB = b.bonus ?? 0;
+        const bonusA = a.bonus ?? 0;
+        if (bonusB !== bonusA) {
+            return bonusB - bonusA;
+        }
+        return (a.name || '').localeCompare(b.name || '');
+    });
+};
+
 const CombatContext = createContext<CombatContextType | undefined>(undefined);
 
 export const CombatProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const { broadcast, isHost } = usePeer();
+    const { broadcast, isHost, currentAdventureId, connectedPlayersData } = usePeer();
 
-    const [combatState, setCombatState] = useState<CombatState>({
-        isActive: false,
-        round: 1,
-        activeTurnId: null,
-        currentTargetId: null,
-        combatants: []
-    });
+    const [combatState, setCombatState] = useState<CombatState>(DEFAULT_COMBAT_STATE);
+    const [loadedAdventureId, setLoadedAdventureId] = useState<string | null>(null);
+
+    const safeAdventureId = currentAdventureId || 'default';
 
     const combatStateRef = useRef(combatState);
     useEffect(() => { combatStateRef.current = combatState; }, [combatState]);
 
     const isHostRef = useRef(isHost);
     useEffect(() => { isHostRef.current = isHost; }, [isHost]);
+
+    const connectedPlayersRef = useRef(connectedPlayersData);
+    useEffect(() => { connectedPlayersRef.current = connectedPlayersData; }, [connectedPlayersData]);
+
+    // Hydrate persisted combat state from Dexie campaign on load / adventure switch
+    useEffect(() => {
+        let cancelled = false;
+        const hydrateCombat = async () => {
+            if (safeAdventureId === 'default') {
+                if (!cancelled) setLoadedAdventureId('default');
+                return;
+            }
+            try {
+                const campaign = await db.campaigns.get(safeAdventureId);
+                if (cancelled) return;
+                if (campaign?.combatState && typeof campaign.combatState === 'object') {
+                    const saved = campaign.combatState as CombatState;
+                    setCombatState(prev => {
+                        // Do not clobber an already-synced live combat if a player just got server state
+                        if (!isHostRef.current && prev.isActive && (prev.combatants?.length || 0) > 0) {
+                            return prev;
+                        }
+                        return {
+                            isActive: Boolean(saved.isActive),
+                            round: Number(saved.round) || 1,
+                            activeTurnId: saved.activeTurnId ?? null,
+                            currentTargetId: saved.currentTargetId ?? null,
+                            combatants: Array.isArray(saved.combatants) ? saved.combatants : []
+                        };
+                    });
+                } else if (isHostRef.current) {
+                    setCombatState(DEFAULT_COMBAT_STATE);
+                }
+            } catch (err) {
+                console.warn('[CombatContext] Failed to hydrate combatState from Dexie:', err);
+            } finally {
+                if (!cancelled) {
+                    setLoadedAdventureId(safeAdventureId);
+                }
+            }
+        };
+
+        hydrateCombat();
+        return () => { cancelled = true; };
+    }, [safeAdventureId]);
+
+    // Debounced persistence of combatState into Dexie campaign (Host authoritative store)
+    useEffect(() => {
+        if (!isHost || safeAdventureId === 'default' || loadedAdventureId !== safeAdventureId) return;
+
+        const timer = setTimeout(() => {
+            db.campaigns.update(safeAdventureId, {
+                combatState,
+                updatedAt: Date.now()
+            }).catch(err => {
+                console.warn('[CombatContext] Failed to persist combatState to Dexie:', err);
+            });
+        }, 350);
+
+        return () => clearTimeout(timer);
+    }, [combatState, isHost, safeAdventureId, loadedAdventureId]);
 
     const broadcastUpdate = useCallback((newState: CombatState) => {
         broadcast({
@@ -50,11 +131,63 @@ export const CombatProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         }
     }, [broadcastUpdate]);
 
+    // Re-sync combat state to server after Host reconnects (e.g. Render cold-start or Wi-Fi blip)
+    useEffect(() => {
+        const handleHostReconnected = () => {
+            if (isHostRef.current && loadedAdventureId === safeAdventureId) {
+                broadcastUpdate(combatStateRef.current);
+            }
+        };
+        window.addEventListener('rpg_host_reconnected', handleHostReconnected);
+        return () => window.removeEventListener('rpg_host_reconnected', handleHostReconnected);
+    }, [broadcastUpdate, loadedAdventureId, safeAdventureId]);
+
+    // Sync combatant HP/AC whenever a Character sheet updates locally or via PLAYER_UPDATE (P1)
+    const syncCharacterToCombatants = useCallback((char: any) => {
+        if (!char || !char.id || !char.hp) return;
+        const current = combatStateRef.current;
+        const list = current.combatants || [];
+        let changed = false;
+
+        const updatedList = list.map(c => {
+            if (c.characterId === char.id || c.id === char.id) {
+                const newCur = Number(char.hp.current ?? c.hp?.current ?? 0);
+                const newMax = Number(char.hp.max ?? c.hp?.max ?? 10);
+                const newAc = char.acOverride ?? char.armorClass ?? c.ac;
+                if (c.hp?.current !== newCur || c.hp?.max !== newMax || c.ac !== newAc) {
+                    changed = true;
+                    return {
+                        ...c,
+                        hp: { current: newCur, max: newMax },
+                        ac: newAc
+                    };
+                }
+            }
+            return c;
+        });
+
+        if (changed) {
+            const next = { ...current, combatants: updatedList };
+            setCombatState(next);
+            if (isHostRef.current) {
+                broadcastUpdate(next);
+            }
+        }
+    }, [broadcastUpdate]);
+
+    useEffect(() => {
+        const handleLocalCharSave = (e: Event) => {
+            const char = (e as CustomEvent).detail;
+            syncCharacterToCombatants(char);
+        };
+        window.addEventListener('rpg_local_char_save', handleLocalCharSave);
+        return () => window.removeEventListener('rpg_local_char_save', handleLocalCharSave);
+    }, [syncCharacterToCombatants]);
+
     const addCombatant = useCallback((combatant: Combatant) => {
         if (isHostRef.current) {
             const currentList = combatStateRef.current.combatants || [];
 
-            // Check for existing ID or CharacterID
             const exists = currentList.some(c =>
                 c.id === combatant.id ||
                 (combatant.characterId && c.characterId === combatant.characterId)
@@ -68,7 +201,6 @@ export const CombatProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             const next = { ...combatStateRef.current, combatants: [...currentList, combatant] };
             updateState(next);
         } else {
-            // Request Host to add
             broadcast({
                 type: 'COMBAT_ACTION',
                 payload: { action: 'ADD_COMBATANT', value: combatant }
@@ -88,8 +220,6 @@ export const CombatProvider: React.FC<{ children: React.ReactNode }> = ({ childr
                 if (remaining.length === 0) {
                     nextActiveTurnId = null;
                 } else {
-                    // D1: Passa a vez para o combatente seguinte na ordem (o que ocupa o mesmo índice na lista remanescente),
-                    // ou para o primeiro caso o removido fosse o último.
                     const nextIndex = (removedIndex >= 0 && removedIndex < remaining.length) ? removedIndex : 0;
                     nextActiveTurnId = remaining[nextIndex].id;
                 }
@@ -121,7 +251,6 @@ export const CombatProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             };
             updateState(next);
         } else {
-            // Request Host to update
             broadcast({
                 type: 'COMBAT_ACTION',
                 payload: { action: 'UPDATE_COMBATANT', combatantId: id, value: updates }
@@ -132,20 +261,7 @@ export const CombatProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const sortCombatants = useCallback(() => {
         if (isHostRef.current) {
             const current = combatStateRef.current;
-            const sorted = [...(current.combatants || [])].sort((a, b) => {
-                // Primary: initiative descending
-                if (b.initiative !== a.initiative) {
-                    return b.initiative - a.initiative;
-                }
-                // Secondary: bonus descending (tie-breaker)
-                const bonusB = b.bonus ?? 0;
-                const bonusA = a.bonus ?? 0;
-                if (bonusB !== bonusA) {
-                    return bonusB - bonusA;
-                }
-                // Tertiary: alphabetical name
-                return a.name.localeCompare(b.name);
-            });
+            const sorted = sortCombatantList(current.combatants || []);
             updateState({ ...current, combatants: sorted });
         }
     }, [updateState]);
@@ -153,18 +269,21 @@ export const CombatProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const startCombat = useCallback(() => {
         if (isHostRef.current) {
             const current = combatStateRef.current;
-            const resetCombatants = (current.combatants || []).map(c => ({
-                ...c,
-                initiative: 0,
-                roll: 0,
-                bonus: 0
-            }));
+            // D2: Preserva iniciativas já roladas (ex.: monstros arrastados para o mapa) e ordena decrescente
+            const prepared = sortCombatantList(
+                (current.combatants || []).map(c =>
+                    c.initiative > 0
+                        ? c
+                        : { ...c, initiative: 0, roll: 0, bonus: c.bonus ?? 0 }
+                )
+            );
+            const firstActive = prepared.length > 0 && prepared[0].initiative > 0 ? prepared[0].id : null;
             updateState({
                 ...current,
                 isActive: true,
                 round: 1,
-                activeTurnId: null,
-                combatants: resetCombatants
+                activeTurnId: firstActive,
+                combatants: prepared
             });
         }
     }, [updateState]);
@@ -183,10 +302,12 @@ export const CombatProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     const nextTurn = useCallback(() => {
         if (!isHostRef.current) {
-            // Player sends request to Host
             broadcast({
                 type: 'COMBAT_ACTION',
-                payload: { action: 'NEXT_TURN' }
+                payload: {
+                    action: 'NEXT_TURN',
+                    value: { expectedTurnId: combatStateRef.current.activeTurnId }
+                }
             });
             return;
         }
@@ -235,7 +356,6 @@ export const CombatProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         if (currentIndex !== -1) {
             prevIndex = currentIndex - 1;
         } else {
-            // D2: Quando nenhum combatente está ativo, retrocede para o último da lista
             prevIndex = list.length - 1;
         }
 
@@ -265,9 +385,7 @@ export const CombatProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         if (isHostRef.current) {
             updateState({ ...combatStateRef.current, currentTargetId: targetId });
         } else {
-            // Update locally for immediate responsiveness
             setCombatState(prev => ({ ...prev, currentTargetId: targetId }));
-            // Broadcast request to host so the whole room syncs
             broadcast({
                 type: 'COMBAT_ACTION',
                 payload: { action: 'SET_TARGET', value: targetId }
@@ -275,60 +393,98 @@ export const CombatProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         }
     }, [broadcast, updateState]);
 
-    // Peer Sync Listener
+    // Peer Sync Listener with Host Authorization for COMBAT_ACTION (C2 / CB1)
     useEffect(() => {
+        const doesSenderOwnCombatant = (senderUserId: string | undefined, senderIsHost: boolean | undefined, c: Combatant | undefined): boolean => {
+            if (senderIsHost) return true;
+            if (!senderUserId || !c) return false;
+            const senderCharId = connectedPlayersRef.current[senderUserId]?.character?.id;
+            return (
+                c.id === senderUserId ||
+                Boolean(senderCharId && (c.characterId === senderCharId || c.id === senderCharId))
+            );
+        };
+
         const handlePeerEvent = (e: CustomEvent) => {
             const msg = e.detail;
+            if (!msg) return;
+
             if (msg.type === 'COMBAT_UPDATE') {
-                console.log('[CombatContext] Received Sync:', msg.payload);
                 setCombatState(msg.payload);
+            } else if (msg.type === 'PLAYER_UPDATE') {
+                if (msg.payload?.character) {
+                    syncCharacterToCombatants(msg.payload.character);
+                }
             } else if (msg.type === 'COMBAT_ACTION') {
-                if (isHostRef.current) {
-                    const action = msg.payload?.action;
-                    if (action === 'ADD_COMBATANT') {
-                        const newCombatant = msg.payload.value;
-                        const current = combatStateRef.current;
-                        const currentList = current.combatants || [];
-                        const exists = currentList.some(c =>
-                            c.id === newCombatant.id ||
-                            (newCombatant.characterId && c.characterId === newCombatant.characterId)
-                        );
-                        if (!exists) {
-                            console.log('[CombatContext] Host received ADD_COMBATANT:', newCombatant);
-                            updateState({ ...current, combatants: [...currentList, newCombatant] });
-                        }
-                    } else if (action === 'UPDATE_COMBATANT') {
-                        const { combatantId, value } = msg.payload;
-                        console.log('[CombatContext] Host received UPDATE_COMBATANT:', combatantId, value);
-                        const current = combatStateRef.current;
-                        const currentList = current.combatants || [];
-                        const next = {
-                            ...current,
-                            combatants: currentList.map(c => c.id === combatantId ? { ...c, ...value } : c)
-                        };
-                        updateState(next);
-                    } else if (action === 'REMOVE_COMBATANT') {
-                        const { combatantId } = msg.payload;
-                        console.log('[CombatContext] Host received REMOVE_COMBATANT:', combatantId);
-                        removeCombatant(combatantId);
-                    } else if (action === 'SET_TARGET') {
-                        const targetId = msg.payload.value ?? null;
-                        console.log('[CombatContext] Host received SET_TARGET:', targetId);
-                        updateState({ ...combatStateRef.current, currentTargetId: targetId });
-                    } else if (action === 'NEXT_TURN') {
-                        console.log('[CombatContext] Host received NEXT_TURN request');
-                        nextTurn();
-                    } else if (action === 'PREVIOUS_TURN') {
-                        console.log('[CombatContext] Host received PREVIOUS_TURN request');
-                        previousTurn();
+                if (!isHostRef.current) return;
+
+                const action = msg.payload?.action;
+                const senderUserId: string | undefined = msg.senderUserId;
+                const senderIsHost: boolean = Boolean(msg.senderIsHost);
+
+                if (action === 'ADD_COMBATANT') {
+                    const newCombatant = msg.payload?.value as Combatant | undefined;
+                    if (!newCombatant || !newCombatant.id) return;
+                    // Non-host players can only add non-NPC combatants linked to their own character
+                    if (!senderIsHost) {
+                        const senderCharId = senderUserId ? connectedPlayersRef.current[senderUserId]?.character?.id : undefined;
+                        if (newCombatant.isNPC) return;
+                        if (senderCharId && newCombatant.characterId && newCombatant.characterId !== senderCharId) return;
                     }
+                    const current = combatStateRef.current;
+                    const currentList = current.combatants || [];
+                    const exists = currentList.some(c =>
+                        c.id === newCombatant.id ||
+                        (newCombatant.characterId && c.characterId === newCombatant.characterId)
+                    );
+                    if (!exists) {
+                        updateState({ ...current, combatants: [...currentList, newCombatant] });
+                    }
+                } else if (action === 'UPDATE_COMBATANT') {
+                    const { combatantId, value } = msg.payload || {};
+                    if (!combatantId || !value || typeof value !== 'object') return;
+                    const current = combatStateRef.current;
+                    const currentList = current.combatants || [];
+                    const target = currentList.find(c => c.id === combatantId);
+                    if (!doesSenderOwnCombatant(senderUserId, senderIsHost, target)) {
+                        console.warn('[CombatContext] Unauthorized UPDATE_COMBATANT ignored from:', senderUserId);
+                        return;
+                    }
+                    const next = {
+                        ...current,
+                        combatants: currentList.map(c => c.id === combatantId ? { ...c, ...value } : c)
+                    };
+                    updateState(next);
+                } else if (action === 'REMOVE_COMBATANT') {
+                    if (!senderIsHost) return;
+                    const { combatantId } = msg.payload || {};
+                    if (combatantId) removeCombatant(combatantId);
+                } else if (action === 'SET_TARGET') {
+                    const targetId = msg.payload?.value ?? null;
+                    updateState({ ...combatStateRef.current, currentTargetId: targetId });
+                } else if (action === 'NEXT_TURN') {
+                    const current = combatStateRef.current;
+                    const activeCombatant = (current.combatants || []).find(c => c.id === current.activeTurnId);
+                    // Prevent double-click turn skipping across cloud latency (CB1)
+                    const expectedTurnId = msg.payload?.value?.expectedTurnId;
+                    if (expectedTurnId && current.activeTurnId && expectedTurnId !== current.activeTurnId) {
+                        return;
+                    }
+                    if (!doesSenderOwnCombatant(senderUserId, senderIsHost, activeCombatant)) {
+                        console.warn('[CombatContext] Unauthorized NEXT_TURN ignored from:', senderUserId);
+                        return;
+                    }
+                    nextTurn();
+                } else if (action === 'PREVIOUS_TURN') {
+                    if (!senderIsHost) return;
+                    previousTurn();
                 }
             }
         };
 
         window.addEventListener('rpg_peer_event' as any, handlePeerEvent);
         return () => window.removeEventListener('rpg_peer_event' as any, handlePeerEvent);
-    }, [nextTurn, previousTurn, removeCombatant, updateState]);
+    }, [nextTurn, previousTurn, removeCombatant, syncCharacterToCombatants, updateState]);
 
     return (
         <CombatContext.Provider value={{

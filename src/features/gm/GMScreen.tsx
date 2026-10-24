@@ -1,19 +1,195 @@
 import React from 'react';
 import { usePeer } from '../multiplayer/SocketContext';
 import { Soundboard } from '../audio/Soundboard';
-import { RefreshCw, Shield, Copy, Check, Link2, Trash2, FileText, Users, UserCheck, MapPin, TrendingUp } from 'lucide-react';
+import { RefreshCw, Shield, Copy, Check, Link2, Trash2, FileText, Users, UserCheck, MapPin, TrendingUp, BookOpen, Download, ChevronDown, ChevronUp } from 'lucide-react';
 import { getMinXPForLevel, regenerateCharacterStats, type Character } from '../character/characterTypes';
 import { playSynthSound } from '../audio/audioSynth';
 
 import { ErrorBoundary } from '../../components/ErrorBoundary';
 import { useMap } from '../map/MapContext';
 import { useCombat } from '../combat/CombatContext';
+import { useAdventure, type Adventure } from '../adventure/AdventureContext';
 import { SceneList } from '../map/SceneList';
 import { CharacterSheet } from '../character/CharacterSheet';
 import './GMScreen.css';
 
+interface CampaignJournalCardProps {
+    adventure: Adventure | null;
+    fallbackAdventureId: string | null;
+    updateAdventureJournal: (journal: string, description?: string) => Promise<void>;
+    downloadCampaignBackup: (campaignId: string) => Promise<void>;
+}
+
+const CampaignJournalCard: React.FC<CampaignJournalCardProps> = ({
+    adventure,
+    fallbackAdventureId,
+    updateAdventureJournal,
+    downloadCampaignBackup
+}) => {
+    const [isExpanded, setIsExpanded] = React.useState(true);
+    const [descriptionText, setDescriptionText] = React.useState<string>(() => adventure?.description || '');
+    const [journalText, setJournalText] = React.useState<string>(() => adventure?.journal || '');
+    const [saveStatus, setSaveStatus] = React.useState<'saved' | 'saving' | 'error'>('saved');
+    const [isExporting, setIsExporting] = React.useState(false);
+
+    const journalRef = React.useRef(journalText);
+    const descriptionRef = React.useRef(descriptionText);
+    const isDirtyRef = React.useRef(false);
+    const debounceTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const scheduleAutoSave = (nextJournal: string, nextDesc: string) => {
+        journalRef.current = nextJournal;
+        descriptionRef.current = nextDesc;
+        isDirtyRef.current = true;
+        setSaveStatus('saving');
+
+        if (debounceTimerRef.current) {
+            clearTimeout(debounceTimerRef.current);
+        }
+
+        debounceTimerRef.current = setTimeout(async () => {
+            debounceTimerRef.current = null;
+            isDirtyRef.current = false;
+            try {
+                await updateAdventureJournal(journalRef.current, descriptionRef.current);
+                setSaveStatus('saved');
+            } catch (err) {
+                console.error('[GMScreen] Erro ao salvar Diário da Campanha:', err);
+                setSaveStatus('error');
+            }
+        }, 600);
+    };
+
+    // Flush any pending unsaved journal edits if the GM switches tabs before 600ms
+    React.useEffect(() => {
+        return () => {
+            if (debounceTimerRef.current) {
+                clearTimeout(debounceTimerRef.current);
+                debounceTimerRef.current = null;
+            }
+            if (isDirtyRef.current) {
+                isDirtyRef.current = false;
+                updateAdventureJournal(journalRef.current, descriptionRef.current).catch(console.error);
+            }
+        };
+    }, [updateAdventureJournal]);
+
+    const handleExportBackup = async (e: React.MouseEvent) => {
+        e.stopPropagation();
+        const targetId = adventure?.id || fallbackAdventureId;
+        if (!targetId) return;
+
+        try {
+            setIsExporting(true);
+            if (debounceTimerRef.current) {
+                clearTimeout(debounceTimerRef.current);
+                debounceTimerRef.current = null;
+            }
+            if (isDirtyRef.current) {
+                isDirtyRef.current = false;
+                await updateAdventureJournal(journalRef.current, descriptionRef.current);
+                setSaveStatus('saved');
+            }
+            await downloadCampaignBackup(targetId);
+        } catch (err: any) {
+            alert('Erro ao exportar backup da campanha: ' + (err?.message || 'falha ao gerar JSON'));
+        } finally {
+            setIsExporting(false);
+        }
+    };
+
+    const canPersist = !!(adventure?.id || fallbackAdventureId);
+
+    return (
+        <div className="gm-journal-card">
+            <div
+                className="gm-journal-header"
+                onClick={() => setIsExpanded(prev => !prev)}
+                title={isExpanded ? 'Recolher Diário da Campanha' : 'Expandir Diário da Campanha'}
+            >
+                <div className="gm-journal-title">
+                    <BookOpen size={15} color="#c5a059" />
+                    <span>📖 Diário da Campanha & História</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {canPersist && (
+                        <span className={`gm-journal-status ${saveStatus}`}>
+                            {saveStatus === 'saving'
+                                ? 'Salvando...'
+                                : saveStatus === 'error'
+                                    ? 'Erro ao salvar'
+                                    : '✓ Salvo no navegador'}
+                        </span>
+                    )}
+                    {isExpanded ? <ChevronUp size={15} color="#c5a059" /> : <ChevronDown size={15} color="#c5a059" />}
+                </div>
+            </div>
+
+            {isExpanded && (
+                <div className="gm-journal-body">
+                    {adventure?.name && (
+                        <div style={{ fontSize: '0.78rem', color: '#aaa', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span>Campanha: <strong style={{ color: '#e6c67c' }}>{adventure.name}</strong></span>
+                        </div>
+                    )}
+
+                    <div className="gm-journal-field">
+                        <label htmlFor="gm-campaign-premise">Resumo / Premissa da Aventura</label>
+                        <input
+                            id="gm-campaign-premise"
+                            type="text"
+                            className="gm-journal-premise-input"
+                            placeholder="Ex: Os heróis investigam o desaparecimento da caravana real e cultistas nas ruínas..."
+                            value={descriptionText}
+                            disabled={!canPersist}
+                            onChange={(e) => {
+                                const nextDesc = e.target.value;
+                                setDescriptionText(nextDesc);
+                                scheduleAutoSave(journalText, nextDesc);
+                            }}
+                        />
+                    </div>
+
+                    <div className="gm-journal-field">
+                        <label htmlFor="gm-campaign-journal">Diário da História, Quests, NPCs & Anotações de Sessão</label>
+                        <textarea
+                            id="gm-campaign-journal"
+                            className="gm-journal-textarea"
+                            placeholder={'Registre aqui o histórico das sessões, pistas descobertas, segredos de NPCs, ganchos de quests e eventos importantes da mesa...\n\nTudo é salvo automaticamente no navegador (IndexedDB) e incluído no Backup (.json) da campanha.'}
+                            value={journalText}
+                            disabled={!canPersist}
+                            onChange={(e) => {
+                                const nextJournal = e.target.value;
+                                setJournalText(nextJournal);
+                                scheduleAutoSave(nextJournal, descriptionText);
+                            }}
+                        />
+                    </div>
+
+                    <div className="gm-journal-footer">
+                        <span style={{ fontSize: '0.72rem', color: '#888' }}>
+                            {journalText.length.toLocaleString('pt-BR')} caracteres • Incluído automaticamente no Backup
+                        </span>
+                        <button
+                            type="button"
+                            className="gm-journal-export-btn"
+                            disabled={!canPersist || isExporting}
+                            onClick={handleExportBackup}
+                            title="Baixar arquivo completo de backup da campanha (.json) incluindo mapas, cenas, fichas, monstros e este diário"
+                        >
+                            <Download size={13} />
+                            <span>{isExporting ? 'Exportando...' : 'Exportar Backup (.json)'}</span>
+                        </button>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
 export const GMScreen: React.FC = () => {
     const { connectedPlayersData, removePlayer, peerId, triggerForceRefresh, currentAdventureId, updateRemotePlayerCharacter } = usePeer();
+    const { currentAdventure, updateAdventureJournal, downloadCampaignBackup } = useAdventure();
     const [editingPlayer, setEditingPlayer] = React.useState<{ peerId: string; name: string; character: any } | null>(null);
     const [copiedCode, setCopiedCode] = React.useState(false);
     const [copiedLink, setCopiedLink] = React.useState(false);
@@ -287,6 +463,16 @@ export const GMScreen: React.FC = () => {
                     </button>
                 </div>
             </div>
+
+            <ErrorBoundary name="CampaignJournal">
+                <CampaignJournalCard
+                    key={currentAdventure ? `adv-${currentAdventure.id}` : 'adv-loading'}
+                    adventure={currentAdventure}
+                    fallbackAdventureId={currentAdventureId}
+                    updateAdventureJournal={updateAdventureJournal}
+                    downloadCampaignBackup={downloadCampaignBackup}
+                />
+            </ErrorBoundary>
 
             <ErrorBoundary name="Soundboard">
                 <Soundboard />

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { initialMapConfig } from './mapTypes';
 import type { Scene } from './mapTypes';
 import { usePeer } from '../multiplayer/SocketContext';
@@ -17,43 +17,124 @@ interface SceneContextType {
 
 const SceneContext = createContext<SceneContextType | undefined>(undefined);
 
+const persistActiveSceneSelection = (adventureId: string, sceneId: string | null) => {
+    if (!adventureId) return;
+    try {
+        if (sceneId) {
+            localStorage.setItem('rpg_active_scene_' + adventureId, sceneId);
+        } else {
+            localStorage.removeItem('rpg_active_scene_' + adventureId);
+        }
+    } catch {
+        // Ignore storage quota errors
+    }
+
+    if (adventureId !== 'default') {
+        db.campaigns.update(adventureId, { activeSceneId: sceneId }).catch(err => {
+            console.warn('[SceneContext] Failed to persist activeSceneId to campaign:', err);
+        });
+    }
+};
+
 export const SceneProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const { currentAdventureId, isHost } = usePeer();
-    const { config, tokens, walls, setFullState } = useMap() as any;
+    const { config, tokens, walls, setFullState } = useMap();
 
-    const mapStateRef = React.useRef({ config, tokens, walls });
-    const lastSavedStateRef = React.useRef<string>('');
+    const safeAdventureId = currentAdventureId || '';
+
+    const mapStateRef = useRef({ config, tokens, walls });
+    const scenesRef = useRef<Scene[]>([]);
+    const lastSavedStateRef = useRef<string>('');
+
     useEffect(() => {
         mapStateRef.current = { config, tokens, walls };
     }, [config, tokens, walls]);
 
     const [scenes, setScenes] = useState<Scene[]>([]);
-    const [activeSceneId, setActiveSceneId] = useState<string | null>(null);
+    const [activeSceneId, setActiveSceneId] = useState<string | null>(() => {
+        if (!safeAdventureId) return null;
+        try {
+            return localStorage.getItem('rpg_active_scene_' + safeAdventureId) || null;
+        } catch {
+            return null;
+        }
+    });
 
-    // Load Scenes from Dexie IndexedDB
     useEffect(() => {
-        if (!currentAdventureId) return;
+        scenesRef.current = scenes;
+    }, [scenes]);
+
+    // Load Scenes & Active Scene ID from Dexie IndexedDB (with localStorage instant fallback)
+    useEffect(() => {
+        if (!safeAdventureId) return;
+        let isCancelled = false;
+        lastSavedStateRef.current = '';
+
+        let syncStoredId: string | null = null;
+        try {
+            syncStoredId = localStorage.getItem('rpg_active_scene_' + safeAdventureId);
+        } catch {
+            syncStoredId = null;
+        }
 
         const loadScenes = async () => {
             try {
-                const savedScenes = await db.scenes.where('campaignId').equals(currentAdventureId).toArray();
+                const [savedScenes, campaign] = await Promise.all([
+                    db.scenes.where('campaignId').equals(safeAdventureId).toArray(),
+                    safeAdventureId !== 'default' ? db.campaigns.get(safeAdventureId) : Promise.resolve(undefined)
+                ]);
+                if (isCancelled) return;
+
                 setScenes(savedScenes);
+                scenesRef.current = savedScenes;
+
+                const candidateId = campaign?.activeSceneId || syncStoredId || null;
+                if (candidateId && savedScenes.some(s => s.id === candidateId)) {
+                    setActiveSceneId(candidateId);
+                    persistActiveSceneSelection(safeAdventureId, candidateId);
+                } else if (savedScenes.length === 1) {
+                    // Link activeSceneId to initial scene WITHOUT overwriting MapContext (db.maps has fresher live state)
+                    const initialId = savedScenes[0].id;
+                    setActiveSceneId(initialId);
+                    persistActiveSceneSelection(safeAdventureId, initialId);
+                } else {
+                    setActiveSceneId(null);
+                }
             } catch (error) {
                 console.error("Error loading scenes from DB:", error);
             }
         };
-        loadScenes();
-    }, [currentAdventureId]);
 
-    // Helper to persist scene changes to Dexie
-    const persistScene = async (scene: Scene) => {
-        if (!currentAdventureId) return;
+        loadScenes();
+        return () => {
+            isCancelled = true;
+        };
+    }, [safeAdventureId]);
+
+    // Helper to persist scene changes to Dexie while preserving thumbnail, gridSnap, and metadata
+    const persistScene = useCallback(async (scene: Scene) => {
+        if (!safeAdventureId) return;
         try {
-            await db.scenes.put({ ...scene, campaignId: currentAdventureId } as any);
+            const existingInMem = scenesRef.current.find(s => s.id === scene.id);
+            const existingInDb = await db.scenes.get(scene.id);
+            const base = existingInDb || existingInMem;
+
+            const sceneWithExtras = scene as Scene & { gridSnap?: boolean };
+            const baseWithExtras = base as (Scene & { gridSnap?: boolean }) | undefined;
+
+            const merged: Scene & { campaignId: string; gridSnap?: boolean } = {
+                ...(base || {}),
+                ...scene,
+                campaignId: safeAdventureId,
+                thumbnail: scene.thumbnail !== undefined ? scene.thumbnail : base?.thumbnail,
+                gridSnap: sceneWithExtras.gridSnap !== undefined ? sceneWithExtras.gridSnap : baseWithExtras?.gridSnap
+            };
+
+            await db.scenes.put(merged as unknown as Scene);
         } catch (e) {
             console.error("Error saving scene:", e);
         }
-    };
+    }, [safeAdventureId]);
 
     // Helper to delete scene from Dexie
     const removeSceneFromDb = async (id: string) => {
@@ -72,108 +153,137 @@ export const SceneProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             tokens: [],
             walls: []
         };
-        // State update happens via listener or optimistic?
-        // Let's do optimistic
-        setScenes(prev => [...prev, newScene]);
+        setScenes(prev => {
+            const next = [...prev, newScene];
+            scenesRef.current = next;
+            return next;
+        });
         persistScene(newScene);
         return newScene;
     };
 
-    const updateScene = (id: string, updates: Partial<Scene>) => {
-        // SAFETY CHECK: Prevent massive Base64 strings from crashing Firebase
-        // Firebase has a 10MB limit per write. We limit background images to ~5MB to allow room for other data.
-        if (updates.config?.backgroundImage && updates.config.backgroundImage.length > 5000000) {
-            // console.warn('[SceneContext] Background Image > 5MB. This may cause sync issues, but trying anyway.');
-        }
-
-        setScenes(prev => prev.map(s => {
-            if (s.id === id) {
-                const updated = { ...s, ...updates };
-                persistScene(updated);
-                return updated;
-            }
-            return s;
-        }));
-    };
+    const updateScene = useCallback((id: string, updates: Partial<Scene>) => {
+        setScenes(prev => {
+            const next = prev.map(s => {
+                if (s.id === id) {
+                    const sExtras = s as Scene & { gridSnap?: boolean };
+                    const uExtras = updates as Partial<Scene> & { gridSnap?: boolean };
+                    const updated: Scene & { gridSnap?: boolean } = {
+                        ...s,
+                        ...updates,
+                        thumbnail: updates.thumbnail !== undefined ? updates.thumbnail : s.thumbnail,
+                        gridSnap: uExtras.gridSnap !== undefined ? uExtras.gridSnap : sExtras.gridSnap
+                    };
+                    persistScene(updated);
+                    return updated;
+                }
+                return s;
+            });
+            scenesRef.current = next;
+            return next;
+        });
+    }, [persistScene]);
 
     const deleteScene = (id: string) => {
-        setScenes(prev => prev.filter(s => s.id !== id));
+        setScenes(prev => {
+            const next = prev.filter(s => s.id !== id);
+            scenesRef.current = next;
+            return next;
+        });
         removeSceneFromDb(id);
-        if (activeSceneId === id) setActiveSceneId(null);
+        if (activeSceneId === id) {
+            setActiveSceneId(null);
+            if (safeAdventureId) {
+                persistActiveSceneSelection(safeAdventureId, null);
+            }
+        }
     };
 
-    // 4. AUTO-SAVE & SYNC:
+    // Sync LIVE MAP state back into the active Scene entry (without ever overwriting MapContext)
+    const syncActiveSceneWithLiveMap = useCallback(async () => {
+        if (!isHost || !activeSceneId || !safeAdventureId) return;
 
-    // Periodically sync the LIVE MAP state back to the SCENE LIBRARY Entry
-    // This ensures that if we crash or refresh, the "Scene" entity is up to date,
-    // not just the "Live Map" entity.
+        const currentState = {
+            config: mapStateRef.current.config || initialMapConfig,
+            tokens: mapStateRef.current.tokens || [],
+            walls: mapStateRef.current.walls || []
+        };
+
+        // Guard against unhydrated MapContext state right after F5 before db.maps resolves
+        const existingScene = scenesRef.current.find(s => s.id === activeSceneId);
+        const isLiveEmpty = currentState.tokens.length === 0
+            && currentState.walls.length === 0
+            && !currentState.config.backgroundImage;
+        const hadSceneContent = existingScene && (
+            (existingScene.tokens?.length || 0) > 0 ||
+            (existingScene.walls?.length || 0) > 0 ||
+            !!existingScene.config?.backgroundImage
+        );
+
+        if (isLiveEmpty && hadSceneContent) {
+            const mapInDb = await db.maps.where('campaignId').equals(safeAdventureId).first();
+            if (mapInDb && ((mapInDb.tokens?.length || 0) > 0 || (mapInDb.walls?.length || 0) > 0 || !!mapInDb.config?.backgroundImage)) {
+                return;
+            }
+        }
+
+        const stateStr = JSON.stringify(currentState);
+        if (stateStr !== lastSavedStateRef.current) {
+            updateScene(activeSceneId, currentState);
+            lastSavedStateRef.current = stateStr;
+        }
+    }, [isHost, activeSceneId, safeAdventureId, updateScene]);
+
+    // Debounced sync when live map changes
     useEffect(() => {
-        if (!activeSceneId || !currentAdventureId) return;
+        if (!isHost || !activeSceneId || !safeAdventureId) return;
+
+        const debounceTimer = setTimeout(() => {
+            syncActiveSceneWithLiveMap().catch(console.error);
+        }, 1500);
+
+        return () => clearTimeout(debounceTimer);
+    }, [config, tokens, walls, isHost, activeSceneId, safeAdventureId, syncActiveSceneWithLiveMap]);
+
+    // Periodic safety sync every 10s
+    useEffect(() => {
+        if (!isHost || !activeSceneId || !safeAdventureId) return;
 
         const timer = setInterval(() => {
-            // OPTIMIZATION: ONLY HOST SAVES
-            if (!isHost) return;
-
-            if (activeSceneId) {
-                const currentState = {
-                    config: mapStateRef.current.config || initialMapConfig,
-                    tokens: mapStateRef.current.tokens || [],
-                    walls: mapStateRef.current.walls || []
-                };
-
-                // OPTIMIZATION: DIRTY CHECK
-                // Calculate simple checksum/string of the critical data
-                // We use JSON.stringify but we can exclude some volatile fields if needed.
-                const stateStr = JSON.stringify(currentState);
-
-                if (stateStr !== lastSavedStateRef.current) {
-                    console.log('[SceneContext] Auto-Syncing Active Scene (Changes Detected)...');
-                    updateScene(activeSceneId, currentState);
-                    lastSavedStateRef.current = stateStr;
-                }
-            }
-        }, 10000); // Every 10 seconds
+            syncActiveSceneWithLiveMap().catch(console.error);
+        }, 10000);
 
         return () => clearInterval(timer);
-    }, [activeSceneId, currentAdventureId, isHost]);
+    }, [activeSceneId, safeAdventureId, isHost, syncActiveSceneWithLiveMap]);
 
-    // 5. Save on Unload (Refresh/Close)
+    // Save on Unload (Refresh/Close) preserving thumbnail & gridSnap
     useEffect(() => {
         const handleUnload = () => {
-            if (activeSceneId && currentAdventureId) {
-                // Attempt to save synchronously? No, async is best we can do.
-                // Firebase REST API via navigator.sendBeacon might be better but let's try direct update.
-                // Note: React state might be gone, rely on Ref.
-                const finalState = mapStateRef.current;
-                console.log('[SceneContext] Unload Save...', activeSceneId);
-                // We can't easily await here, but we can trigger the update.
-                // Direct DB put if possible?
-                // updateScene is async-ish.
-                persistScene({
-                    id: activeSceneId,
-                    name: scenes.find(s => s.id === activeSceneId)?.name || 'Untitled',
-                    ...finalState
-                } as Scene);
-            }
+            if (!isHost || !activeSceneId || !safeAdventureId) return;
+            const finalState = mapStateRef.current;
+            const existingScene = scenesRef.current.find(s => s.id === activeSceneId);
+            if (!existingScene) return;
+
+            persistScene({
+                ...existingScene,
+                id: activeSceneId,
+                name: existingScene.name || 'Untitled',
+                config: finalState.config,
+                tokens: finalState.tokens,
+                walls: finalState.walls
+            });
         };
         window.addEventListener('beforeunload', handleUnload);
         return () => window.removeEventListener('beforeunload', handleUnload);
-    }, [activeSceneId, currentAdventureId, scenes]);
-
-    // PREVIOUSLY: Effect to hydrate map from scene
-    // REMOVED: We do not want to auto-load scene data onto the live map 
-    // just because the ID changed or we refreshed. 
-    // The Live Map (MapContext) is the Source of Truth.
+    }, [isHost, activeSceneId, safeAdventureId, persistScene]);
 
     const activateScene = (id: string) => {
+        if (activeSceneId === id) {
+            return;
+        }
+
         // 1. Auto-Save CURRENT scene before leaving (if we were in one)
         if (activeSceneId) {
-            // We can optionally save the current state back to the OLD scene before switching
-            // But for now, let's just switch.
-            // Ideally: updateScene(activeSceneId, { config, tokens, walls }); 
-            // But 'config/tokens/walls' here might be stale if we don't pull from MapContext.
-            // MapContext passed them in config/tokens/walls props earlier? 
-            // Yes, pulled from useMap(). So they are current.
             updateScene(activeSceneId, { config, tokens, walls });
         }
 
@@ -182,9 +292,17 @@ export const SceneProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
         console.log('[SceneContext] Activating Scene (GM):', scene.name);
         setActiveSceneId(id);
+        if (safeAdventureId) {
+            persistActiveSceneSelection(safeAdventureId, id);
+        }
+
+        lastSavedStateRef.current = JSON.stringify({
+            config: scene.config || initialMapConfig,
+            tokens: scene.tokens || [],
+            walls: scene.walls || []
+        });
 
         // 2. EXPLICITLY Hydrate the Live Map
-        // This overwrites the current live map with the Scene's stored data
         if (setFullState) {
             setFullState(scene.config, scene.tokens, scene.walls);
         }
@@ -195,8 +313,8 @@ export const SceneProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
         updateScene(sceneId, {
             config: config,
-            tokens: tokens, // Current tokens
-            walls: walls    // Current walls
+            tokens: tokens,
+            walls: walls
         });
         console.log('[SceneContext] Saved current state to scene:', sceneId);
         alert(`Cena salva!`);

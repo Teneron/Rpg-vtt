@@ -1,4 +1,5 @@
 import React from 'react';
+import { useMap } from './MapContext';
 import type { MapToken, MapConfig } from './mapTypes';
 import './Token.css';
 
@@ -13,14 +14,16 @@ interface TokenProps {
     isOwner: boolean;
     isActiveTurn: boolean;
     isTargeted: boolean;
+    isHiddenByFog?: boolean;
 }
 
 // MEMOIZED TOKEN COMPONENT
 // export const Token = React.memo<TokenProps>(({
 export const Token: React.FC<TokenProps> = ({
     token, config, isDragging, onPointerDown,
-    isHost, isOwner, isActiveTurn, isTargeted
+    isHost, isOwner, isActiveTurn, isTargeted, isHiddenByFog = false
 }) => {
+    const { interactionMode } = useMap();
     const { gridSize } = config;
     const [hasError, setHasError] = React.useState(false);
 
@@ -42,13 +45,21 @@ export const Token: React.FC<TokenProps> = ({
     // Visibility Logic
     if (token.invisible && !isHost) return null; // HIDDEN FOR PLAYERS
 
-    // Premium Feel: Cursor
-    const cursorStyle = onPointerDown ? (isDragging ? 'grabbing' : (token.isLocked ? 'default' : 'grab')) : 'default';
+    // Premium Feel: Cursor (crosshair in ping/measure/draw modes)
+    const isCrosshairMode = interactionMode === 'ping' || interactionMode === 'measure' || interactionMode === 'draw';
+    const cursorStyle = isCrosshairMode
+        ? 'crosshair'
+        : (onPointerDown ? (isDragging ? 'grabbing' : (token.isLocked ? 'default' : 'grab')) : 'default');
+
+    const effectiveOpacity = isHiddenByFog ? 0 : ((token.invisible && isHost) ? 0.5 : 1);
 
     return (
         <div
-            className={`map-token ${isActiveTurn ? 'active-turn' : ''}`}
-            onPointerDown={(e) => onPointerDown && onPointerDown(e)}
+            className={`map-token ${isActiveTurn && !isHiddenByFog ? 'active-turn' : ''}`}
+            onPointerDown={(e) => {
+                if (isHiddenByFog && !isCrosshairMode && !e.altKey) return;
+                if (onPointerDown) onPointerDown(e);
+            }}
             style={{
                 width: token.size * gridSize,
                 height: token.size * gridSize,
@@ -59,19 +70,18 @@ export const Token: React.FC<TokenProps> = ({
                 fontSize: Math.max(12, gridSize * 0.4),
                 cursor: cursorStyle,
                 zIndex: isDragging ? 100 : (isActiveTurn ? 25 : (token.isAsset ? 1 : 10)),
-                opacity: (token.invisible && isHost) ? 0.5 : 1, // GHOST MODE FOR GM
+                opacity: effectiveOpacity, // GHOST MODE FOR GM / HIDDEN OUTSIDE LIVE SIGHT FOR PLAYERS
+                pointerEvents: isHiddenByFog ? 'none' : undefined,
                 filter: (token.invisible && isHost) ? 'grayscale(100%)' : 'none',
-                // Optimize transition: remove 'left/top' transition if it causes blur during movement end? 
-                // Actually, the cubic-bezier might end in sub-pixels? No, React handles the final value.
                 transition: isDragging
-                    ? 'box-shadow 0.2s, transform 0.2s'
-                    : 'left 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), top 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.2s, transform 0.2s',
+                    ? 'box-shadow 0.2s, transform 0.2s, opacity 0.2s ease'
+                    : 'left 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), top 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.2s, transform 0.2s, opacity 0.2s ease',
                 boxShadow: isDragging
                     ? '0 15px 30px rgba(0,0,0,0.6)'
                     : (isActiveTurn ? '0 0 15px #ffd700, 0 0 30px #ffaa00' : '0 2px 5px rgba(0,0,0,0.4)'),
                 transform: isDragging
                     ? 'scale(1.15) translateY(-5px)'
-                    : `scale(1) rotate(${token.rotation || 0}deg) translateZ(0)`, // Force GPU but keep sharp?
+                    : `scale(1) rotate(${token.rotation || 0}deg) translateZ(0)`,
                 // Optimization: Will Change for transforms
                 willChange: isDragging ? 'transform, left, top' : 'auto',
 
@@ -80,12 +90,11 @@ export const Token: React.FC<TokenProps> = ({
                 border: token.isAsset ? 'none' : undefined, // CSS handles 2px solid #fff default
 
                 // FORCE SHARPNESS
-                imageRendering: 'auto', // '-webkit-optimize-contrast' is often better but non-standard in TS. 'auto' usually valid. 
-                // We'll add the webkit one via style cast or global CSS if needed.
+                imageRendering: 'auto',
                 backfaceVisibility: 'hidden',
                 WebkitFontSmoothing: 'subpixel-antialiased'
             }}
-            title={(hasHpData && (isHost || isOwner)) ? `${token.name} (HP: ${currentHp}/${maxHp})` : token.name}
+            title={isHiddenByFog ? undefined : ((hasHpData && (isHost || isOwner)) ? `${token.name} (HP: ${currentHp}/${maxHp})` : token.name)}
         >
             {/* HP Bar Overlay */}
             {showHpBar && (
@@ -120,7 +129,6 @@ export const Token: React.FC<TokenProps> = ({
                         borderRadius: token.isAsset ? '0' : '50%',
                         objectFit: 'contain',
                         pointerEvents: 'none', // Prevent dragging image ghost
-                        // Ensure image itself is rendered nicely
                         transform: 'translateZ(0)',
                         backfaceVisibility: 'hidden',
                     }}
@@ -236,40 +244,3 @@ export const Token: React.FC<TokenProps> = ({
         </div>
     );
 };
-/*, (prev, next) => {
-    // Custom Comparison Function
-    // Return true if equal (do not re-render)
-
-    // 1. Primitive checks
-    if (prev.isDragging !== next.isDragging) return false;
-    if (prev.isActiveTurn !== next.isActiveTurn) return false;
-    if (prev.isTargeted !== next.isTargeted) return false;
-    if (prev.isHost !== next.isHost) return false;
-    if (prev.isOwner !== next.isOwner) return false;
-    if (prev.config.gridSize !== next.config.gridSize) return false;
-
-    // 2. Token Data checks
-    const t1 = prev.token;
-    const t2 = next.token;
-
-    if (t1.id !== t2.id) return false;
-    if (t1.name !== t2.name) return false;
-    if (t1.color !== t2.color) return false;
-    if (t1.size !== t2.size) return false;
-    if (t1.imageUrl !== t2.imageUrl) return false;
-    if (t1.rotation !== t2.rotation) return false;
-    if (t1.invisible !== t2.invisible) return false;
-
-    // Position
-    if (t1.position.x !== t2.position.x || t1.position.y !== t2.position.y) return false;
-
-    // HP - Deep check needed?
-    // Parent merges HP, so checks if object reference is different?
-    // If parent creates new object every time, t1.hp !== t2.hp always.
-    // So we must check values.
-    if (t1.hp?.current !== t2.hp?.current) return false;
-    if (t1.hp?.max !== t2.hp?.max) return false;
-    if (t1.hp?.temp !== t2.hp?.temp) return false;
-
-    return true; // Everything relevant is same
-});*/

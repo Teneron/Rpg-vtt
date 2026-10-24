@@ -1,10 +1,9 @@
-
 import React from 'react';
 import type { Character } from '../characterTypes';
 
 interface BioPanelProps {
     character: Character;
-    onUpdateTrait: (field: 'personalityTraits' | 'ideals' | 'bonds' | 'flaws', value: string) => void;
+    onUpdateTrait: (field: 'personalityTraits' | 'ideals' | 'bonds' | 'flaws' | 'backstory' | 'notes', value: string) => void;
 }
 
 export const BioPanel: React.FC<BioPanelProps> = ({ character, onUpdateTrait }) => {
@@ -43,9 +42,30 @@ export const BioPanel: React.FC<BioPanelProps> = ({ character, onUpdateTrait }) 
                 </div>
             </div>
 
+            {/* HISTÓRIA & DIÁRIO DO PERSONAGEM */}
+            <div className="panel-box story-box">
+                <h4 className="box-header">História &amp; Diário do Personagem</h4>
+                <div className="story-field">
+                    <label>História de Origem (Backstory)</label>
+                    <textarea
+                        value={character.backstory || ''}
+                        onChange={e => onUpdateTrait('backstory', e.target.value)}
+                        placeholder="Escreva a origem, passado, motivações e marcos da vida do seu personagem..."
+                    />
+                </div>
+                <div className="story-field" style={{ marginBottom: 0 }}>
+                    <label>Diário de Sessão &amp; Anotações</label>
+                    <textarea
+                        value={character.notes || ''}
+                        onChange={e => onUpdateTrait('notes', e.target.value)}
+                        placeholder="Anotações da aventura, pistas descobertas, aliados, inimigos e lembretes..."
+                    />
+                </div>
+            </div>
+
             {/* FEATURES & TRAITS (Scrollable List) */}
             <div className="panel-box" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-                <h4 className="box-header">Características & Talentos</h4>
+                <h4 className="box-header">Características &amp; Talentos</h4>
                 <div className="features-list">
                     {(character.features || []).map((feat, i) => (
                         <div key={i} className="feature-item">
@@ -65,6 +85,37 @@ export const BioPanel: React.FC<BioPanelProps> = ({ character, onUpdateTrait }) 
                 .trait-field textarea { 
                     width: 100%; height: 40px; background: transparent; border: none; 
                     color: #eee; font-size: 0.85rem; resize: none; 
+                }
+
+                .story-field {
+                    margin-bottom: 10px;
+                    background: #1d1d22;
+                    padding: 8px;
+                    border-radius: 5px;
+                    border: 1px solid #35353d;
+                }
+                .story-field label {
+                    font-size: 0.72rem;
+                    text-transform: uppercase;
+                    letter-spacing: 0.4px;
+                    color: #c5a059;
+                    font-weight: 600;
+                    display: block;
+                    margin-bottom: 5px;
+                }
+                .story-field textarea {
+                    width: 100%;
+                    min-height: 95px;
+                    background: transparent;
+                    border: none;
+                    color: #eee;
+                    font-size: 0.86rem;
+                    line-height: 1.45;
+                    resize: vertical;
+                    outline: none;
+                }
+                .story-field textarea::placeholder {
+                    color: #666;
                 }
                 
                 .features-list { overflow-y: auto; flex: 1; padding-right: 5px; }

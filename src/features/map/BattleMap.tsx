@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useMap } from './MapContext';
 import { usePeer } from '../multiplayer/SocketContext';
 import { useCombat } from '../combat/CombatContext';
@@ -7,7 +7,7 @@ import { Token } from './Token';
 import { MeasurementOverlay } from './MeasurementOverlay';
 import { EphemeralLayer } from './EphemeralLayer';
 import { WallLayer } from './WallLayer';
-import { FogOfWarLayer } from './FogOfWarLayer';
+import { FogOfWarLayer, computeMapVisionZones, isTokenVisibleInZones } from './FogOfWarLayer';
 import { TokenSettingsModal } from './TokenSettingsModal';
 import { AssetSettingsModal } from './AssetSettingsModal';
 import { MonsterRepository } from '../monsters/MonsterRepository';
@@ -29,9 +29,11 @@ export const BattleMap: React.FC = () => {
     const {
         config,
         tokens,
+        walls,
         updateTokenPosition,
         addToken,
-        interactionMode
+        interactionMode,
+        setInteractionMode
     } = useMap();
 
     const { isHost, myCharacter, connectedPlayersData, broadcast, isConnected, username } = usePeer();
@@ -39,8 +41,30 @@ export const BattleMap: React.FC = () => {
     // Map View State
     const [scale, setScale] = useState(1);
     const [offset, setOffset] = useState({ x: 0, y: 0 });
+    const lastPingTimeRef = useRef<number>(0);
+
+    // Return to 'select' mode when pressing Escape in tool modes
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                if (
+                    interactionMode === 'ping' ||
+                    interactionMode === 'measure' ||
+                    interactionMode === 'draw' ||
+                    interactionMode === 'wall'
+                ) {
+                    setInteractionMode('select');
+                }
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [interactionMode, setInteractionMode]);
 
     const triggerPing = (clientX: number, clientY: number) => {
+        const now = Date.now();
+        if (now - lastPingTimeRef.current < 400) return;
+
         const rect = containerRef.current?.getBoundingClientRect();
         if (!rect) return;
 
@@ -49,17 +73,20 @@ export const BattleMap: React.FC = () => {
 
         const gridX = rawX / config.gridSize;
         const gridY = rawY / config.gridSize;
+        if (!Number.isFinite(gridX) || !Number.isFinite(gridY)) return;
+
+        lastPingTimeRef.current = now;
 
         const playerName = myCharacter?.name || username || (isHost ? 'Mestre' : 'Jogador');
         const playerColor = isHost ? '#ef4444' : '#38bdf8';
 
         const pingPayload: MapPing = {
-            id: (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now()),
+            id: (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `ping-${now}-${Math.random().toString(36).slice(2, 8)}`,
             x: gridX,
             y: gridY,
             color: playerColor,
             senderName: playerName,
-            timestamp: Date.now()
+            timestamp: now
         };
 
         // 1. Emite localmente
@@ -179,7 +206,11 @@ export const BattleMap: React.FC = () => {
     const handleWrapperPointerUp = (e: React.PointerEvent) => {
         if (isPanning) {
             setIsPanning(false);
-            (e.target as Element).releasePointerCapture(e.pointerId);
+            try {
+                (e.target as Element).releasePointerCapture(e.pointerId);
+            } catch {
+                // Ignore if pointer was not captured
+            }
         }
 
         if (draggingTokenId) {
@@ -217,7 +248,15 @@ export const BattleMap: React.FC = () => {
             return;
         }
 
-        if (e.button !== 0 || interactionMode === 'wall' || interactionMode === 'fog') return;
+        if (
+            e.button !== 0 ||
+            interactionMode === 'wall' ||
+            interactionMode === 'fog' ||
+            interactionMode === 'measure' ||
+            interactionMode === 'draw'
+        ) {
+            return;
+        }
 
         if (e.shiftKey) {
             e.stopPropagation();
@@ -344,8 +383,6 @@ export const BattleMap: React.FC = () => {
                 });
 
                 // 2. Add to Combat Tracker (Auto-Roll Initiative or 0)
-                // We need to construct a Combatant. 
-                // data should contain enough info.
                 addCombatant({
                     id: combatantId,
                     name: data.name,
@@ -387,6 +424,29 @@ export const BattleMap: React.FC = () => {
 
     const rulerInfo = getDragDistanceInfo();
 
+    // Shared live vision zones (used both by FogOfWarLayer canvas and to hide unseen monsters inside explored shroud)
+    const liveVisionZones = React.useMemo(() => {
+        return computeMapVisionZones(
+            config,
+            tokens,
+            walls,
+            isHost,
+            myCharacter,
+            connectedPlayersData
+        );
+    }, [
+        config.width,
+        config.height,
+        config.gridSize,
+        config.fogEnabled,
+        config.globalLight,
+        tokens,
+        walls,
+        isHost,
+        myCharacter,
+        connectedPlayersData
+    ]);
+
     // --- MEMOIZED TOKENS FOR PERFORMANCE ---
     // Prepare display tokens only when dependencies change
     const displayTokens = React.useMemo(() => {
@@ -397,8 +457,6 @@ export const BattleMap: React.FC = () => {
             const isMe = myCharacter?.id === item.characterId;
             const linkedPeer = Object.values(connectedPlayersData).find(p => p.character?.id === item.characterId);
             const sourceChar = isMe ? myCharacter : linkedPeer?.character;
-
-
 
             return {
                 ...item,
@@ -417,9 +475,19 @@ export const BattleMap: React.FC = () => {
         });
     }, [tokens, connectedPlayersData, myCharacter, draggingTokenId, tempTokenPos.x, tempTokenPos.y, config.gridSize]);
 
+    const isFogRestrictingPlayerSight = !isHost && config.fogEnabled !== false && config.globalLight !== 'bright';
+
     // Helper to render a single token (so we don't inline the function in JSX)
     const renderToken = (displayToken: any) => {
         const isOwner = myCharacter?.id === displayToken.characterId;
+        const isAlliedPlayerToken = Boolean(displayToken.characterId) || isOwner;
+
+        // Hide enemy/NPC creature tokens outside live sight so explored fog shroud (0.68 alpha) reveals terrain ONLY, never monsters!
+        const isHiddenByFog = isFogRestrictingPlayerSight &&
+            !isAlliedPlayerToken &&
+            !displayToken.isAsset &&
+            !isTokenVisibleInZones(displayToken, config.gridSize, liveVisionZones);
+
         const isActiveTurn = combatState.isActive && (
             combatState.activeTurnId === displayToken.id ||
             combatState.activeTurnId === displayToken.combatantId ||
@@ -438,7 +506,14 @@ export const BattleMap: React.FC = () => {
                         setEditingTokenId(displayToken.id);
                     }
                 }}
-                style={{ position: 'absolute', left: 0, top: 0, width: 0, height: 0 }}
+                style={{
+                    position: 'absolute',
+                    left: 0,
+                    top: 0,
+                    width: 0,
+                    height: 0,
+                    pointerEvents: isHiddenByFog ? 'none' : undefined
+                }}
             >
                 <Token
                     token={displayToken}
@@ -449,6 +524,7 @@ export const BattleMap: React.FC = () => {
                     isOwner={isOwner}
                     isActiveTurn={!!isActiveTurn}
                     isTargeted={isTargeted}
+                    isHiddenByFog={isHiddenByFog}
                 />
                 {/* PREMIUM RULER LABEL */}
                 {displayToken.isDragging && rulerInfo && (
@@ -516,7 +592,6 @@ export const BattleMap: React.FC = () => {
                 touchAction: 'none',
                 boxShadow: isDragOver ? 'inset 0 0 0 2px #44ff44' : 'none',
                 transition: 'box-shadow 0.2s',
-                // Optimizations
                 willChange: isPanning ? 'cursor' : 'auto'
             }}
         >
@@ -530,10 +605,7 @@ export const BattleMap: React.FC = () => {
                     position: 'absolute',
                     background: config.backgroundImageType !== 'video' && config.backgroundImage ? `url(${config.backgroundImage})` : '#222',
                     backgroundSize: 'cover',
-                    // REMOVED HEAVY BOX-SHADOW: boxShadow: '0 0 50px rgba(0,0,0,0.5)' 
-                    // Use a simple outline or border if needed, or nothing for pure performance.
                     border: '1px solid #333',
-                    // Optimization hint
                     willChange: 'transform'
                 }}
             >
@@ -587,7 +659,7 @@ export const BattleMap: React.FC = () => {
                             strokeWidth={(2 / scale)}
                             strokeDasharray={rulerInfo.isExceeded ? "0" : "8,4"}
                             strokeLinecap="round"
-                            style={{ transition: 'stroke 0.3s ease' }} // Removed heavy filter here to see if it helps, kept in defs
+                            style={{ transition: 'stroke 0.3s ease' }}
                         />
                         <circle
                             cx={rulerInfo.startX + config.gridSize / 2}
@@ -612,7 +684,7 @@ export const BattleMap: React.FC = () => {
                 <EphemeralLayer scale={scale} />
 
                 {/* 5. Unified Fog/Lighting (Top) */}
-                <MemoizedFogOfWarLayer />
+                <MemoizedFogOfWarLayer visionZones={liveVisionZones} />
             </div>
 
             {/* 6. Monster Stat Block Overlay (Right Side) */}
@@ -644,8 +716,8 @@ export const BattleMap: React.FC = () => {
                 return null;
             })()}
 
-            {/* UI Controls */}
-            <div style={{ position: 'absolute', bottom: 20, right: 20, display: 'flex', gap: 10 }}>
+            {/* UI Zoom Controls — positioned cleanly above floating Chat Toggle button (bottom: 20px, 60x60) */}
+            <div style={{ position: 'absolute', bottom: '92px', right: '20px', zIndex: 500, display: 'flex', gap: 10 }}>
                 <button onClick={() => setScale(s => s * 1.2)} style={{ ...btnStyle, display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Aproximar">
                     <Plus size={14} />
                 </button>
@@ -655,7 +727,6 @@ export const BattleMap: React.FC = () => {
                 </button>
             </div>
 
-            {/* Modals */}
             {/* Modals */}
             {(() => {
                 if (!editingTokenId) return null;

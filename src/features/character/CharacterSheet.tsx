@@ -73,15 +73,15 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
         // This ensures previous character's "typing" state doesn't block new character's load
         dirtyRef.current = false;
 
-        // Local Load first (Non-GM)
-        if (!isGM && character.id !== characterId && characterId) {
+        // Local Load first
+        if (character.id !== characterId && characterId) {
             CharacterRepository.loadAsync(characterId).then(loaded => {
                 if (loaded) {
                     setCharacter(regenerateCharacterStats({ ...initialCharacter, ...loaded }));
                 }
             });
         }
-    }, [characterId, isGM]);
+    }, [characterId, character.id]);
 
     // 2.5: GM Remote Sync (Load from Connected Players)
     // Allows GM/Player bidirectional sync (e.g. for Level Up)
@@ -103,11 +103,6 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
 
             if (remoteWrapper && remoteWrapper.character) {
                 const rChar = remoteWrapper.character;
-
-                // CRITICAL FIX: Ensure we don't overwrite local edits while "typing" if possible, 
-                // but for GM Edit we generally want to see what the player has.
-                // However, infinite loops are bad.
-                // JSON stringify comparison is heavy but safe.
 
                 // FIX: If we have unsaved local changes (dirty), DO NOT overwrite them with remote data.
                 // This prevents the "Reset" bug when GM is typing and a heartbeat/sync arrives.
@@ -132,26 +127,36 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
                 } else if (remoteTime < localTime) {
                     console.log(`[CharacterSheet] GM Sync: Ignoring OLDER remote update (${remoteTime} < ${localTime}). Keeping local.`);
                 } else if (JSON.stringify(rChar) !== JSON.stringify(character)) {
-                    // Same timestamp but different content? Tie-break or just take it to ensure consistency?
-                    // Usually safe to take it if we aren't dirty.
                     console.log("[CharacterSheet] GM Sync: Updating (Timestamp tie/missing)", rChar.name);
                     setCharacter(regenerateCharacterStats(rChar));
                 }
             } else if (isGM) {
-                // Character ID exists but not found in connected players?
-                // Might be offline or loading.
                 console.log("[CharacterSheet] Waiting for remote character data...", characterId);
             }
         }
     }, [characterId, connectedPlayersData, myCharacter, isGM]);
 
-    // 3. GM Force Update (Event based, mostly for internal app logic)
+    // 3. Force Update / Local Sync (e.g. from TokenSettingsModal or InitiativeTracker)
     useEffect(() => {
         const handleForceUpdate = (e: CustomEvent<Character>) => {
-            if (e.detail.id === characterId) setCharacter(e.detail);
+            if (e.detail && e.detail.id === characterId) {
+                setCharacter(regenerateCharacterStats(e.detail));
+            }
+        };
+        const handleLocalCharSave = (e: Event) => {
+            const detail = (e as CustomEvent<Character>).detail;
+            if (!detail || detail.id !== characterId || dirtyRef.current) return;
+            const currentMod = characterRef.current?.lastModified || 0;
+            if ((detail.lastModified || 0) > currentMod) {
+                setCharacter(regenerateCharacterStats(detail));
+            }
         };
         window.addEventListener('character_force_update' as any, handleForceUpdate);
-        return () => window.removeEventListener('character_force_update' as any, handleForceUpdate);
+        window.addEventListener('rpg_local_char_save', handleLocalCharSave);
+        return () => {
+            window.removeEventListener('character_force_update' as any, handleForceUpdate);
+            window.removeEventListener('rpg_local_char_save', handleLocalCharSave);
+        };
     }, [characterId]);
 
     // 4. Auto-Save (Debounced)
@@ -201,20 +206,25 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
         }
 
         // Identity Check: Am I fixing my own character or someone else's?
-        // Note: myCharacter.id checks the loaded Context character. character.id is the Sheet character.
         const isMyCharacter = myCharacter?.id === characterId;
 
         if (isGM && !isMyCharacter) {
             // GM VIEWING ANOTHER PLAYER:
             console.log("GM viewing player: Saving changes to remote player via broadcast...", charToSave.name);
 
-            // Find the owner peer ID
+            // 1. ALWAYS save local cache for GM first, to prevent "Reset on Reopen" and include in Campaign Backup
+            CharacterRepository.save(charToSave);
+            sessionStorage.setItem(`last_gm_edit_${characterId}`, Date.now().toString());
+
+            // 2. Dispatch Local Event so GM's own MapContext tokens and CombatContext combatants update immediately
+            window.dispatchEvent(new CustomEvent('rpg_local_char_save', { detail: charToSave }));
+
+            // 3. Find the owner peer ID and sync over network if connected
             const ownerPeer = Object.values(connectedPlayersData).find(p => p.character?.id === characterId);
 
             if (ownerPeer) {
                 console.log("[DEBUG SAVE] Found Owner Peer:", ownerPeer.name, ownerPeer.peerId);
                 updateRemotePlayerCharacter(ownerPeer.peerId, charToSave);
-                // Visual Feedback for GM (R3: CSS corrigido sem espaços nos identificadores)
                 const toast = document.createElement('div');
                 toast.textContent = `Salvo em ${ownerPeer.name}!`;
                 toast.style.cssText = `
@@ -225,14 +235,17 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
                 document.body.appendChild(toast);
                 setTimeout(() => toast.remove(), 2000);
             } else {
-                console.warn("[DEBUG SAVE] Could not find owner peer to sync. List:", Object.keys(connectedPlayersData).length);
-                console.warn("[DEBUG SAVE] Looking for CharID:", characterId);
-                alert("Atenção: Jogador desconectado ou não encontrado. Salvo apenas localmente. O Token NÃO atualizará.");
+                console.warn("[DEBUG SAVE] Owner peer offline; saved locally and synced with GM map/combat:", characterId);
+                const toast = document.createElement('div');
+                toast.textContent = `Ficha salva localmente na mesa (jogador offline).`;
+                toast.style.cssText = `
+                    position: fixed; top: 10px; right: 10px; background: #d97706; color: #fff;
+                    padding: 10px 20px; border-radius: 4px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+                    z-index: 9999; animation: fadeOut 2.5s forwards;
+                `;
+                document.body.appendChild(toast);
+                setTimeout(() => toast.remove(), 2500);
             }
-
-            // ALWAYS save local cache for GM too, to prevent "Reset on Reopen"
-            CharacterRepository.save(charToSave);
-            sessionStorage.setItem(`last_gm_edit_${characterId}`, Date.now().toString());
 
             return;
         }
@@ -251,17 +264,12 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
         // 3. Broadcast to peers
         broadcastCharacterUpdate(charToSave);
 
-        // 4. Dispatch Local Event for Map Sync (Host/Client Local Update)
-        // This ensures MapContext updates the Token immediately without waiting for Network/DB Roundtrip
+        // 4. Dispatch Local Event for Map & Combat Sync (Host/Client Local Update)
         window.dispatchEvent(new CustomEvent('rpg_local_char_save', { detail: charToSave }));
     };
 
     handleSaveRef.current = handleSave;
 
-    // 5. Live Sync (Removed: Handled by handleSave and useEffect above)
-    // usePlayerSync(character);
-
-    // FIX: Immediate Save on Image Change (to ensure Map updates fast)
     // FIX: Immediate Save on Image Change with Feedback
     const prevImgRef = React.useRef(character.imageUrl);
     const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
@@ -301,23 +309,14 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
     const handleEquipToggle = (itemId: string, equipped: boolean) => {
         const nextInv = (character.inventory || []).map(i => {
             if (i.id === itemId) return { ...i, equipped };
-            // Auto-unequip other armors/shields if strictly one slot? (Optional)
-            // For now, simple toggle.
             return i;
         });
 
-        // If equipping armor, could auto-calc AC, but regenerateCharacterStats usually handles it base on equipped items.
-        // We'll update the char and let the helper do the heavy lifting if needed, or just persist state.
         const nextChar = { ...character, inventory: nextInv };
-        // Trigger regen to update AC if Armor changed
         const statsChar = regenerateCharacterStats(nextChar);
 
         setCharacterWithDirty(statsChar);
     };
-    // Broadcast? Yes, useEffect auto-saves after 1s.
-    // But for peer sync, we might want immediate?
-    // usePeer().broadcastCharacterUpdate(regenedChar); // Maybe? 
-    // The auto-save effect relies on 'handleSave'.
 
     const handleRemoveItem = (itemId: string) => {
         if (!confirm('Tem certeza que deseja remover este item para sempre?')) return;
@@ -352,12 +351,12 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
             const maxTox = nextResources[resourceIndex].max;
 
             if (currentTox + toxicity > maxTox) {
-                alert(`CUIDADO! Beber esta poção excederá sua Toxicidade Máxima(${maxTox}).Você sofrerá overdose!`);
+                alert(`CUIDADO! Beber esta poção excederá sua Toxicidade Máxima (${maxTox}). Você sofrerá overdose!`);
             }
 
             nextResources[resourceIndex] = {
                 ...nextResources[resourceIndex],
-                current: Math.min(maxTox + 50, currentTox + toxicity) // Allow overflow but cap reasonable? Or standard logic.
+                current: Math.min(maxTox + 50, currentTox + toxicity)
             };
 
             // Update Character with new resource
@@ -373,9 +372,8 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
 
             const finalChar = { ...postResourceChar, inventory: nextInv };
             setCharacterWithDirty(regenerateCharacterStats(finalChar));
-            alert(`Você bebeu ${item.name}.Toxicidade + ${toxicity}.`);
+            alert(`Você bebeu ${item.name}. Toxicidade +${toxicity}.`);
         } else {
-            // No toxicity defined? just consume?
             const nextInv = [...(character.inventory || [])];
             if (nextInv[itemIndex].quantity > 1) {
                 nextInv[itemIndex] = { ...nextInv[itemIndex], quantity: nextInv[itemIndex].quantity - 1 };
@@ -469,14 +467,55 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
         try {
             const text = await file.text();
             const parsed = JSON.parse(text);
-            const raw = parsed.character || parsed;
-            const regened = regenerateCharacterStats({
+
+            if (parsed && (parsed.type === 'rpg-campaign-backup' || (parsed.campaign && Array.isArray(parsed.maps)))) {
+                throw new Error("Este arquivo é um Backup de Campanha. Use 'Importar Aventura' no painel do Mestre.");
+            }
+
+            const raw = (parsed && parsed.type === 'rpg-character-backup' && parsed.character)
+                ? parsed.character
+                : parsed;
+
+            if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+                throw new Error('Conteúdo do arquivo não corresponde a uma ficha de personagem válida.');
+            }
+
+            const baseClone: Character = JSON.parse(JSON.stringify(initialCharacter));
+            const mergedAttrs: Character['attributes'] = {
+                str: { ...baseClone.attributes.str, ...(character.attributes?.str || {}), ...(raw.attributes?.str || {}) },
+                dex: { ...baseClone.attributes.dex, ...(character.attributes?.dex || {}), ...(raw.attributes?.dex || {}) },
+                con: { ...baseClone.attributes.con, ...(character.attributes?.con || {}), ...(raw.attributes?.con || {}) },
+                int: { ...baseClone.attributes.int, ...(character.attributes?.int || {}), ...(raw.attributes?.int || {}) },
+                wis: { ...baseClone.attributes.wis, ...(character.attributes?.wis || {}), ...(raw.attributes?.wis || {}) },
+                cha: { ...baseClone.attributes.cha, ...(character.attributes?.cha || {}), ...(raw.attributes?.cha || {}) }
+            };
+
+            const merged: Character = {
+                ...baseClone,
                 ...character,
                 ...raw,
-                id: character.id // Preserva o ID atual da ficha selecionada
-            });
-            setCharacterWithDirty(regened);
-            CharacterRepository.save(regened);
+                attributes: mergedAttrs,
+                hp: { ...baseClone.hp, ...(character.hp || {}), ...(raw.hp && typeof raw.hp === 'object' ? raw.hp : {}) },
+                hitDice: { ...baseClone.hitDice, ...(character.hitDice || {}), ...(raw.hitDice && typeof raw.hitDice === 'object' ? raw.hitDice : {}) },
+                deathSaves: { ...baseClone.deathSaves, ...(character.deathSaves || {}), ...(raw.deathSaves && typeof raw.deathSaves === 'object' ? raw.deathSaves : {}) },
+                currency: { ...baseClone.currency, ...(character.currency || {}), ...(raw.currency && typeof raw.currency === 'object' ? raw.currency : {}) },
+                spellSlots: { ...baseClone.spellSlots, ...(character.spellSlots || {}), ...(raw.spellSlots && typeof raw.spellSlots === 'object' ? raw.spellSlots : {}) },
+                // CRITICAL: Preserve slot identity, room binding, and owner!
+                id: character.id,
+                owner: character.owner,
+                adventureId: character.adventureId,
+                system: character.system || raw.system
+            };
+
+            const regened = regenerateCharacterStats(merged);
+
+            if (regened.class && regened.class.trim()) {
+                setShowBuilder(false);
+            }
+
+            dirtyRef.current = false;
+            setCharacter(regened);
+            handleSave(regened);
             alert('Ficha atualizada com sucesso!');
         } catch (err: any) {
             alert('Erro ao carregar arquivo de ficha: ' + (err?.message || 'Arquivo inválido'));
@@ -634,8 +673,6 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
                                                 }
 
                                                 // 3d. Spell Warning
-                                                // Simple Heuristic: If has spells > ceil(newLevel/2) (approx for full casters)
-                                                // Actually let's just warn generic if caster
                                                 if (character.spells && character.spells.length > 0) {
                                                     const likelyMaxSpellLevel = Math.ceil(newLevel / 2);
                                                     const highLevelSpells = character.spells.filter(s => s.level > likelyMaxSpellLevel);
@@ -647,17 +684,11 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
 
                                             // 4. Update Local & Regen
                                             const regenedChar = regenerateCharacterStats(nextChar);
+                                            dirtyRef.current = false;
                                             setCharacter(regenedChar);
 
-                                            // 5. Save & Sync Immediately
-                                            CharacterRepository.save(regenedChar);
-
-                                            const ownerPeer = Object.values(connectedPlayersData).find(p => p.character?.id === characterId);
-                                            if (ownerPeer) {
-                                                updateRemotePlayerCharacter(ownerPeer.peerId, regenedChar);
-                                            } else {
-                                                console.warn('[GM] Could not find owner to sync Level Up!');
-                                            }
+                                            // 5. Save & Sync Immediately (Local Repo + Map/Combat Event + Remote Peer)
+                                            handleSave(regenedChar);
                                         }
                                     }}
                                 >
@@ -917,22 +948,18 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
                     character={character}
                     onUpdate={(updatedChar) => {
                         // FIX: Sync Bug - Force immediate save and broadcast
-                        // The default 'setCharacterWithDirty' relies on the 1s debounce which might be too slow or get clobbered.
-                        // Level Up is a critical event, so we sync immediately.
                         console.log("Level Up Completed: Forcing Immediate Sync...");
+                        const stampedChar: Character = { ...updatedChar, lastModified: Date.now() };
 
                         // 1. Update Local State (UI)
-                        setCharacter(updatedChar);
+                        dirtyRef.current = false;
+                        setCharacter(stampedChar);
 
-                        // 2. Persist to Disk/DB
-                        CharacterRepository.save(updatedChar);
+                        // 2. Persist & Sync
+                        handleSave(stampedChar);
 
-                        // 3. Broadcast to Peers
-                        broadcastCharacterUpdate(updatedChar);
-
-                        // 4. Dispatch Event (for internal listeners)
-                        const event = new CustomEvent('character_update', { detail: updatedChar });
-                        window.dispatchEvent(event);
+                        // 3. Dispatch Event (for internal listeners)
+                        window.dispatchEvent(new CustomEvent('character_update', { detail: stampedChar }));
                     }}
                     onClose={() => setShowLevelModal(false)}
                 />
@@ -967,24 +994,24 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
             )}
 
             <style>{`
-    .dnd - sheet - container {
-    /* Layout handled in CSS file */
-}
+                .dnd-sheet-container {
+                    /* Layout handled in CSS file */
+                }
 
                 /* TABS (Keep these if not in CSS file) */
-            .sheet - tabs {
-    display: flex; gap: 5px; border - bottom: 1px solid #333;
-    margin - bottom: 10px;
-}
-            .tab - btn {
-    background: transparent; border: none; color: #888;
-    padding: 8px 15px; cursor: pointer; font - size: 1rem;
-    border - bottom: 2px solid transparent;
-    transition: all 0.2s;
-}
-            .tab - btn:hover { color: #ccc; }
-            .tab - btn.active { color: #c5a059; border - bottom - color: #c5a059; font - weight: bold; }
-`}</style>
-        </div >
+                .sheet-tabs {
+                    display: flex; gap: 5px; border-bottom: 1px solid #333;
+                    margin-bottom: 10px;
+                }
+                .tab-btn {
+                    background: transparent; border: none; color: #888;
+                    padding: 8px 15px; cursor: pointer; font-size: 1rem;
+                    border-bottom: 2px solid transparent;
+                    transition: all 0.2s;
+                }
+                .tab-btn:hover { color: #ccc; }
+                .tab-btn.active { color: #c5a059; border-bottom-color: #c5a059; font-weight: bold; }
+            `}</style>
+        </div>
     );
 };

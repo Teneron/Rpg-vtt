@@ -84,6 +84,8 @@ None yet.
 | 261012-s3a | persistencia dexie e resiliencia do servidor (fase 3 auditoria) | 2026-10-12 | 1f8526e | [261012-s3a-persistencia-dexie-e-resiliencia-servidor](./quick/261012-s3a-persistencia-dexie-e-resiliencia-servidor/) |
 | 261012-s4a | performance e bundle code-splitting (fase 4 auditoria) | 2026-10-12 | 18ec8da | [261012-s4a-performance-e-bundle](./quick/261012-s4a-performance-e-bundle/) |
 | 261012-s5a | qualidade eslint e dx (fase 5 auditoria) | 2026-10-12 | 6aa1421 | [261012-s5a-qualidade-eslint-dx](./quick/261012-s5a-qualidade-eslint-dx/) |
+| 261013-s6a | producao backup json ping sonar e fullscreen ux | 2026-10-13 | bcd709a | [261013-s6a-producao-backup-ping-ux](./quick/261013-s6a-producao-backup-ping-ux/) |
+| 261024-s7a | correcao pente-fino producao f5 backup diario nevoa e rede | 2026-10-24 | pending | [261024-s7a-correcao-pente-fino-producao](./quick/261024-s7a-correcao-pente-fino-producao/) |
 
 ## Deferred Items
 

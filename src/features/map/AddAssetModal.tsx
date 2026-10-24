@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useMap } from './MapContext';
@@ -15,6 +14,8 @@ const PRESETS = [
     { label: 'Baú', url: 'https://i.imgur.com/Qz7W9X0.png' },
     { label: 'Fogueira', url: 'https://i.imgur.com/5z6Z9X0.png' },
 ];
+
+const MAX_PROP_DATAURL_CHARS = Math.floor(2.5 * 1024 * 1024);
 
 export const AddAssetModal: React.FC<AddAssetModalProps> = ({ isOpen, onClose }) => {
     const { addToken, config } = useMap();
@@ -35,38 +36,51 @@ export const AddAssetModal: React.FC<AddAssetModalProps> = ({ isOpen, onClose })
                 const img = new Image();
                 img.src = event.target?.result as string;
                 img.onload = () => {
-                    const canvas = document.createElement('canvas');
-                    const ctx = canvas.getContext('2d');
-
-                    // Max dimensions
-                    const MAX_WIDTH = 2048; // Quality Boost
-                    const MAX_HEIGHT = 2048;
+                    const MAX_WIDTH = 1024;
+                    const MAX_HEIGHT = 1024;
                     let width = img.width;
                     let height = img.height;
 
                     if (width > height) {
                         if (width > MAX_WIDTH) {
-                            height *= MAX_WIDTH / width;
+                            height = Math.max(1, Math.round(height * (MAX_WIDTH / width)));
                             width = MAX_WIDTH;
                         }
                     } else {
                         if (height > MAX_HEIGHT) {
-                            width *= MAX_HEIGHT / height;
+                            width = Math.max(1, Math.round(width * (MAX_HEIGHT / height)));
                             height = MAX_HEIGHT;
                         }
                     }
 
-                    canvas.width = width;
-                    canvas.height = height;
+                    const encodeWebp = (w: number, h: number, q: number): string => {
+                        const canvas = document.createElement('canvas');
+                        canvas.width = Math.max(1, Math.round(w));
+                        canvas.height = Math.max(1, Math.round(h));
+                        const ctx = canvas.getContext('2d');
+                        if (!ctx) {
+                            throw new Error('Canvas context is null');
+                        }
+                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                        // Encode with image/webp @ 0.82 to preserve alpha transparency at ~10x smaller size than PNG
+                        return canvas.toDataURL('image/webp', q);
+                    };
 
-                    if (ctx) {
-                        ctx.drawImage(img, 0, 0, width, height);
-                        // Use PNG to preserve transparency (Critical for assets)
-                        // quality argument is ignored for png in many browsers, but we keep the resize.
-                        const dataUrl = canvas.toDataURL('image/png');
+                    try {
+                        let dataUrl = encodeWebp(width, height, 0.82);
+
+                        if (dataUrl.length > MAX_PROP_DATAURL_CHARS) {
+                            dataUrl = encodeWebp(width * 0.7, height * 0.7, 0.72);
+                        }
+
+                        if (dataUrl.length > MAX_PROP_DATAURL_CHARS) {
+                            reject(new Error('O arquivo do asset excedeu o limite seguro de 2,5 MB mesmo após compressão WebP. Use uma imagem menor ou cole uma URL externa.'));
+                            return;
+                        }
+
                         resolve(dataUrl);
-                    } else {
-                        reject(new Error("Canvas context is null"));
+                    } catch (err) {
+                        reject(err);
                     }
                 };
                 img.onerror = (err) => reject(err);
@@ -85,9 +99,11 @@ export const AddAssetModal: React.FC<AddAssetModalProps> = ({ isOpen, onClose })
         try {
             const base64Url = await compressAndConvertToBase64(file);
             setUrl(base64Url);
-        } catch (error) {
+        } catch (error: any) {
             console.error("Compression failed", error);
-            alert("Erro ao processar imagem.");
+            alert(error?.message || "Erro ao processar imagem.");
+            setUrl('');
+            e.target.value = '';
         } finally {
             setUploading(false);
         }
@@ -97,7 +113,12 @@ export const AddAssetModal: React.FC<AddAssetModalProps> = ({ isOpen, onClose })
         e.preventDefault();
 
         if (!url) {
-            alert("insira uma URL ou faça upload de uma imagem.");
+            alert("Insira uma URL ou faça upload de uma imagem.");
+            return;
+        }
+
+        if (url.startsWith('data:') && url.length > MAX_PROP_DATAURL_CHARS) {
+            alert("A imagem em Base64 excede o limite seguro de 2,5 MB. Escolha uma imagem menor ou use uma URL externa.");
             return;
         }
 
@@ -180,7 +201,7 @@ export const AddAssetModal: React.FC<AddAssetModalProps> = ({ isOpen, onClose })
                             disabled={uploading}
                             style={{ color: '#ccc', width: '100%' }}
                         />
-                        {uploading && <div style={{ color: '#ffcc00', marginTop: '5px', fontSize: '0.9em' }}>Processando Imagem...</div>}
+                        {uploading && <div style={{ color: '#ffcc00', marginTop: '5px', fontSize: '0.9em' }}>Processando Imagem (WebP)...</div>}
                     </div>
 
                     <div style={{ textAlign: 'center', color: '#666', fontSize: '0.8em' }}>- OU -</div>
@@ -193,7 +214,6 @@ export const AddAssetModal: React.FC<AddAssetModalProps> = ({ isOpen, onClose })
                             value={url}
                             onChange={e => setUrl(e.target.value)}
                             placeholder="https://..."
-                            // Don't show base64 clutter
                             onFocus={(e) => e.target.select()}
                         />
                     </div>

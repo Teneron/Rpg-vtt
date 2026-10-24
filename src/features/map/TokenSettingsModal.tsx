@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useMap } from './MapContext';
 import { usePeer } from '../multiplayer/SocketContext';
+import { CharacterRepository } from '../character/characterRepository';
 import type { MapToken } from './mapTypes';
 import '../../Layout.css';
 import { useCombat } from '../combat/CombatContext';
@@ -12,6 +13,10 @@ interface TokenSettingsModalProps {
     onOpenSheet?: () => void;
 }
 
+const resolveCharacterAC = (char: any): number => {
+    return char?.acOverride ?? char?.armorClass ?? char?.bg?.armorClass ?? char?.ac ?? 10;
+};
+
 export const TokenSettingsModal: React.FC<TokenSettingsModalProps> = ({ tokenId, onClose, onOpenSheet }) => {
     const { tokens, updateToken, removeToken, config } = useMap();
     const { connectedPlayersData, myCharacter, isHost, broadcastCharacterUpdate, updateRemotePlayerCharacter } = usePeer();
@@ -19,8 +24,6 @@ export const TokenSettingsModal: React.FC<TokenSettingsModalProps> = ({ tokenId,
 
     const [token, setToken] = useState<MapToken | null>(null);
     const [activeTab, setActiveTab] = useState<'identity' | 'stats' | 'vision' | 'appearance'>('identity');
-
-    // ... (State setup remains check line 20+)
 
     const [editedCharData, setEditedCharData] = useState<any>(null);
     const [uploading, setUploading] = useState(false); // New state for upload status
@@ -108,22 +111,28 @@ export const TokenSettingsModal: React.FC<TokenSettingsModalProps> = ({ tokenId,
             const initialTokenState = { ...t };
 
             // If there is a linked combatant, prioritize its health/AC status because that's what is shown on map
-            const linkedCombatant = (combatState.combatants || []).find(c => c.id === t.id || c.id === t.combatantId || (t.characterId && c.characterId === t.characterId));
+            const linkedCombatant = (combatState.combatants || []).find(
+                c => c.id === t.id || c.id === t.combatantId || (t.characterId && (c.characterId === t.characterId || (c as any).sourceId === t.characterId))
+            );
             if (linkedCombatant) {
                 console.log("Loading stats from Linked Combatant for Editor:", linkedCombatant);
                 if (linkedCombatant.hp) initialTokenState.hp = { ...linkedCombatant.hp };
-                if (linkedCombatant.ac) initialTokenState.ac = linkedCombatant.ac;
+                if (linkedCombatant.ac !== undefined) initialTokenState.ac = linkedCombatant.ac;
             }
 
             // Only load external character data if we haven't touched the form yet
-            // (Note: Since we are guarding by ID now, we handle the 'first load' here)
             if (t.characterId) {
                 let charData = Object.values(connectedPlayersData).find(p => p.character?.id === t.characterId)?.character;
-                // If not found in players, check if it's my own character
+                // If not found in players, check if it's my own character or saved locally in repository
                 if (!charData && myCharacter && myCharacter.id === t.characterId) charData = myCharacter;
+                if (!charData) charData = CharacterRepository.load(t.characterId) || undefined;
 
                 if (charData) {
                     setEditedCharData(JSON.parse(JSON.stringify(charData)));
+                    initialTokenState.ac = resolveCharacterAC(charData);
+                    if (charData.hp) {
+                        initialTokenState.hp = { ...charData.hp };
+                    }
 
                     // AUTO-VISION SYNC
                     if (!initialTokenState.visionRange && charData.visionRange && charData.visionRange > 0) {
@@ -142,31 +151,29 @@ export const TokenSettingsModal: React.FC<TokenSettingsModalProps> = ({ tokenId,
     if (!tokenId || !token) return null;
 
     // Check if token is already in combat
-    // Check if token is already in combat
-    // We use Token ID as Combatant ID for map tokens (unless strictly character linked)
-    // Actually, usually we prefer Link by CharacterID if available, but for generic monsters, TokenID is safer.
-    // Let's check both or generic.
-    const isInCombat = (combatState.combatants || []).some(c => c.id === token.id || c.id === token.combatantId || (token.characterId && c.characterId === token.characterId));
+    const isInCombat = (combatState.combatants || []).some(
+        c => c.id === token.id || c.id === token.combatantId || (token.characterId && (c.characterId === token.characterId || (c as any).sourceId === token.characterId))
+    );
 
     const handleToggleCombat = () => {
         if (isInCombat) {
             // Remove
-            const c = (combatState.combatants || []).find(c => c.id === token.id || c.id === token.combatantId || (token.characterId && c.characterId === token.characterId));
+            const c = (combatState.combatants || []).find(
+                cb => cb.id === token.id || cb.id === token.combatantId || (token.characterId && (cb.characterId === token.characterId || (cb as any).sourceId === token.characterId))
+            );
             if (c) removeCombatant(c.id);
         } else {
             // Add
-            // Determine Stats
             let hpCurrent = token.hp?.current ?? 10;
             let hpMax = token.hp?.max ?? 10;
             let ac = token.ac ?? 10;
             let name = token.name;
 
-            // If Character Link, use that data preferred?
             if (editedCharData) {
-                hpCurrent = editedCharData.hp.current;
-                hpMax = editedCharData.hp.max;
-                ac = editedCharData.bg?.armorClass || editedCharData.ac || 10;
-                name = editedCharData.name;
+                hpCurrent = editedCharData.hp?.current ?? hpCurrent;
+                hpMax = editedCharData.hp?.max ?? hpMax;
+                ac = resolveCharacterAC(editedCharData);
+                name = editedCharData.name || name;
             }
 
             // AUTO-ROLL LOGIC:
@@ -180,6 +187,8 @@ export const TokenSettingsModal: React.FC<TokenSettingsModalProps> = ({ tokenId,
                 characterId: token.characterId,
                 name: name,
                 initiative: initRoll,
+                roll: isNPC ? initRoll : 0,
+                bonus: 0,
                 imageUrl: token.imageUrl,
                 hp: { current: hpCurrent, max: hpMax },
                 ac: ac,
@@ -191,30 +200,38 @@ export const TokenSettingsModal: React.FC<TokenSettingsModalProps> = ({ tokenId,
     };
 
     const handleSave = () => {
-        // ... (existing save logic)
-        updateToken(tokenId, token);
+        const tokenToSave: MapToken = { ...token };
 
-        // SYNC WITH COMBATANT (Fix for HP Priority Issue)
-        // If the token is in combat, we MUST update the combatant entry as well,
-        // because Token.tsx prioritizes combatant data over token data.
-        const linkedCombatant = (combatState.combatants || []).find(c => c.id === token.id || c.id === token.combatantId || (token.characterId && c.characterId === token.characterId));
+        if (token.characterId && editedCharData) {
+            const resolvedAc = resolveCharacterAC(editedCharData);
+            const resolvedHpCurrent = editedCharData.hp?.current ?? token.hp?.current ?? 10;
+            const resolvedHpMax = editedCharData.hp?.max ?? token.hp?.max ?? 10;
+            tokenToSave.ac = resolvedAc;
+            tokenToSave.hp = {
+                current: resolvedHpCurrent,
+                max: resolvedHpMax,
+                temp: editedCharData.hp?.temp ?? token.hp?.temp ?? 0
+            };
+        }
+
+        updateToken(tokenId, tokenToSave);
+
+        // SYNC WITH COMBATANT (Fix for HP & AC Priority Issue)
+        const linkedCombatant = (combatState.combatants || []).find(
+            c => c.id === token.id || c.id === token.combatantId || (token.characterId && (c.characterId === token.characterId || (c as any).sourceId === token.characterId))
+        );
 
         if (linkedCombatant) {
             console.log("Syncing edits to Combatant:", linkedCombatant.id);
 
-            // Prepare updates
-            // Use local state 'token' which has the fresh edits
-            let hpCurrent = token.hp?.current ?? 10;
-            let hpMax = token.hp?.max ?? 10;
-            let ac = token.ac ?? 10;
+            let hpCurrent = tokenToSave.hp?.current ?? 10;
+            let hpMax = tokenToSave.hp?.max ?? 10;
+            let ac = tokenToSave.ac ?? 10;
 
-            // If Character Link active + Edited Data, prefer that?
-            // Actually, if we are in this modal, we might have edited 'editedCharData'.
-            // If it is a character, we should use 'editedCharData' if available.
             if (token.characterId && editedCharData) {
-                hpCurrent = editedCharData.hp.current;
-                hpMax = editedCharData.hp.max;
-                ac = editedCharData.bg?.armorClass || editedCharData.ac || 10;
+                hpCurrent = editedCharData.hp?.current ?? hpCurrent;
+                hpMax = editedCharData.hp?.max ?? hpMax;
+                ac = resolveCharacterAC(editedCharData);
             }
 
             updateCombatant(linkedCombatant.id, {
@@ -224,18 +241,29 @@ export const TokenSettingsModal: React.FC<TokenSettingsModalProps> = ({ tokenId,
         }
 
         if (token.characterId && editedCharData) {
-            if (token.conditions) {
-                editedCharData.conditions = [...token.conditions];
+            const updatedChar = {
+                ...editedCharData,
+                ...(token.conditions ? { conditions: [...token.conditions] } : {}),
+                lastModified: Date.now()
+            };
+
+            console.log("Saving Linked Character Data...", updatedChar);
+
+            // Persist locally & notify MapContext, CombatContext, and CharacterSheet
+            CharacterRepository.save(updatedChar);
+            if (isHost) {
+                sessionStorage.setItem(`last_gm_edit_${token.characterId}`, Date.now().toString());
             }
-            console.log("Saving Linked Character Data...", editedCharData);
+            window.dispatchEvent(new CustomEvent('rpg_local_char_save', { detail: updatedChar }));
+
             const ownerEntry = Object.values(connectedPlayersData).find(p => p.character?.id === token.characterId);
             const targetPeerId = ownerEntry?.peerId || 'unknown';
 
             if (myCharacter && myCharacter.id === token.characterId) {
-                broadcastCharacterUpdate(editedCharData);
+                broadcastCharacterUpdate(updatedChar);
             } else if (isHost) {
                 if (targetPeerId && targetPeerId !== 'unknown') {
-                    updateRemotePlayerCharacter(targetPeerId, editedCharData);
+                    updateRemotePlayerCharacter(targetPeerId, updatedChar);
                 }
             }
         }
@@ -426,14 +454,12 @@ export const TokenSettingsModal: React.FC<TokenSettingsModalProps> = ({ tokenId,
                             {(() => {
                                 if (editedCharData) {
                                     // --- LINKED CHARACTER (EDITABLE BY GM) ---
-                                    const canEdit = isHost; // Or Owner (but owner usually edits sheet)
+                                    const canEdit = isHost;
 
                                     return (
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
                                             {!canEdit && <div style={{ fontSize: '0.8rem', color: '#aaa', marginBottom: '5px', display: 'flex', alignItems: 'center', gap: '4px' }}><Lock size={12} /> <span>Visualização apenas (Edite na Ficha)</span></div>}
                                             {canEdit && <div style={{ fontSize: '0.8rem', color: '#cfc', marginBottom: '5px', display: 'flex', alignItems: 'center', gap: '4px' }}><Unlock size={12} /> <span>Modo GM: Editando Ficha Linkada</span></div>}
-
-
 
                                             <div className="form-group">
                                                 <label>Vida (HP) {canEdit ? '(Editável)' : '(Ficha)'}</label>
@@ -445,11 +471,10 @@ export const TokenSettingsModal: React.FC<TokenSettingsModalProps> = ({ tokenId,
                                                         value={editedCharData.hp.current}
                                                         readOnly={!canEdit}
                                                         onChange={(e) => {
-                                                            console.log("Changing HP:", e.target.value);
                                                             setEditedCharData({
                                                                 ...editedCharData,
                                                                 hp: { ...editedCharData.hp, current: Number(e.target.value) }
-                                                            })
+                                                            });
                                                         }}
                                                         style={{ width: '60px', textAlign: 'center', borderColor: canEdit ? '#4CAF50' : '' }}
                                                     />
@@ -475,16 +500,24 @@ export const TokenSettingsModal: React.FC<TokenSettingsModalProps> = ({ tokenId,
                                                 <input
                                                     className="glass-input"
                                                     type="number"
-                                                    value={editedCharData.bg?.armorClass || editedCharData.ac || 10}
+                                                    value={resolveCharacterAC(editedCharData)}
                                                     readOnly={!canEdit}
                                                     onChange={(e) => {
-                                                        // AC usually lives in 'bg' metadata or root depending on structure
-                                                        // We'll update root 'ac' for simplicity or 'bg.armorClass' if that's the convention
-                                                        setEditedCharData({
-                                                            ...editedCharData,
-                                                            bg: { ...editedCharData.bg, armorClass: Number(e.target.value) },
-                                                            ac: Number(e.target.value) // Fallback
-                                                        })
+                                                        const val = Number(e.target.value);
+                                                        if (editedCharData.attributes || editedCharData.armorClass !== undefined) {
+                                                            setEditedCharData({
+                                                                ...editedCharData,
+                                                                armorClass: val,
+                                                                acOverride: val
+                                                            });
+                                                        } else {
+                                                            setEditedCharData({
+                                                                ...editedCharData,
+                                                                armorClass: val,
+                                                                ac: val,
+                                                                bg: editedCharData.bg ? { ...editedCharData.bg, armorClass: val } : undefined
+                                                            });
+                                                        }
                                                     }}
                                                     style={{ width: '60px', height: '50px', fontSize: '1.2rem', textAlign: 'center', fontWeight: 'bold', borderColor: canEdit ? '#4CAF50' : '' }}
                                                 />
@@ -575,7 +608,7 @@ export const TokenSettingsModal: React.FC<TokenSettingsModalProps> = ({ tokenId,
                                 <div className="form-group">
                                     <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.9rem', marginBottom: '8px', color: '#e2e8f0' }}>
                                         <ShieldAlert size={14} color="#f87171" />
-                                        <span>Condições Ativas (D&D 2024 / TTRPG)</span>
+                                        <span>Condições Ativas (D&amp;D 2024 / TTRPG)</span>
                                     </label>
                                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                                         {['Amedrontado', 'Caído', 'Cego', 'Contido', 'Envenenado', 'Incapacitado', 'Invisível', 'Agarrado', 'Paralisado', 'Atordoado', 'Petrificado', 'Exaustão'].map(c => {
@@ -688,6 +721,6 @@ export const TokenSettingsModal: React.FC<TokenSettingsModalProps> = ({ tokenId,
                     </div>
                 </div>
             </div>
-        </div >
+        </div>
     );
 };

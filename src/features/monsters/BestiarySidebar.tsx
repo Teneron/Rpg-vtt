@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { MonsterRepository } from './MonsterRepository';
 import type { Monster } from './monsterTypes';
 import { useCombat } from '../combat/CombatContext';
@@ -16,14 +16,25 @@ const generateId = (prefix: string) => {
         : `${prefix}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 };
 
+const normalizeSystem = (sys?: string | null): string => {
+    if (!sys) return '';
+    const lower = sys.toLowerCase();
+    if (lower === 'dnd5e' || lower === 'dnd55e' || lower === '5e' || lower === '5.5e') {
+        return 'dnd55e';
+    }
+    return lower;
+};
+
 export const BestiarySidebar: React.FC = () => {
     const { roomSystem, currentAdventureId } = usePeer();
     const { currentAdventure } = useAdventure();
 
+    const effectiveAdventureId = currentAdventureId || currentAdventure?.id || null;
+
     const activeSystem: 'witcher' | 'dnd55e' = (
         roomSystem === 'witcher' ||
         currentAdventure?.system === 'witcher' ||
-        currentAdventureId?.toUpperCase().startsWith('WTC') ||
+        effectiveAdventureId?.toUpperCase().startsWith('WTC') ||
         (typeof window !== 'undefined' && localStorage.getItem('rpg_selected_system') === 'witcher')
     ) ? 'witcher' : 'dnd55e';
 
@@ -36,29 +47,44 @@ export const BestiarySidebar: React.FC = () => {
     const [editingMonster, setEditingMonster] = useState<Monster | null | undefined>(undefined);
     const [viewingMonster, setViewingMonster] = useState<Monster | null>(null);
 
-    const loadMonsters = () => {
+    const loadMonsters = useCallback(() => {
         try {
-            console.log("Attempting to load monsters...");
             const data = MonsterRepository.getAll();
             if (!Array.isArray(data)) throw new Error("Repository returned non-array");
-            console.log("Monsters loaded:", data.length);
-            setMonsters(data);
+            setMonsters([...data]);
             setErrorMsg(null);
 
             MonsterRepository.getAllAsync().then(asyncData => {
                 if (Array.isArray(asyncData)) {
-                    setMonsters(asyncData);
+                    setMonsters([...asyncData]);
                 }
             }).catch(console.error);
         } catch (e: any) {
             console.error("Critical: Failed to load monsters", e);
             setErrorMsg(e.message || "Unknown error loading monsters");
         }
-    };
+    }, []);
 
     useEffect(() => {
         loadMonsters();
-    }, []);
+        const handleMonstersUpdated = () => {
+            loadMonsters();
+        };
+        window.addEventListener('rpg_monsters_updated', handleMonstersUpdated);
+        return () => {
+            window.removeEventListener('rpg_monsters_updated', handleMonstersUpdated);
+        };
+    }, [loadMonsters]);
+
+    const isCustomMonsterVisible = useCallback((m: Monster): boolean => {
+        if (m.source !== 'Custom') return false;
+        const sysMatch = !m.system || normalizeSystem(m.system) === normalizeSystem(activeSystem);
+        if (!sysMatch) return false;
+        if (m.campaignId && m.campaignId !== 'default') {
+            return !!effectiveAdventureId && m.campaignId === effectiveAdventureId;
+        }
+        return true;
+    }, [activeSystem, effectiveAdventureId]);
 
     const availableSources = React.useMemo(() => {
         const list = ['All'];
@@ -67,27 +93,35 @@ export const BestiarySidebar: React.FC = () => {
         } else {
             list.push('5e');
         }
-        if (monsters.some(m => m.source === 'Custom' && (m.system === activeSystem || !m.system))) {
+        if (monsters.some(m => isCustomMonsterVisible(m))) {
             list.push('Custom');
         }
         return list;
-    }, [activeSystem, monsters]);
+    }, [activeSystem, monsters, isCustomMonsterVisible]);
 
     const [activeTab, setActiveTab] = useState<'Bestiary' | 'NPCs'>('Bestiary');
 
     const filteredMonsters = monsters
         .filter(m => {
-            // Strict campaign system isolation
-            const isSystemMatch = activeSystem === 'witcher'
-                ? (m.source === 'Witcher' || m.system === 'witcher' || (m.source === 'Custom' && m.system !== 'dnd55e'))
-                : (m.source === '5e' || m.source === 'DnD5e' || m.system === 'dnd55e' || (m.source === 'Custom' && m.system !== 'witcher'));
-            if (!isSystemMatch) return false;
+            // Campaign & System isolation
+            if (m.source === 'Custom') {
+                if (!isCustomMonsterVisible(m)) return false;
+            } else {
+                if (m.campaignId && m.campaignId !== 'default' && m.campaignId !== effectiveAdventureId) {
+                    return false;
+                }
+                const normSys = normalizeSystem(m.system);
+                const isSystemMatch = activeSystem === 'witcher'
+                    ? (m.source === 'Witcher' || normSys === 'witcher')
+                    : (m.source === '5e' || m.source === 'DnD5e' || normSys === 'dnd55e');
+                if (!isSystemMatch) return false;
+            }
 
             const name = m.name || '';
             const cat = m.category || '';
             const matchSearch = name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                 cat.toLowerCase().includes(searchTerm.toLowerCase());
-            
+
             let matchSource = filterSource === 'All';
             if (!matchSource) {
                 if (filterSource === '5e') matchSource = m.source === '5e' || m.source === 'DnD5e';
@@ -122,7 +156,6 @@ export const BestiarySidebar: React.FC = () => {
             hp: { current: monster.hp.current, max: monster.hp.max },
             monsterId: monster.id
         });
-        // alert(`${monster.name} adicionado ao combate!`); // Removed alert for smoother flow
     };
 
     const handleDeleteCustom = (id: string, e: React.MouseEvent) => {
@@ -132,8 +165,6 @@ export const BestiarySidebar: React.FC = () => {
             loadMonsters();
         }
     };
-
-    // Removed local getMonsterTokenUrl in favor of MonsterRepository.getTokenUrl
 
     return (
         <div style={{ padding: '10px', height: '100%', display: 'flex', flexDirection: 'column', color: '#fff', position: 'relative' }}>
@@ -195,6 +226,8 @@ export const BestiarySidebar: React.FC = () => {
             {editingMonster !== undefined && (
                 <MonsterEditor
                     existingMonster={editingMonster}
+                    campaignId={effectiveAdventureId}
+                    system={activeSystem}
                     onSave={() => {
                         setEditingMonster(undefined);
                         loadMonsters();

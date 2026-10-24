@@ -18,6 +18,7 @@ const PORT = process.env.PORT || 3001;
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '*')
     .split(',')
     .map(s => s.trim())
+    .map(s => (s === '*' ? '*' : s.replace(/\/+$/, '')))
     .filter(Boolean);
 const CORS_ORIGIN = ALLOWED_ORIGINS.includes('*') ? '*' : ALLOWED_ORIGINS;
 
@@ -133,6 +134,7 @@ const createRateLimiter = (capacity, refillPerSec) => {
  */
 const safeHandler = (socket, eventName, rateLimiter, state, handler) => (...args) => {
     const callback = args.find(a => typeof a === 'function') || null;
+    const hasCallback = typeof callback === 'function';
     const reply = (response) => {
         if (!callback) return;
         try {
@@ -142,8 +144,20 @@ const safeHandler = (socket, eventName, rateLimiter, state, handler) => (...args
         }
     };
 
+    const now = Date.now();
+    if (state.violations > 0) {
+        const decaySteps = Math.floor((now - state.lastDecayAt) / 10000);
+        if (decaySteps > 0) {
+            state.violations = Math.max(0, state.violations - decaySteps);
+            state.lastDecayAt += decaySteps * 10000;
+        }
+    } else {
+        state.lastDecayAt = now;
+    }
+
     if (!rateLimiter()) {
         state.violations += 1;
+        state.lastViolationAt = now;
         if (state.violations === 1 || state.violations % 100 === 0) {
             console.warn(`[Socket] Rate limit exceeded by ${socket.id} on '${eventName}' (${state.violations} dropped)`);
         }
@@ -155,6 +169,11 @@ const safeHandler = (socket, eventName, rateLimiter, state, handler) => (...args
         return;
     }
 
+    // Decaimento gradual em tráfego legítimo após período sem infrações (evita acumular em sessões de 5h+)
+    if (state.violations > 0 && now - state.lastViolationAt >= 1000) {
+        state.violations = Math.max(0, state.violations - 1);
+    }
+
     const payload = args[0];
     if (!isPlainObject(payload)) {
         reply({ success: false, error: 'Payload inválido.' });
@@ -162,7 +181,7 @@ const safeHandler = (socket, eventName, rateLimiter, state, handler) => (...args
     }
 
     try {
-        handler(payload, reply);
+        handler(payload, reply, hasCallback);
     } catch (err) {
         console.error(`[Socket] Handler '${eventName}' failed for ${socket.id}:`, err);
         reply({ success: false, error: 'Erro interno do servidor.' });
@@ -234,10 +253,21 @@ const authorizeAndStamp = (room, socketId, message) => {
         }
         case 'MAP_PING': {
             if (!isPlainObject(payload)) return null;
+            if (!Number.isFinite(payload.x) || !Number.isFinite(payload.y)
+                || Math.abs(payload.x) > 10000 || Math.abs(payload.y) > 10000) {
+                return null;
+            }
+            const safeColor = (typeof payload.color === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(payload.color))
+                ? payload.color
+                : (member.isHost ? '#ef4444' : '#38bdf8');
             stamped.payload = {
-                ...payload,
-                senderName: member.playerName || payload.senderName || 'Jogador',
-                senderId: member.userId
+                id: cleanString(payload.id, 64) || crypto.randomUUID(),
+                x: payload.x,
+                y: payload.y,
+                color: safeColor,
+                senderName: member.playerName || (member.isHost ? 'Mestre' : 'Jogador'),
+                senderId: member.userId,
+                timestamp: Date.now()
             };
             break;
         }
@@ -298,7 +328,7 @@ io.on('connection', (socket) => {
     const joinedRooms = new Set();
 
     const rateLimiter = createRateLimiter(LIMITS.rateCapacity, LIMITS.rateRefillPerSec);
-    const rateState = { violations: 0 };
+    const rateState = { violations: 0, lastViolationAt: 0, lastDecayAt: Date.now() };
     const on = (eventName, handler) =>
         socket.on(eventName, safeHandler(socket, eventName, rateLimiter, rateState, handler));
 
@@ -307,7 +337,7 @@ io.on('connection', (socket) => {
     });
 
     // 1. JOIN ROOM
-    on('join_room', (payload, reply) => {
+    on('join_room', (payload, reply, hasCallback) => {
         const { playerName, isHost, character, userId, system } = payload;
 
         const cleanedRoomId = cleanRoomId(payload.roomId);
@@ -320,6 +350,7 @@ io.on('connection', (socket) => {
         const safeUserId = cleanString(userId, LIMITS.userIdLength);
         const safeSystem = cleanString(system, LIMITS.systemLength);
         const wantsHost = isHost === true;
+        const safeCharacter = isPlainObject(character) ? character : null;
 
         if (character != null && (!isPlainObject(character) || jsonSize(character) > LIMITS.characterBytes)) {
             reply({ success: false, error: 'Ficha de personagem inválida ou grande demais.' });
@@ -328,6 +359,7 @@ io.on('connection', (socket) => {
 
         // Mestre só é reconhecido se criar a sala (recebe o hostToken) ou reentrar com o hostToken correto.
         let isAuthenticatedHost = false;
+        let existingCharacter = null;
 
         let room = rooms.get(cleanedRoomId);
         if (!room) {
@@ -348,10 +380,12 @@ io.on('connection', (socket) => {
                 hostSocketId: socket.id,
                 hostUserId: safeUserId || null,
                 hostName: safeName || 'Mestre',
+                cleanupTimer: null,
                 members: new Map(),
                 gameState: {
                     map: null,
                     combat: null,
+                    audio: null,
                     chatHistory: []
                 }
             };
@@ -370,10 +404,65 @@ io.on('connection', (socket) => {
                 reply({ success: false, error: 'O Mestre desta mesa está desconectado no momento.' });
                 return;
             }
-            if (!room.members.has(socket.id) && room.members.size >= LIMITS.maxMembersPerRoom) {
+
+            // Antes de checar maxMembersPerRoom, identifica e poda sockets órfãos/reconectados do mesmo userId
+            // preservando a segurança S5 (não permite que um estranho com outro nome sequestre userId ativo).
+            const effectiveName = safeName || (isAuthenticatedHost ? 'Mestre' : 'Jogador');
+            const staleSocketsToPrune = [];
+
+            if (safeUserId) {
+                for (const [existingSocketId, existingMember] of room.members.entries()) {
+                    if (existingMember.userId !== safeUserId) continue;
+
+                    if (existingSocketId === socket.id) {
+                        if (existingMember.character) existingCharacter = existingMember.character;
+                        continue;
+                    }
+
+                    const activeOldSocket = io.sockets.sockets.get(existingSocketId);
+                    const isStillConnected = Boolean(activeOldSocket?.connected);
+
+                    if (existingMember.isHost && !isAuthenticatedHost) {
+                        reply({ success: false, error: 'Conflito de identificador com o Mestre da sala.' });
+                        return;
+                    }
+
+                    const canReplace = !isStillConnected
+                        || isAuthenticatedHost
+                        || existingMember.playerName === effectiveName;
+
+                    if (!canReplace) {
+                        reply({ success: false, error: 'Este identificador de jogador já está ativo na mesa.' });
+                        return;
+                    }
+
+                    if (existingMember.character) {
+                        existingCharacter = existingMember.character;
+                    }
+                    staleSocketsToPrune.push(existingSocketId);
+                }
+            } else if (room.members.has(socket.id)) {
+                existingCharacter = room.members.get(socket.id)?.character || null;
+            }
+
+            const effectiveNewSize = room.members.size - staleSocketsToPrune.length;
+            if (!room.members.has(socket.id) && effectiveNewSize >= LIMITS.maxMembersPerRoom) {
                 reply({ success: false, error: 'A mesa está lotada.' });
                 return;
             }
+
+            for (const staleSid of staleSocketsToPrune) {
+                console.log(`[Room ${cleanedRoomId}] Pruning stale socket ${staleSid} for user ${safeUserId}`);
+                const oldSock = io.sockets.sockets.get(staleSid);
+                if (oldSock) oldSock.leave(cleanedRoomId);
+                room.members.delete(staleSid);
+            }
+        }
+
+        // Cancela qualquer timer pendente de expiração de sala vazia
+        if (room.cleanupTimer) {
+            clearTimeout(room.cleanupTimer);
+            room.cleanupTimer = null;
         }
 
         socket.join(cleanedRoomId);
@@ -386,22 +475,12 @@ io.on('connection', (socket) => {
             if (safeSystem) room.system = safeSystem;
         }
 
-        // Clean up any stale socket entries for the same userId in this room
-        if (safeUserId) {
-            for (const [existingSocketId, existingMember] of room.members.entries()) {
-                if (existingMember.userId === safeUserId && existingSocketId !== socket.id) {
-                    console.log(`[Room ${cleanedRoomId}] Pruning stale socket ${existingSocketId} for user ${safeUserId}`);
-                    room.members.delete(existingSocketId);
-                }
-            }
-        }
-
         const memberData = {
             socketId: socket.id,
             userId: safeUserId || socket.id,
             playerName: safeName || (isAuthenticatedHost ? 'Mestre' : 'Jogador'),
             isHost: isAuthenticatedHost,
-            character: character || null,
+            character: safeCharacter || existingCharacter || null,
             isOnline: true
         };
 
@@ -430,8 +509,11 @@ io.on('connection', (socket) => {
             responsePayload.hostToken = room.hostToken;
         }
 
-        reply(responsePayload);
-        socket.emit('room_state', responsePayload);
+        if (hasCallback) {
+            reply(responsePayload);
+        } else {
+            socket.emit('room_state', responsePayload);
+        }
     });
 
     // 2. PEER MESSAGE RELAY (Matches PeerMessage protocol)
@@ -456,18 +538,123 @@ io.on('connection', (socket) => {
             }
         }
 
-        // Optionally cache state updates to accelerate sync for late-joining players
-        // (MAP full_sync / COMBAT_UPDATE só chegam aqui vindos do Mestre autenticado)
-        if (stamped.type === 'MAP_UPDATE' && stamped.payload?.type === 'full_sync' && isPlainObject(stamped.payload.data)) {
-            room.gameState.map = stamped.payload.data;
+        // Cacheia estado completo e deltas incrementais para sincronização imediata de reconexões / late-joiners
+        if (stamped.type === 'MAP_UPDATE' && isPlainObject(stamped.payload)) {
+            const p = stamped.payload;
+            const d = isPlainObject(p.data) ? p.data : null;
+
+            if (p.type === 'full_sync' && d) {
+                room.gameState.map = {
+                    ...d,
+                    tokens: Array.isArray(d.tokens) ? [...d.tokens] : [],
+                    walls: Array.isArray(d.walls) ? [...d.walls] : []
+                };
+            } else if (isPlainObject(room.gameState.map)) {
+                if (!Array.isArray(room.gameState.map.tokens)) room.gameState.map.tokens = [];
+                if (!Array.isArray(room.gameState.map.walls)) room.gameState.map.walls = [];
+
+                switch (p.type) {
+                    case 'config': {
+                        if (stamped.senderIsHost && d) {
+                            room.gameState.map.config = isPlainObject(room.gameState.map.config)
+                                ? { ...room.gameState.map.config, ...d }
+                                : { ...d };
+                        }
+                        break;
+                    }
+                    case 'move': {
+                        const moveId = typeof d?.id === 'string' ? d.id : (typeof p.id === 'string' ? p.id : null);
+                        const moveX = Number.isFinite(d?.x) ? d.x : (Number.isFinite(p.x) ? p.x : null);
+                        const moveY = Number.isFinite(d?.y) ? d.y : (Number.isFinite(p.y) ? p.y : null);
+                        if (moveId && moveX !== null && moveY !== null) {
+                            room.gameState.map.tokens = room.gameState.map.tokens.map(t =>
+                                (isPlainObject(t) && t.id === moveId)
+                                    ? { ...t, position: { ...(isPlainObject(t.position) ? t.position : {}), x: moveX, y: moveY } }
+                                    : t
+                            );
+                        }
+                        break;
+                    }
+                    case 'add': {
+                        const tokenObj = (d && typeof d.id === 'string')
+                            ? d
+                            : (isPlainObject(p.token) && typeof p.token.id === 'string' ? p.token : null);
+                        if (stamped.senderIsHost && tokenObj) {
+                            const exists = room.gameState.map.tokens.some(t => isPlainObject(t) && t.id === tokenObj.id);
+                            room.gameState.map.tokens = exists
+                                ? room.gameState.map.tokens.map(t => (isPlainObject(t) && t.id === tokenObj.id) ? tokenObj : t)
+                                : [...room.gameState.map.tokens, tokenObj];
+                        }
+                        break;
+                    }
+                    case 'remove': {
+                        const remId = typeof d?.id === 'string' ? d.id : (typeof p.id === 'string' ? p.id : null);
+                        if (stamped.senderIsHost && remId) {
+                            room.gameState.map.tokens = room.gameState.map.tokens.filter(t => !isPlainObject(t) || t.id !== remId);
+                        }
+                        break;
+                    }
+                    case 'update_token': {
+                        const updId = typeof d?.id === 'string' ? d.id : (typeof p.id === 'string' ? p.id : null);
+                        const updates = isPlainObject(d?.updates) ? d.updates : (isPlainObject(p.updates) ? p.updates : null);
+                        if (stamped.senderIsHost && updId && updates) {
+                            room.gameState.map.tokens = room.gameState.map.tokens.map(t =>
+                                (isPlainObject(t) && t.id === updId) ? { ...t, ...updates } : t
+                            );
+                        }
+                        break;
+                    }
+                    case 'add_wall': {
+                        const wallObj = (d && typeof d.id === 'string')
+                            ? d
+                            : (isPlainObject(p.wall) && typeof p.wall.id === 'string' ? p.wall : null);
+                        if (stamped.senderIsHost && wallObj) {
+                            const exists = room.gameState.map.walls.some(w => isPlainObject(w) && w.id === wallObj.id);
+                            room.gameState.map.walls = exists
+                                ? room.gameState.map.walls.map(w => (isPlainObject(w) && w.id === wallObj.id) ? wallObj : w)
+                                : [...room.gameState.map.walls, wallObj];
+                        }
+                        break;
+                    }
+                    case 'update_wall': {
+                        const wallId = typeof d?.id === 'string' ? d.id : (typeof p.id === 'string' ? p.id : null);
+                        const updates = isPlainObject(d?.updates) ? d.updates : (isPlainObject(p.updates) ? p.updates : null);
+                        if (stamped.senderIsHost && wallId && updates) {
+                            room.gameState.map.walls = room.gameState.map.walls.map(w =>
+                                (isPlainObject(w) && w.id === wallId) ? { ...w, ...updates } : w
+                            );
+                        }
+                        break;
+                    }
+                    case 'remove_wall': {
+                        const wallId = typeof d?.id === 'string' ? d.id : (typeof p.id === 'string' ? p.id : null);
+                        if (stamped.senderIsHost && wallId) {
+                            room.gameState.map.walls = room.gameState.map.walls.filter(w => !isPlainObject(w) || w.id !== wallId);
+                        }
+                        break;
+                    }
+                    default:
+                        break;
+                }
+            }
         } else if (stamped.type === 'COMBAT_UPDATE' && isPlainObject(stamped.payload)) {
             room.gameState.combat = stamped.payload;
+        } else if (stamped.type === 'AUDIO_UPDATE' && isPlainObject(stamped.payload)) {
+            room.gameState.audio = stamped.payload;
         } else if (stamped.type === 'CHAT_MESSAGE' && jsonSize(stamped.payload) <= LIMITS.chatMessageBytes) {
             if (!room.gameState.chatHistory) room.gameState.chatHistory = [];
             room.gameState.chatHistory.push(stamped.payload);
             if (room.gameState.chatHistory.length > 100) {
                 room.gameState.chatHistory.shift();
             }
+        }
+
+        // Unicast SYNC_REQUEST apenas para o Mestre (evita broadcast desnecessário aos demais jogadores)
+        if (stamped.type === 'SYNC_REQUEST') {
+            if (room.hostSocketId && room.hostSocketId !== socket.id) {
+                io.to(room.hostSocketId).emit('peer_message', stamped);
+            }
+            return;
         }
 
         // Broadcast to all other peers in the room
@@ -503,6 +690,10 @@ io.on('connection', (socket) => {
 
         if (isRoomHost(room, socket.id)) {
             console.log(`[Room ${cleanedRoomId}] Room closed by Host (${socket.id}). Notifying all players.`);
+            if (room.cleanupTimer) {
+                clearTimeout(room.cleanupTimer);
+                room.cleanupTimer = null;
+            }
             io.to(cleanedRoomId).emit('room_closed', {
                 roomId: cleanedRoomId,
                 reason: 'A mesa foi encerrada pelo Mestre.'
@@ -523,6 +714,10 @@ io.on('connection', (socket) => {
 
         if (isHost && payload.closeRoom === true) {
             console.log(`[Room ${cleanedRoomId}] Host left with closeRoom flag. Terminating room.`);
+            if (room.cleanupTimer) {
+                clearTimeout(room.cleanupTimer);
+                room.cleanupTimer = null;
+            }
             io.to(cleanedRoomId).emit('room_closed', {
                 roomId: cleanedRoomId,
                 reason: 'A mesa foi encerrada pelo Mestre.'
@@ -613,13 +808,21 @@ function handleSocketLeaveRoom(socket, roomId) {
     // Grace period para salas vazias (padrão de 10 minutos para suportar oscilações de rede e recarregamentos)
     const gracePeriodMs = Number(process.env.ROOM_GRACE_PERIOD_MS) || (10 * 60 * 1000);
     if (room.members.size === 0) {
-        setTimeout(() => {
+        if (room.cleanupTimer) {
+            clearTimeout(room.cleanupTimer);
+            room.cleanupTimer = null;
+        }
+        room.cleanupTimer = setTimeout(() => {
             const currentRoom = rooms.get(roomId);
-            if (currentRoom && currentRoom.members.size === 0) {
-                rooms.delete(roomId);
-                console.log(`[Room ${roomId}] Empty room expired (${gracePeriodMs / 1000}s grace period) and cleaned up.`);
+            if (currentRoom) {
+                currentRoom.cleanupTimer = null;
+                if (currentRoom.members.size === 0) {
+                    rooms.delete(roomId);
+                    console.log(`[Room ${roomId}] Empty room expired (${gracePeriodMs / 1000}s grace period) and cleaned up.`);
+                }
             }
         }, gracePeriodMs);
+        room.cleanupTimer.unref?.();
     }
 }
 

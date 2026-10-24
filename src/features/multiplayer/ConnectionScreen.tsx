@@ -41,6 +41,13 @@ const generateRoomCode = (systemId: string = 'dnd55e'): string => {
     return `${prefix}-${code}`;
 };
 
+const resolveCampaignSystemId = (rawSystem?: string | null, campaignId?: string | null): string => {
+    if (rawSystem === 'witcher' || String(campaignId || '').toUpperCase().startsWith('WTC-')) {
+        return 'witcher';
+    }
+    return 'dnd55e';
+};
+
 export const ConnectionScreen: React.FC<ConnectionScreenProps> = ({ onStartGame, onOpenPlayerRules, onOpenGMRules }) => {
     const { startHosting, connectToHost, peerId, connections, peerError, currentAdventureId, serverUrl, setServerUrl, isConnecting: isPeerConnecting, isConnected } = usePeer();
     const {
@@ -49,6 +56,7 @@ export const ConnectionScreen: React.FC<ConnectionScreenProps> = ({ onStartGame,
         loadAdventure,
         deleteAdventure,
         closeAdventure,
+        rebindAdventureId,
         currentAdventure,
         downloadCampaignBackup,
         importCampaign
@@ -63,15 +71,18 @@ export const ConnectionScreen: React.FC<ConnectionScreenProps> = ({ onStartGame,
         try {
             const text = await file.text();
             const imported = await importCampaign(text);
-            loadAdventure(imported.id);
-            if (imported.system) {
-                setSelectedSystemId(imported.system);
-                localStorage.setItem('rpg_selected_system', imported.system);
-            }
-            if (imported.id.startsWith('DND-') || imported.id.startsWith('WTC-')) {
-                handleRoomCodeChange(imported.id);
-            }
-            alert(`Aventura "${imported.name}" importada com sucesso!`);
+            await loadAdventure(imported.id);
+            const resolvedSys = resolveCampaignSystemId(imported.system, imported.id);
+            setSelectedSystemId(resolvedSys);
+            localStorage.setItem('rpg_selected_system', resolvedSys);
+
+            const cleanCode = imported.id.trim().toUpperCase();
+            setCustomRoomCode(cleanCode);
+            localStorage.setItem(`rpg_gm_room_code_${resolvedSys}`, cleanCode);
+            localStorage.setItem('rpg_last_room_code', cleanCode);
+            setAdvName('');
+
+            alert(`Aventura "${imported.name}" importada com sucesso! Código da sala: ${cleanCode}`);
         } catch (err: any) {
             alert('Erro ao importar aventura: ' + (err?.message || 'Arquivo corrompido'));
         } finally {
@@ -156,7 +167,13 @@ export const ConnectionScreen: React.FC<ConnectionScreenProps> = ({ onStartGame,
     };
 
     const handleGenerateNewCode = () => {
-        const newCode = generateRoomCode(selectedSystem.id);
+        let newCode = generateRoomCode(selectedSystem.id);
+        while (adventures.some(a => a.id === newCode)) {
+            newCode = generateRoomCode(selectedSystem.id);
+        }
+        if (currentAdventure && currentAdventure.id === customRoomCode) {
+            closeAdventure();
+        }
         setCustomRoomCode(newCode);
         localStorage.setItem(`rpg_gm_room_code_${selectedSystem.id}`, newCode);
         localStorage.setItem('rpg_last_room_code', newCode);
@@ -186,26 +203,48 @@ export const ConnectionScreen: React.FC<ConnectionScreenProps> = ({ onStartGame,
     const handleHost = async () => {
         if (!name.trim()) return alert('Digite seu nome de Mestre!');
 
-        const finalCode = (customRoomCode.trim().toUpperCase()) || generateRoomCode(selectedSystem.id);
+        let finalCode = (customRoomCode.trim().toUpperCase()) || generateRoomCode(selectedSystem.id);
+        let activeAdvName = advName.trim();
+        const existingAdv = adventures.find(a => a.id === finalCode);
+
+        if (advName.trim()) {
+            // Explicit creation of a brand-new adventure: avoid overwriting an existing campaign with the same room code
+            if (existingAdv) {
+                let freshCode = generateRoomCode(selectedSystem.id);
+                while (adventures.some(a => a.id === freshCode)) {
+                    freshCode = generateRoomCode(selectedSystem.id);
+                }
+                finalCode = freshCode;
+                setCustomRoomCode(finalCode);
+            }
+            const newAdv = await createAdventure(advName.trim(), selectedSystem.id, finalCode);
+            activeAdvName = newAdv.name;
+            setAdvName('');
+        } else if (currentAdventure) {
+            if (currentAdventure.id === finalCode) {
+                await loadAdventure(finalCode);
+                activeAdvName = currentAdventure.name;
+            } else if (!existingAdv) {
+                // Selected saved campaign (e.g. legacy UUID) bound to a clean hostable room code
+                const rebound = await rebindAdventureId(currentAdventure.id, finalCode);
+                activeAdvName = rebound?.name || currentAdventure.name;
+            } else {
+                await loadAdventure(finalCode);
+                activeAdvName = existingAdv.name;
+            }
+        } else if (existingAdv) {
+            await loadAdventure(finalCode);
+            activeAdvName = existingAdv.name;
+        } else {
+            const advTitle = `Campanha ${selectedSystem.name.split('(')[0].trim()} [${finalCode}]`;
+            const newAdv = await createAdventure(advTitle, selectedSystem.id, finalCode);
+            activeAdvName = newAdv.name;
+        }
 
         // Persiste o código da sala utilizado para garantir que seja mantido nas próximas sessões
         localStorage.setItem(`rpg_gm_room_code_${selectedSystem.id}`, finalCode);
         localStorage.setItem('rpg_last_room_code', finalCode);
         localStorage.setItem('rpg_selected_system', selectedSystem.id);
-
-        let activeAdvName = advName.trim();
-        const existingAdv = adventures.find(a => a.id === finalCode);
-
-        if (existingAdv) {
-            await loadAdventure(finalCode);
-            activeAdvName = existingAdv.name;
-        } else if (!currentAdventure || currentAdventure.id !== finalCode) {
-            const advTitle = advName.trim() || `Campanha ${selectedSystem.name.split('(')[0].trim()} [${finalCode}]`;
-            const newAdv = await createAdventure(advTitle, selectedSystem.id, finalCode);
-            activeAdvName = newAdv.name;
-        } else {
-            activeAdvName = currentAdventure.name;
-        }
 
         console.log('Starting host with Adventure ID / Room Code:', finalCode, 'System:', selectedSystem.id);
 
@@ -689,21 +728,38 @@ export const ConnectionScreen: React.FC<ConnectionScreenProps> = ({ onStartGame,
                             <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
                                 <select
                                     style={{ ...inputStyle, width: '100%', padding: '12px', marginBottom: 0, textAlign: 'left', boxSizing: 'border-box' }}
-                                    onChange={(e) => {
+                                    onChange={async (e) => {
                                         const advId = e.target.value;
                                         if (!advId) {
                                             closeAdventure();
                                             return;
                                         }
-                                        loadAdventure(advId);
+                                        await loadAdventure(advId);
+                                        setAdvName('');
                                         const found = adventures.find(a => a.id === advId);
                                         if (found) {
-                                            if ((found as any).system) {
-                                                setSelectedSystemId((found as any).system);
-                                                localStorage.setItem('rpg_selected_system', (found as any).system);
-                                            }
-                                            if (found.id.startsWith('DND-') || found.id.startsWith('WTC-')) {
-                                                handleRoomCodeChange(found.id);
+                                            const resolvedSys = resolveCampaignSystemId(found.system, found.id);
+                                            setSelectedSystemId(resolvedSys);
+                                            localStorage.setItem('rpg_selected_system', resolvedSys);
+
+                                            if (/^[A-Z0-9-]+$/.test(found.id) && (found.id.startsWith('DND-') || found.id.startsWith('WTC-'))) {
+                                                setCustomRoomCode(found.id);
+                                                localStorage.setItem(`rpg_gm_room_code_${resolvedSys}`, found.id);
+                                                localStorage.setItem('rpg_last_room_code', found.id);
+                                            } else {
+                                                const codeInUseByOther = adventures.some(a => a.id === customRoomCode && a.id !== found.id);
+                                                const prefixMatches = resolvedSys === 'witcher'
+                                                    ? customRoomCode.startsWith('WTC-')
+                                                    : customRoomCode.startsWith('DND-');
+                                                if (!customRoomCode || codeInUseByOther || !prefixMatches) {
+                                                    let nextCode = generateRoomCode(resolvedSys);
+                                                    while (adventures.some(a => a.id === nextCode)) {
+                                                        nextCode = generateRoomCode(resolvedSys);
+                                                    }
+                                                    setCustomRoomCode(nextCode);
+                                                    localStorage.setItem(`rpg_gm_room_code_${resolvedSys}`, nextCode);
+                                                    localStorage.setItem('rpg_last_room_code', nextCode);
+                                                }
                                             }
                                         }
                                     }}
