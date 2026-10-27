@@ -81,7 +81,6 @@ export interface MultiplayerContextState {
     myName: string;
     onMessage: (callback: (data: PeerMessage) => void) => () => void;
     serverUrl: string;
-    setServerUrl: (url: string) => void;
 }
 
 const MultiplayerContext = createContext<MultiplayerContextState | undefined>(undefined);
@@ -117,24 +116,18 @@ const getDefaultServerUrl = (): string => {
     return isLocalhost ? 'http://localhost:3001' : window.location.origin;
 };
 
-const getInitialServerUrl = (): string => {
-    const envUrl = import.meta.env.VITE_SOCKET_SERVER_URL
-        ? String(import.meta.env.VITE_SOCKET_SERVER_URL).trim().replace(/\/+$/, '')
-        : '';
+// O endereço do servidor não é mais configurável pelo usuário: vem do build (VITE_SOCKET_SERVER_URL)
+// ou da origem atual. Remove overrides antigos salvos no navegador para não apontarem para
+// um servidor obsoleto (ex.: localhost de testes anteriores).
+const purgeLegacyServerOverrides = (): void => {
     try {
-        if (envUrl) {
-            // Em builds de produção com VITE_SOCKET_SERVER_URL definido, ignora entradas antigas de localhost
-            // em rpg_server_url, respeitando apenas um override manual explícito do usuário.
-            const override = localStorage.getItem('rpg_server_url_override')?.trim().replace(/\/+$/, '');
-            return override || envUrl;
-        }
-        const saved = localStorage.getItem('rpg_server_url')?.trim().replace(/\/+$/, '');
-        if (saved) return saved;
+        localStorage.removeItem('rpg_server_url');
+        localStorage.removeItem('rpg_server_url_override');
     } catch {
         // Ignore storage errors
     }
-    return getDefaultServerUrl();
 };
+purgeLegacyServerOverrides();
 
 export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [myId] = useState(getMyId);
@@ -161,7 +154,7 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
         }
         return 'dnd55e';
     });
-    const [serverUrl, setServerUrl] = useState<string>(getInitialServerUrl);
+    const [serverUrl] = useState<string>(getDefaultServerUrl);
 
     const socketRef = useRef<Socket | null>(null);
     const myCharacterRef = useRef<Character | null>(null);
@@ -1182,34 +1175,6 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
         };
     }, []);
 
-    const handleSetServerUrl = useCallback((url: string) => {
-        const trimmed = url.trim().replace(/\/+$/, '');
-        const finalUrl = trimmed || getDefaultServerUrl();
-        setServerUrl(finalUrl);
-        try {
-            if (trimmed) {
-                localStorage.setItem('rpg_server_url', finalUrl);
-                localStorage.setItem('rpg_server_url_override', finalUrl);
-            } else {
-                localStorage.removeItem('rpg_server_url');
-                localStorage.removeItem('rpg_server_url_override');
-            }
-        } catch {
-            // Ignore storage errors
-        }
-        clearRejoinTimer();
-        clearHostReconnectSyncTimer();
-        isJoinedRoomRef.current = false;
-        pendingExplicitJoinRef.current = false;
-        if (socketRef.current) {
-            socketRef.current.disconnect();
-            socketRef.current = null;
-        }
-        setIsConnected(false);
-        setIsConnecting(false);
-        setConnectionState('disconnected');
-    }, [clearRejoinTimer, clearHostReconnectSyncTimer]);
-
     return (
         <MultiplayerContext.Provider value={{
             peerId: myId,
@@ -1241,8 +1206,7 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
             myId,
             myName: username,
             onMessage,
-            serverUrl,
-            setServerUrl: handleSetServerUrl
+            serverUrl
         }}>
             {children}
         </MultiplayerContext.Provider>

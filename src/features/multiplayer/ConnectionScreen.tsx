@@ -4,8 +4,6 @@ import {
     Crown,
     BookOpen,
     Scroll,
-    Settings,
-    Globe,
     Copy,
     Check,
     Link2,
@@ -49,7 +47,7 @@ const resolveCampaignSystemId = (rawSystem?: string | null, campaignId?: string 
 };
 
 export const ConnectionScreen: React.FC<ConnectionScreenProps> = ({ onStartGame, onOpenPlayerRules, onOpenGMRules }) => {
-    const { startHosting, connectToHost, peerId, connections, peerError, currentAdventureId, serverUrl, setServerUrl, isConnecting: isPeerConnecting, isConnected } = usePeer();
+    const { startHosting, connectToHost, peerId, connections, peerError, currentAdventureId, isConnecting: isPeerConnecting } = usePeer();
     const {
         adventures,
         createAdventure,
@@ -136,11 +134,6 @@ export const ConnectionScreen: React.FC<ConnectionScreenProps> = ({ onStartGame,
         }
     }, []);
 
-    // Server URL Config Modal State
-    const [showServerConfig, setShowServerConfig] = useState(false);
-    const [tempServerUrl, setTempServerUrl] = useState(serverUrl);
-    const [urlFeedback, setUrlFeedback] = useState<string | null>(null);
-
     // Loading State
     const [isConnecting, setIsConnecting] = useState(false);
 
@@ -177,15 +170,6 @@ export const ConnectionScreen: React.FC<ConnectionScreenProps> = ({ onStartGame,
         setCustomRoomCode(newCode);
         localStorage.setItem(`rpg_gm_room_code_${selectedSystem.id}`, newCode);
         localStorage.setItem('rpg_last_room_code', newCode);
-    };
-
-    const handleSaveServerUrl = () => {
-        const clean = tempServerUrl.trim();
-        if (!clean) return alert('Por favor, informe uma URL válida.');
-        setServerUrl(clean);
-        setUrlFeedback('Endereço do servidor salvo!');
-        setTimeout(() => setUrlFeedback(null), 2500);
-        setShowServerConfig(false);
     };
 
     const checkGmPassword = () => {
@@ -290,127 +274,12 @@ export const ConnectionScreen: React.FC<ConnectionScreenProps> = ({ onStartGame,
         </div>
     ) : null;
 
-    // --- RENDER MODAL SERVIDOR ---
-    const renderServerModal = () => {
-        if (!showServerConfig) return null;
-        return (
-            <div style={{
-                position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
-                background: 'rgba(0, 0, 0, 0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                zIndex: 10001, backdropFilter: 'blur(6px)'
-            }}>
-                <div style={{
-                    background: '#181824', border: '1px solid #444', borderRadius: '16px',
-                    padding: '28px', maxWidth: '480px', width: '90%', color: '#fff',
-                    boxShadow: '0 12px 40px rgba(0,0,0,0.7)'
-                }}>
-                    <h3 style={{ margin: '0 0 15px 0', color: '#ffd700', display: 'flex', alignItems: 'center', gap: '8px', fontFamily: 'Cinzel, serif' }}>
-                        <Globe size={18} color="#ffd700" />
-                        <span>Configurar Servidor de Rede</span>
-                    </h3>
-                    <p style={{ color: '#aaa', fontSize: '0.9rem', marginBottom: '16px', lineHeight: 1.4 }}>
-                        Defina a URL do servidor Socket.io para multiplayer local (LAN) ou na nuvem (Vercel/Render).
-                    </p>
-                    <input
-                        type="text"
-                        style={{
-                            width: '100%', padding: '12px', background: '#0e0e14', border: '1px solid #555',
-                            color: '#fff', borderRadius: '8px', fontSize: '1rem', boxSizing: 'border-box',
-                            marginBottom: '12px', fontFamily: 'monospace'
-                        }}
-                        value={tempServerUrl}
-                        onChange={(e) => setTempServerUrl(e.target.value)}
-                        placeholder="http://localhost:3001"
-                    />
-                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '18px' }}>
-                        <button
-                            type="button"
-                            onClick={() => setTempServerUrl('http://localhost:3001')}
-                            style={{ background: '#252535', border: '1px solid #444', color: '#ccc', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem' }}
-                        >
-                            Localhost (3001)
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setTempServerUrl(`http://${window.location.hostname}:3001`)}
-                            style={{ background: '#252535', border: '1px solid #444', color: '#ccc', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem' }}
-                        >
-                            IP Local ({window.location.hostname}:3001)
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setTempServerUrl(window.location.origin)}
-                            style={{ background: '#252535', border: '1px solid #444', color: '#ccc', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem' }}
-                        >
-                            Origem Web Atual
-                        </button>
-                    </div>
-                    {urlFeedback && <div style={{ color: '#4caf50', fontSize: '0.85rem', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}><Check size={14} /> {urlFeedback}</div>}
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-                        <button
-                            type="button"
-                            onClick={() => setShowServerConfig(false)}
-                            style={{ background: '#333', border: 'none', color: '#fff', padding: '10px 18px', borderRadius: '8px', cursor: 'pointer' }}
-                        >
-                            Cancelar
-                        </button>
-                        <button
-                            type="button"
-                            onClick={handleSaveServerUrl}
-                            style={{ background: '#950740', border: 'none', color: '#fff', padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}
-                        >
-                            Salvar e Aplicar
-                        </button>
-                    </div>
-                </div>
-            </div>
-        );
-    };
-
-    // --- RENDER BOTÃO SERVIDOR FLUTUANTE ---
-    const renderServerButton = () => (
-        <div style={{ position: 'fixed', bottom: 16, right: 16, zIndex: 10000 }}>
-            <button
-                type="button"
-                onClick={() => {
-                    setTempServerUrl(serverUrl);
-                    setShowServerConfig(true);
-                }}
-                style={{
-                    background: 'rgba(20, 20, 30, 0.9)',
-                    border: '1px solid rgba(255, 255, 255, 0.15)',
-                    color: '#ffd700',
-                    padding: '8px 16px',
-                    borderRadius: '24px',
-                    cursor: 'pointer',
-                    fontSize: '0.85rem',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    backdropFilter: 'blur(8px)',
-                    boxShadow: '0 4px 16px rgba(0,0,0,0.6)',
-                    transition: 'all 0.2s ease'
-                }}
-                title="Configurar servidor de rede"
-            >
-                <Globe size={15} color="#ffd700" />
-                <span>Servidor: <strong style={{ color: isConnected ? '#4caf50' : '#ffb74d' }}>{serverUrl.replace(/^https?:\/\//, '')}</strong></span>
-                <span style={{
-                    width: 8, height: 8, borderRadius: '50%',
-                    background: isConnected ? '#4caf50' : '#ffb74d',
-                    display: 'inline-block',
-                    boxShadow: isConnected ? '0 0 8px #4caf50' : 'none'
-                }} />
-            </button>
-        </div>
-    );
-
     // --- CORPO DA TELA CONFORME O MODO ---
     const renderBody = () => {
         // 1. Role & Universe Selection (TELA PRINCIPAL)
         if (mode === 'role-selection') {
             return (
-                <div className="connection-content">
+                <div className="connection-content role-screen">
                     {/* Header Superior */}
                     <header className="connection-header">
                         <div className="brand-title">
@@ -432,133 +301,111 @@ export const ConnectionScreen: React.FC<ConnectionScreenProps> = ({ onStartGame,
                                     <Scroll size={14} /> Livro do Mestre
                                 </button>
                             )}
-                            <button
-                                type="button"
-                                className="nav-link-btn"
-                                onClick={() => {
-                                    setTempServerUrl(serverUrl);
-                                    setShowServerConfig(true);
-                                }}
-                                style={{ borderColor: 'rgba(255, 215, 0, 0.4)', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-                            >
-                                <Settings size={14} /> Servidor
-                            </button>
                         </div>
                     </header>
 
-                    {/* Hero Section */}
-                    <section className="hero-section">
-                        <h2 className="hero-title">Universos & Modos de Jogo</h2>
-                        <p className="hero-description">
-                            Escolha a ambientação para iniciar sua campanha ou conecte-se a uma mesa em andamento.
-                            O VTT ajusta o combate, fichas e atmosfera automaticamente.
-                        </p>
-                    </section>
+                    <main className="role-stage">
+                        {/* Título */}
+                        <section className="hero-section">
+                            <h2 className="hero-title">Sua mesa de RPG, online</h2>
+                            <p className="hero-description">
+                                Escolha o universo e comece uma campanha como Mestre ou entre em uma mesa em andamento.
+                            </p>
+                        </section>
 
-                    {/* Grade de Cards Temáticos */}
-                    <div className="systems-grid">
-                        {GAME_SYSTEMS.map(sys => {
-                            const isSelected = sys.id === selectedSystemId;
-                            return (
-                                <div
-                                    key={sys.id}
-                                    className={`system-card ${isSelected ? 'selected' : ''}`}
-                                    onClick={() => handleSelectSystem(sys.id)}
-                                    style={{
-                                        background: sys.bgGradient,
-                                        border: `2px solid ${isSelected ? sys.accentColor : 'rgba(255,255,255,0.1)'}`,
-                                        boxShadow: isSelected ? `0 0 25px ${sys.glowColor}` : '0 4px 15px rgba(0,0,0,0.4)'
-                                    }}
-                                >
-                                    {/* Indicador de Seleção */}
-                                    {isSelected && (
-                                        <div
-                                            className="card-selected-indicator"
-                                            style={{ background: sys.accentColor, color: '#000', display: 'flex', alignItems: 'center', gap: '4px' }}
+                        {/* Painel central em destaque: universo + ações principais */}
+                        <div
+                            className="action-control-panel action-hero"
+                            style={{
+                                borderColor: `${selectedSystem.accentColor}66`,
+                                boxShadow: `0 14px 50px rgba(0, 0, 0, 0.65), 0 0 45px ${selectedSystem.glowColor}`
+                            }}
+                        >
+                            <span className="universe-picker-label">Escolha o universo</span>
+
+                            <div className="universe-options">
+                                {GAME_SYSTEMS.map(sys => {
+                                    const isSelected = sys.id === selectedSystemId;
+                                    return (
+                                        <button
+                                            key={sys.id}
+                                            type="button"
+                                            className={`universe-card ${isSelected ? 'selected' : ''}`}
+                                            onClick={() => handleSelectSystem(sys.id)}
+                                            style={{
+                                                background: sys.bgGradient,
+                                                borderColor: isSelected ? sys.accentColor : 'rgba(255, 255, 255, 0.1)',
+                                                boxShadow: isSelected ? `0 0 22px ${sys.glowColor}` : 'none'
+                                            }}
                                         >
-                                            <Check size={12} strokeWidth={3} />
-                                            <span>ATIVO</span>
-                                        </div>
-                                    )}
-
-                                    {/* Top Badge */}
-                                    <div
-                                        className="card-badge"
-                                        style={{
-                                            background: `${sys.accentColor}25`,
-                                            color: sys.accentColor,
-                                            border: `1px solid ${sys.accentColor}55`
-                                        }}
-                                    >
-                                        <span>{sys.badgeText}</span>
-                                    </div>
-
-                                    {/* Título e Gênero */}
-                                    <h3 className="card-title" style={{ color: sys.accentColor }}>{sys.name}</h3>
-                                    <div className="card-genre" style={{ color: '#aaa' }}>{sys.genre}</div>
-
-                                    {/* Tagline */}
-                                    <p className="card-tagline">"{sys.tagline}"</p>
-
-                                    {/* Descrição */}
-                                    <p className="card-description">{sys.description}</p>
-
-                                    {/* Tags Temáticas */}
-                                    <div className="card-tags">
-                                        {sys.tags.map((t, idx) => (
-                                             <span key={idx} className="tag-pill" style={{ borderColor: `${sys.accentColor}33` }}>
-                                                 {t}
-                                             </span>
-                                        ))}
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-
-                    {/* Painel Inferior de Ação (CTA) */}
-                    <div className="action-control-panel">
-                        <div className="active-mode-summary">
-                            <span className="active-mode-label">Universo Selecionado:</span>
-                            <span className="active-mode-name" style={{ color: selectedSystem.accentColor }}>
-                                {selectedSystem.name}
-                            </span>
-                        </div>
-
-                        <p style={{ margin: '0 0 20px 0', color: '#888', fontStyle: 'italic', fontSize: '0.9rem', textAlign: 'center' }}>
-                            "{selectedSystem.loreIntro}"
-                        </p>
-
-                        <div className="role-buttons-row">
-                            <button
-                                type="button"
-                                className="role-btn role-btn-gm"
-                                onClick={() => setMode('gm-login')}
-                                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-                            >
-                                <Crown size={18} />
-                                <span>Criar Sala como Mestre</span>
-                            </button>
-
-                            <button
-                                type="button"
-                                className="role-btn role-btn-player"
-                                onClick={() => setMode('player-setup')}
-                                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-                            >
-                                <Swords size={18} />
-                                <span>Entrar como Jogador</span>
-                            </button>
-                        </div>
-
-                        {isPeerConnecting && (
-                            <div style={{ color: '#ffcc00', fontSize: '0.85rem', marginTop: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
-                                <Loader2 size={14} className="animate-spin" />
-                                <span>Sincronizando com o servidor de rede...</span>
+                                            {isSelected && (
+                                                <span
+                                                    className="card-selected-indicator"
+                                                    style={{ background: sys.accentColor, color: '#000' }}
+                                                >
+                                                    <Check size={12} strokeWidth={3} />
+                                                    <span>ATIVO</span>
+                                                </span>
+                                            )}
+                                            <span
+                                                className="card-badge"
+                                                style={{
+                                                    background: `${sys.accentColor}25`,
+                                                    color: sys.accentColor,
+                                                    border: `1px solid ${sys.accentColor}55`
+                                                }}
+                                            >
+                                                {sys.badgeText}
+                                            </span>
+                                            <span className="card-title" style={{ color: sys.accentColor }}>{sys.name}</span>
+                                            <span className="card-genre">{sys.genre}</span>
+                                        </button>
+                                    );
+                                })}
                             </div>
-                        )}
-                        <ErrorDisplay />
-                    </div>
+
+                            <div className="universe-info">
+                                <p className="universe-info-tagline">"{selectedSystem.tagline}"</p>
+                                <div className="card-tags" style={{ justifyContent: 'center' }}>
+                                    {selectedSystem.tags.map((t, idx) => (
+                                        <span key={idx} className="tag-pill" style={{ borderColor: `${selectedSystem.accentColor}33` }}>
+                                            {t}
+                                        </span>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="role-buttons-row">
+                                <button
+                                    type="button"
+                                    className="role-btn role-btn-gm"
+                                    onClick={() => setMode('gm-login')}
+                                >
+                                    <Crown size={30} />
+                                    <span className="role-btn-title">Criar Sala como Mestre</span>
+                                    <span className="role-btn-sub">Hospede a mesa e comande a aventura</span>
+                                </button>
+
+                                <button
+                                    type="button"
+                                    className="role-btn role-btn-player"
+                                    onClick={() => setMode('player-setup')}
+                                >
+                                    <Swords size={30} />
+                                    <span className="role-btn-title">Entrar como Jogador</span>
+                                    <span className="role-btn-sub">Use o código de sala do seu Mestre</span>
+                                </button>
+                            </div>
+
+                            {isPeerConnecting && (
+                                <div style={{ color: '#ffcc00', fontSize: '0.85rem', marginTop: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                                    <Loader2 size={14} className="animate-spin" />
+                                    <span>Sincronizando com o servidor de rede...</span>
+                                </div>
+                            )}
+                            <ErrorDisplay />
+                        </div>
+                    </main>
                 </div>
             );
         }
@@ -1135,8 +982,6 @@ export const ConnectionScreen: React.FC<ConnectionScreenProps> = ({ onStartGame,
         >
             <div className="connection-bg-overlay" />
             {renderBody()}
-            {renderServerButton()}
-            {renderServerModal()}
         </div>
     );
 };
