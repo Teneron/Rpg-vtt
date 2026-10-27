@@ -716,8 +716,8 @@ export const BattleMap: React.FC = () => {
                 return null;
             })()}
 
-            {/* UI Zoom Controls — positioned cleanly above floating Chat Toggle button (bottom: 20px, 60x60) */}
-            <div style={{ position: 'absolute', bottom: '92px', right: '20px', zIndex: 500, display: 'flex', gap: 10 }}>
+            {/* UI Zoom Controls — canto inferior esquerdo para nunca colidir com o chat (inferior direito) */}
+            <div style={{ position: 'absolute', bottom: 'var(--gap-overlay, 16px)', left: 'var(--gap-overlay, 16px)', zIndex: 500, display: 'flex', gap: 10 }}>
                 <button onClick={() => setScale(s => s * 1.2)} style={{ ...btnStyle, display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Aproximar">
                     <Plus size={14} />
                 </button>

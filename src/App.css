@@ -9,11 +9,7 @@
   position: relative;
 }
 
-header {
-  margin-bottom: 2rem;
-  border-bottom: 2px solid var(--color-border);
-  padding-bottom: 1rem;
-}
+/* Legacy prototype header rules removed to avoid global tag leaks */
 
 .app-nav {
   display: flex;
