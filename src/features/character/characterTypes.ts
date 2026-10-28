@@ -2,6 +2,7 @@ import type { Spell } from './data/spells';
 import { FEATS, type Feat } from './data/feats';
 import { RACES } from './data/races';
 import { ITEMS } from './data/items';
+import { COMPANION_PRESETS, type CompanionPreset } from './data/companionPresets';
 
 export type { Spell, Feat };
 
@@ -105,6 +106,7 @@ export interface CompanionFeature {
 
 export interface Companion {
     id: string;
+    presetId?: string;
     name: string;
     type: 'beast_companion' | 'familiar' | 'steed' | 'homunculus' | 'summon' | 'custom';
     creatureType: string; // e.g. "Besta da Terra", "Besta do Céu", "Diabrete", "Coruja", "Cavalo de Guerra"
@@ -115,6 +117,12 @@ export interface Companion {
         max: number;
         temp?: number;
     };
+    baseHp?: number;
+    hpPerLevel?: number;
+    baseAc?: number;
+    acAddsPb?: boolean;
+    acOverride?: number; // GM / Player Manual Override (e.g. Barding or Spells)
+    acBreakdown?: string;
     ac: number;
     speed: string; // e.g. "12m", "18m voo", "12m escalada"
     visionRange?: number; // Metros de visão no escuro
@@ -158,6 +166,7 @@ export interface Character {
     // Combate
     armorClass: number;
     acOverride?: number; // GM Manual Override
+    acBreakdown?: string; // Transparent formula breakdown (e.g. Cota de Malha 16 + Escudo 2 = 18)
     initiative: number;
     baseSpeed?: number; // Deslocamento base racial (metros), sem bônus acumulativos
     speed: number;
@@ -514,23 +523,25 @@ export const regenerateCharacterStats = (char: Character): Character => {
     }
 
     // --- Auto-Calculate AC (Armor + Shield + Dex) ---
-    // Start with 10 + Dex (Unarmored)
-    let baseAC = 10 + newDexMod;
     const className = (char.class || '').toLowerCase();
-    const isBarbarian = /b[áa]rbar/i.test(className);
-    const isMonk = /mon[kg]/i.test(className);
-    const hasUnarmoredDefense = (Array.isArray(char.features) && char.features.some(f => /defesa sem armadura|unarmored defense/i.test(f.name))) || isBarbarian || isMonk;
+    const isBarbarian = /b[áa]rbar/i.test(className) || (Array.isArray(char.features) && char.features.some(f => /defesa sem armadura.*constitui/i.test(f.name + ' ' + (f.description || ''))));
+    const isMonk = /mon[kg]/i.test(className) || (Array.isArray(char.features) && char.features.some(f => /defesa sem armadura.*sabedoria/i.test(f.name + ' ' + (f.description || ''))));
+    const isDraconic = /drac[oô]nic/i.test((char.subclass || '') + ' ' + (Array.isArray(char.features) ? char.features.map(f => f.name).join(' ') : ''));
 
-    let armorAC = 0;
+    let equippedArmorName = '';
+    let equippedShieldName = '';
+    let armorBaseAc = 0;
+    let armorDexContribution = 0;
+    let armorCalculatedAc = 0;
     let shieldBonus = 0;
-    let isArmored = false;
+    let magicItemAcBonus = 0;
+    const magicItemNames: string[] = [];
 
-    // Scan Inventory for Equipped Armor/Shield
+    // Scan Inventory for Equipped Items
     if (Array.isArray(char.inventory)) {
         char.inventory.forEach(item => {
             if (!item.equipped) return;
 
-            // Lookup definition for missing stats
             let def = ITEMS.find(i => i.id === item.id || (item.defId && i.id === item.defId));
             if (!def && item.name) {
                 const normName = item.name.toLowerCase().trim();
@@ -542,47 +553,92 @@ export const regenerateCharacterStats = (char: Character): Character => {
             const isArmor = itemType === 'armor' || itemType === 'armadura' || (!isShield && def?.type === 'armor');
 
             if (isShield) {
-                shieldBonus += (item.ac ?? def?.ac ?? 2);
+                // In D&D 5e: benefit from only 1 shield at a time. Pick best shield bonus.
+                const thisShieldBonus = item.ac ?? def?.ac ?? 2;
+                if (thisShieldBonus > shieldBonus) {
+                    shieldBonus = thisShieldBonus;
+                    equippedShieldName = item.name || def?.name || 'Escudo';
+                }
             } else if (isArmor) {
-                isArmored = true;
-                const baseItemAC = item.ac ?? def?.ac ?? 10;
+                const thisBaseAc = item.ac ?? def?.ac ?? 10;
                 const allowsDex = item.acDexBonus ?? def?.acDexBonus ?? false;
                 const maxDex = item.acMaxDex ?? def?.acMaxDex;
 
-                let dexBonus = 0;
+                let thisDexBonus = 0;
                 if (allowsDex) {
-                    dexBonus = newDexMod;
+                    thisDexBonus = newDexMod;
                     if (maxDex !== undefined) {
-                        dexBonus = Math.min(dexBonus, maxDex);
+                        thisDexBonus = Math.min(thisDexBonus, maxDex);
                     }
                 }
-                if (!allowsDex && dexBonus < 0) dexBonus = 0;
 
-                const computedAC = baseItemAC + dexBonus;
-                armorAC = Math.max(armorAC, computedAC);
+                const thisTotalArmorAc = thisBaseAc + thisDexBonus;
+                if (!equippedArmorName || thisTotalArmorAc > armorCalculatedAc) {
+                    equippedArmorName = item.name || def?.name || 'Armadura';
+                    armorBaseAc = thisBaseAc;
+                    armorDexContribution = thisDexBonus;
+                    armorCalculatedAc = thisTotalArmorAc;
+                }
+            } else if (typeof item.ac === 'number' && item.ac > 0) {
+                magicItemAcBonus += item.ac;
+                magicItemNames.push(`${item.name} (+${item.ac})`);
             }
         });
     }
 
-    if (!isArmored && hasUnarmoredDefense) {
+    const isArmored = equippedArmorName !== '';
+    let baseUnarmoredAc = 10 + newDexMod;
+    let unarmoredFormulaText = `Sem Armadura (10 + DES ${newDexMod >= 0 ? `+${newDexMod}` : newDexMod})`;
+
+    if (!isArmored) {
         if (isBarbarian) {
             const conMod = calculateModifier(newAttrs.con.value);
-            baseAC = 10 + newDexMod + conMod;
-        } else if (isMonk) {
-            // Monk UD applies only if NOT using armor AND NOT using shield
-            if (shieldBonus === 0) {
-                const wisMod = calculateModifier(newAttrs.wis.value);
-                baseAC = 10 + newDexMod + wisMod;
-            }
+            baseUnarmoredAc = 10 + newDexMod + conMod;
+            unarmoredFormulaText = `Defesa Sem Armadura: 10 + DES (${newDexMod >= 0 ? `+${newDexMod}` : newDexMod}) + CON (${conMod >= 0 ? `+${conMod}` : conMod})`;
+        } else if (isMonk && shieldBonus === 0) {
+            const wisMod = calculateModifier(newAttrs.wis.value);
+            baseUnarmoredAc = 10 + newDexMod + wisMod;
+            unarmoredFormulaText = `Defesa Sem Armadura: 10 + DES (${newDexMod >= 0 ? `+${newDexMod}` : newDexMod}) + SAB (${wisMod >= 0 ? `+${wisMod}` : wisMod})`;
+        } else if (isDraconic) {
+            baseUnarmoredAc = 13 + newDexMod;
+            unarmoredFormulaText = `Resiliência Dracônica (13 + DES ${newDexMod >= 0 ? `+${newDexMod}` : newDexMod})`;
         }
     }
 
-    let finalAC = isArmored ? armorAC : baseAC;
-    finalAC += shieldBonus;
+    const calculatedAcWithoutOverrides = (isArmored ? armorCalculatedAc : baseUnarmoredAc) + shieldBonus + magicItemAcBonus;
 
-    // Override if set (GM Manual Edit)
+    // Build human-readable acBreakdown string
+    let calculatedBreakdown = '';
+    if (isArmored) {
+        const armorParts: string[] = [`${equippedArmorName} (${armorBaseAc})`];
+        if (armorDexContribution !== 0) {
+            armorParts.push(`DES (${armorDexContribution >= 0 ? `+${armorDexContribution}` : armorDexContribution})`);
+        }
+        if (shieldBonus > 0) {
+            armorParts.push(`${equippedShieldName || 'Escudo'} (+${shieldBonus})`);
+        }
+        if (magicItemAcBonus > 0) {
+            armorParts.push(magicItemNames.join(' + '));
+        }
+        calculatedBreakdown = `${armorParts.join(' + ')} = ${calculatedAcWithoutOverrides}`;
+    } else {
+        const unarmoredParts: string[] = [unarmoredFormulaText];
+        if (shieldBonus > 0) {
+            unarmoredParts.push(`${equippedShieldName || 'Escudo'} (+${shieldBonus})`);
+        }
+        if (magicItemAcBonus > 0) {
+            unarmoredParts.push(magicItemNames.join(' + '));
+        }
+        calculatedBreakdown = `${unarmoredParts.join(' + ')} = ${calculatedAcWithoutOverrides}`;
+    }
+
+    let finalAC = calculatedAcWithoutOverrides;
+    let finalAcBreakdown = calculatedBreakdown;
+
+    // Override if set (GM / Player Manual Edit)
     if (char.acOverride !== undefined) {
         finalAC = char.acOverride;
+        finalAcBreakdown = `Valor Manual: ${char.acOverride} (Fórmula oficial: ${calculatedBreakdown})`;
     }
 
     // --- Auto-Build Attacks from Equipped Weapons ---
@@ -708,6 +764,84 @@ export const regenerateCharacterStats = (char: Character): Character => {
         ? char.speedOverride
         : Math.max(0, racialBaseSpeed + extraSpeed);
 
+    // --- Scale Companions & Pets (D&D 5.5e / 2024 & Tasha Rules) ---
+    let spellAbilityModForCompanions = 3;
+    if (spellCastingAbility && newAttrs[spellCastingAbility]) {
+        spellAbilityModForCompanions = newAttrs[spellCastingAbility].modifier;
+    }
+
+    const updatedCompanions: Companion[] = (Array.isArray(char.companions) ? char.companions : []).map(comp => {
+        let preset: CompanionPreset | undefined;
+        if (comp.presetId) {
+            preset = COMPANION_PRESETS.find(p => p.id === comp.presetId);
+        }
+        if (!preset && comp.creatureType) {
+            preset = COMPANION_PRESETS.find(p =>
+                p.creatureType.toLowerCase() === comp.creatureType.toLowerCase() ||
+                p.name.toLowerCase() === comp.name.toLowerCase()
+            );
+        }
+
+        // AC calculation
+        const baseAc = comp.baseAc ?? preset?.baseAc ?? comp.ac ?? 10;
+        const acAddsPb = comp.acAddsPb ?? preset?.acAddsPb ?? false;
+        let petCalculatedAc = baseAc;
+        let petAcBreakdown = `Base ${baseAc}`;
+        if (acAddsPb) {
+            petCalculatedAc = baseAc + profBonus;
+            petAcBreakdown = `Base ${baseAc} + Bônus Prof. (+${profBonus}) = ${petCalculatedAc}`;
+        }
+        const finalPetAc = comp.acOverride !== undefined ? comp.acOverride : petCalculatedAc;
+        if (comp.acOverride !== undefined) {
+            petAcBreakdown = `Manual / Barda: ${comp.acOverride} (Fórmula oficial: ${petCalculatedAc})`;
+        }
+
+        // HP calculation
+        const baseHp = comp.baseHp ?? preset?.baseHp ?? comp.hp?.max ?? 10;
+        const hpPerLevel = comp.hpPerLevel ?? preset?.hpPerLevel ?? 0;
+        let finalMaxHp = baseHp;
+        if (hpPerLevel > 0) {
+            finalMaxHp = baseHp + (hpPerLevel * safeLevel);
+        } else if (comp.hp?.max) {
+            finalMaxHp = comp.hp.max;
+        }
+
+        const oldMax = comp.hp?.max || finalMaxHp;
+        const currentHp = typeof comp.hp?.current === 'number' ? comp.hp.current : finalMaxHp;
+        const damageTaken = Math.max(0, oldMax - currentHp);
+        const finalCurrentHp = Math.max(0, Math.min(finalMaxHp, finalMaxHp - damageTaken));
+
+        // Attack bonus and damage scaling
+        const attacks = (comp.attacks || []).map((atk, idx) => {
+            const presetAtk = preset?.attacks?.[idx] || preset?.attacks?.find(a => a.name.toLowerCase() === atk.name.toLowerCase());
+            if (presetAtk?.scalesWithPb) {
+                return {
+                    ...atk,
+                    attackBonus: spellAbilityModForCompanions + profBonus,
+                    damage: `${presetAtk.damageDice} + ${profBonus}`
+                };
+            }
+            return atk;
+        });
+
+        return {
+            ...comp,
+            presetId: comp.presetId || preset?.id,
+            baseAc,
+            acAddsPb,
+            baseHp,
+            hpPerLevel,
+            ac: finalPetAc,
+            acBreakdown: petAcBreakdown,
+            hp: {
+                current: finalCurrentHp,
+                max: finalMaxHp,
+                temp: comp.hp?.temp || 0
+            },
+            attacks
+        };
+    });
+
     return {
         ...char,
         level: safeLevel,
@@ -715,6 +849,7 @@ export const regenerateCharacterStats = (char: Character): Character => {
         proficiencyBonus: profBonus,
         skills: newSkills,
         armorClass: finalAC,
+        acBreakdown: finalAcBreakdown,
         baseSpeed: racialBaseSpeed,
         speed: finalSpeed,
         hp: { ...safeHp, max: finalHpMax },
@@ -733,7 +868,7 @@ export const regenerateCharacterStats = (char: Character): Character => {
                 return { ...item, id };
             });
         })(),
-        companions: Array.isArray(char.companions) ? char.companions : [],
+        companions: updatedCompanions,
         spells: Array.isArray(char.spells) ? char.spells : [],
         feats: Array.isArray(char.feats) ? char.feats : [],
         features: Array.isArray(char.features) ? char.features : [],

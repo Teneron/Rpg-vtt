@@ -247,18 +247,43 @@ export const CombatPanel: React.FC<CombatPanelProps> = React.memo(({
 
             {/* TOP BAR: CA, INICIATIVA, DESLOCAMENTO & INSPIRAÇÃO HEROICA */}
             <div className="top-stats-row">
-                <div className="shield-stat-container">
+                <div
+                    className="shield-stat-container"
+                    title={character.acBreakdown ? `Classe de Armadura: ${character.armorClass}\nFórmula Oficial: ${character.acBreakdown}\n\n(Clique para ver detalhes ou definir valor manual)` : `Classe de Armadura: ${character.armorClass}`}
+                    onClick={() => {
+                        const current = character.armorClass;
+                        const msg = character.acBreakdown
+                            ? `Cálculo de Classe de Armadura (CA):\n\n${character.acBreakdown}\n\nDeseja definir um valor manual temporário? (Deixe em branco ou cancele para manter o cálculo automático)`
+                            : `Definir valor manual temporário de CA:`;
+                        const res = prompt(msg, character.acOverride !== undefined ? String(character.acOverride) : String(current));
+                        if (res === null) return;
+                        if (res.trim() === '') {
+                            if (onUpdateCharacter) onUpdateCharacter({ acOverride: undefined });
+                            else if (onUpdateAC) onUpdateAC(current);
+                        } else {
+                            const val = parseInt(res, 10);
+                            if (!isNaN(val) && val > 0) {
+                                if (onUpdateCharacter) onUpdateCharacter({ acOverride: val });
+                                else if (onUpdateAC) onUpdateAC(val);
+                            }
+                        }
+                    }}
+                    style={{ cursor: 'pointer' }}
+                >
                     <svg className="shield-svg" viewBox="0 0 100 120">
-                        <path d="M50,0 C90,0 95,20 100,40 C100,80 80,110 50,120 C20,110 0,80 0,40 C5,20 10,0 50,0 Z" fill="#181920" stroke="#c5a059" strokeWidth="3" />
+                        <path d="M50,0 C90,0 95,20 100,40 C100,80 80,110 50,120 C20,110 0,80 0,40 C5,20 10,0 50,0 Z" fill="#181920" stroke={character.acOverride !== undefined ? '#f59e0b' : '#c5a059'} strokeWidth="3" />
                     </svg>
                     <div className="shield-content">
-                        <span className="shield-label">CA</span>
+                        <span className="shield-label" style={{ color: character.acOverride !== undefined ? '#f59e0b' : '#c5a059' }}>
+                            CA {character.acOverride !== undefined ? '*' : ''}
+                        </span>
                         {isGM ? (
                             <input
                                 className="shield-val"
                                 type="number"
                                 value={character.armorClass}
                                 onChange={e => onUpdateAC && onUpdateAC(Number(e.target.value))}
+                                onClick={e => e.stopPropagation()}
                                 style={{
                                     width: '60px', background: 'transparent', border: 'none', color: '#fff',
                                     textAlign: 'center', fontSize: '2rem', fontWeight: 'bold', zIndex: 10, position: 'relative'
@@ -266,6 +291,23 @@ export const CombatPanel: React.FC<CombatPanelProps> = React.memo(({
                             />
                         ) : (
                             <span className="shield-val">{character.armorClass}</span>
+                        )}
+                        {character.acBreakdown && (
+                            <span
+                                style={{
+                                    fontSize: '0.62rem',
+                                    color: character.acOverride !== undefined ? '#f59e0b' : '#c5a059',
+                                    display: 'block',
+                                    whiteSpace: 'nowrap',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    maxWidth: '80px',
+                                    margin: '0 auto',
+                                    opacity: 0.9
+                                }}
+                            >
+                                {character.acOverride !== undefined ? 'Ajustado' : 'Fórmula'}
+                            </span>
                         )}
                     </div>
                 </div>

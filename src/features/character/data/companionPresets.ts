@@ -704,17 +704,25 @@ export const instantiateCompanion = (
 
     return {
         id: `comp_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`,
+        presetId: preset.id,
         name: preset.name,
         type: preset.type,
         creatureType: preset.creatureType,
         avatarUrl: preset.avatarUrl,
         size: preset.size,
+        baseHp: preset.baseHp,
+        hpPerLevel: preset.hpPerLevel,
         hp: {
             current: maxHp,
             max: maxHp,
             temp: 0
         },
+        baseAc: preset.baseAc,
+        acAddsPb: preset.acAddsPb,
         ac: finalAc,
+        acBreakdown: preset.acAddsPb
+            ? `Base ${preset.baseAc} + Bônus Prof. (+${safePb}) = ${finalAc}`
+            : `Base ${preset.baseAc}`,
         speed: preset.speed,
         visionRange: preset.visionRange,
         attributes,

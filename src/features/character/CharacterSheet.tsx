@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
     initialCharacter,
     regenerateCharacterStats,
@@ -309,12 +310,51 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
     };
 
     const handleEquipToggle = (itemId: string, equipped: boolean) => {
+        const itemToToggle = (character.inventory || []).find(i => i.id === itemId);
+        let isArmor = false;
+        let isShield = false;
+
+        if (itemToToggle) {
+            let def = ITEMS.find(i => i.id === itemToToggle.id || (itemToToggle.defId && i.id === itemToToggle.defId));
+            if (!def && itemToToggle.name) {
+                def = ITEMS.find(i => i.name.toLowerCase() === itemToToggle.name.toLowerCase().trim());
+            }
+            const itemType = (itemToToggle.type || def?.type || '').toLowerCase();
+            isShield = itemType === 'shield' || itemType === 'escudo' || /escudo/i.test(itemToToggle.name || '') || itemToToggle.id.includes('escudo');
+            isArmor = itemType === 'armor' || itemType === 'armadura' || (!isShield && def?.type === 'armor');
+        }
+
         const nextInv = (character.inventory || []).map(i => {
             if (i.id === itemId) return { ...i, equipped };
+
+            // If equipping body armor, auto-unequip any other body armor
+            if (equipped && isArmor) {
+                let otherDef = ITEMS.find(d => d.id === i.id || (i.defId && d.id === i.defId));
+                if (!otherDef && i.name) otherDef = ITEMS.find(d => d.name.toLowerCase() === i.name.toLowerCase().trim());
+                const otherType = (i.type || otherDef?.type || '').toLowerCase();
+                const otherIsShield = otherType === 'shield' || otherType === 'escudo' || /escudo/i.test(i.name || '') || i.id.includes('escudo');
+                const otherIsArmor = otherType === 'armor' || otherType === 'armadura' || (!otherIsShield && otherDef?.type === 'armor');
+                if (otherIsArmor) {
+                    return { ...i, equipped: false };
+                }
+            }
+
+            // If equipping shield, auto-unequip any other shield
+            if (equipped && isShield) {
+                let otherDef = ITEMS.find(d => d.id === i.id || (i.defId && d.id === i.defId));
+                if (!otherDef && i.name) otherDef = ITEMS.find(d => d.name.toLowerCase() === i.name.toLowerCase().trim());
+                const otherType = (i.type || otherDef?.type || '').toLowerCase();
+                const otherIsShield = otherType === 'shield' || otherType === 'escudo' || /escudo/i.test(i.name || '') || i.id.includes('escudo');
+                if (otherIsShield) {
+                    return { ...i, equipped: false };
+                }
+            }
+
             return i;
         });
 
-        const nextChar = { ...character, inventory: nextInv };
+        // When equipping or unequipping armor/shield, reset manual acOverride so live rules take immediate effect
+        const nextChar = { ...character, inventory: nextInv, acOverride: undefined };
         const statsChar = regenerateCharacterStats(nextChar);
 
         setCharacterWithDirty(statsChar);
@@ -906,7 +946,7 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
 
             </div>
 
-            {/* MODALS */}
+            {/* MODALS (Portaled to document.body with zIndex 100050 to prevent clipping/stacking bugs) */}
             {/* COMPANION & PET MODAL */}
             {showCompanions && (
                 <CompanionModal
@@ -930,16 +970,50 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
                     }}
                 />
             )}
-            {showInventory && (
-                <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
-                    <div className="modal-content animate-fade-in" style={{ background: '#1a1a1a', padding: '20px', borderRadius: '8px', width: '800px', maxWidth: '95%', maxHeight: '90vh', overflowY: 'auto', border: '1px solid #444', position: 'relative' }}>
+
+            {showInventory && typeof document !== 'undefined' && createPortal(
+                <div
+                    className="modal-overlay"
+                    style={{
+                        position: 'fixed',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        background: 'rgba(5, 7, 12, 0.88)',
+                        backdropFilter: 'blur(6px)',
+                        display: 'flex',
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        zIndex: 100050,
+                        padding: '16px'
+                    }}
+                    onClick={() => setShowInventory(false)}
+                >
+                    <div
+                        className="modal-content animate-fade-in"
+                        style={{
+                            background: '#1a1a1a',
+                            padding: '20px',
+                            borderRadius: '12px',
+                            width: '840px',
+                            maxWidth: '96vw',
+                            maxHeight: '90vh',
+                            overflowY: 'auto',
+                            border: '1px solid #444',
+                            boxShadow: '0 20px 50px rgba(0,0,0,0.8), 0 0 20px rgba(197, 160, 89, 0.2)',
+                            position: 'relative'
+                        }}
+                        onClick={e => e.stopPropagation()}
+                    >
                         <button
                             onClick={() => setShowInventory(false)}
-                            style={{ position: 'absolute', top: '10px', right: '10px', background: 'none', border: 'none', color: '#fff', fontSize: '1.5rem', cursor: 'pointer' }}
+                            style={{ position: 'absolute', top: '12px', right: '14px', background: 'none', border: 'none', color: '#aaa', fontSize: '1.6rem', cursor: 'pointer', lineHeight: 1 }}
+                            title="Fechar"
                         >
                             ×
                         </button>
-                        <h2 style={{ borderBottom: '1px solid #444', paddingBottom: '10px', marginTop: 0 }}>Inventário</h2>
+                        <h2 style={{ borderBottom: '1px solid #333', paddingBottom: '10px', marginTop: 0, color: '#c5a059' }}>Inventário & Equipamento</h2>
                         <InventoryPanel
                             character={character}
                             onEquipToggle={handleEquipToggle}
@@ -961,22 +1035,57 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
                             }}
                         />
                     </div>
-                </div>
+                </div>,
+                document.body
             )}
 
-            {showBestiary && (
-                <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
-                    <div className="modal-content animate-fade-in" style={{ background: '#1a1a1a', padding: '20px', borderRadius: '8px', width: '900px', maxWidth: '95%', maxHeight: '90vh', overflowY: 'auto', border: '1px solid #444', position: 'relative' }}>
+            {showBestiary && typeof document !== 'undefined' && createPortal(
+                <div
+                    className="modal-overlay"
+                    style={{
+                        position: 'fixed',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        background: 'rgba(5, 7, 12, 0.88)',
+                        backdropFilter: 'blur(6px)',
+                        display: 'flex',
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        zIndex: 100050,
+                        padding: '16px'
+                    }}
+                    onClick={() => setShowBestiary(false)}
+                >
+                    <div
+                        className="modal-content animate-fade-in"
+                        style={{
+                            background: '#1a1a1a',
+                            padding: '20px',
+                            borderRadius: '12px',
+                            width: '940px',
+                            maxWidth: '96vw',
+                            maxHeight: '90vh',
+                            overflowY: 'auto',
+                            border: '1px solid #444',
+                            boxShadow: '0 20px 50px rgba(0,0,0,0.8), 0 0 20px rgba(197, 160, 89, 0.2)',
+                            position: 'relative'
+                        }}
+                        onClick={e => e.stopPropagation()}
+                    >
                         <button
                             onClick={() => setShowBestiary(false)}
-                            style={{ position: 'absolute', top: '10px', right: '10px', background: 'none', border: 'none', color: '#fff', fontSize: '1.5rem', cursor: 'pointer' }}
+                            style={{ position: 'absolute', top: '12px', right: '14px', background: 'none', border: 'none', color: '#aaa', fontSize: '1.6rem', cursor: 'pointer', lineHeight: 1 }}
+                            title="Fechar"
                         >
                             ×
                         </button>
-                        <h2 style={{ borderBottom: '1px solid #444', paddingBottom: '10px', marginTop: 0 }}>Conhecimento de Bruxo</h2>
+                        <h2 style={{ borderBottom: '1px solid #333', paddingBottom: '10px', marginTop: 0, color: '#c5a059' }}>Conhecimento de Bruxo</h2>
                         <PlayerBestiaryPanel character={character} />
                     </div>
-                </div>
+                </div>,
+                document.body
             )}
 
             {/* BUILDER MODAL */}
@@ -996,54 +1105,57 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
                 />
             )}
 
-            {showLevelModal && (
-                <LevelUpModal
-                    character={character}
-                    onUpdate={(updatedChar) => {
-                        // FIX: Sync Bug - Force immediate save and broadcast
-                        console.log("Level Up Completed: Forcing Immediate Sync...");
-                        const stampedChar: Character = { ...updatedChar, lastModified: Date.now() };
+            {showLevelModal && typeof document !== 'undefined' && createPortal(
+                <div style={{ position: 'relative', zIndex: 100060 }}>
+                    <LevelUpModal
+                        character={character}
+                        onUpdate={(updatedChar) => {
+                            console.log("Level Up Completed: Forcing Immediate Sync...");
+                            const stampedChar: Character = { ...updatedChar, lastModified: Date.now() };
 
-                        // 1. Update Local State (UI)
-                        dirtyRef.current = false;
-                        setCharacter(stampedChar);
-
-                        // 2. Persist & Sync
-                        handleSave(stampedChar);
-
-                        // 3. Dispatch Event (for internal listeners)
-                        window.dispatchEvent(new CustomEvent('character_update', { detail: stampedChar }));
-                    }}
-                    onClose={() => setShowLevelModal(false)}
-                />
+                            dirtyRef.current = false;
+                            setCharacter(stampedChar);
+                            handleSave(stampedChar);
+                            window.dispatchEvent(new CustomEvent('character_update', { detail: stampedChar }));
+                        }}
+                        onClose={() => setShowLevelModal(false)}
+                    />
+                </div>,
+                document.body
             )}
 
-            {showManageSpells && (
-                <ManageSpellsModal
-                    character={character}
-                    onLearnSpell={spell => {
-                        setCharacterWithDirty(prev => {
-                            if (prev.spells?.some(s => s.id === spell.id)) return prev;
-                            const next = { ...prev, spells: [...(prev.spells || []), spell] };
-                            return regenerateCharacterStats(next);
-                        });
-                    }}
-                    onForgetSpell={id => {
-                        setCharacterWithDirty(prev => {
-                            const next = { ...prev, spells: (prev.spells || []).filter(s => s.id !== id) };
-                            return regenerateCharacterStats(next);
-                        });
-                    }}
-                    onClose={() => setShowManageSpells(false)}
-                />
+            {showManageSpells && typeof document !== 'undefined' && createPortal(
+                <div style={{ position: 'relative', zIndex: 100050 }}>
+                    <ManageSpellsModal
+                        character={character}
+                        onLearnSpell={spell => {
+                            setCharacterWithDirty(prev => {
+                                if (prev.spells?.some(s => s.id === spell.id)) return prev;
+                                const next = { ...prev, spells: [...(prev.spells || []), spell] };
+                                return regenerateCharacterStats(next);
+                            });
+                        }}
+                        onForgetSpell={id => {
+                            setCharacterWithDirty(prev => {
+                                const next = { ...prev, spells: (prev.spells || []).filter(s => s.id !== id) };
+                                return regenerateCharacterStats(next);
+                            });
+                        }}
+                        onClose={() => setShowManageSpells(false)}
+                    />
+                </div>,
+                document.body
             )}
 
-            {showProgressionModal && currentClassData && (
-                <ClassProgression
-                    classData={currentClassData}
-                    characterLevel={character.level}
-                    onClose={() => setShowProgressionModal(false)}
-                />
+            {showProgressionModal && currentClassData && typeof document !== 'undefined' && createPortal(
+                <div style={{ position: 'relative', zIndex: 100050 }}>
+                    <ClassProgression
+                        classData={currentClassData}
+                        characterLevel={character.level}
+                        onClose={() => setShowProgressionModal(false)}
+                    />
+                </div>,
+                document.body
             )}
 
             <style>{`

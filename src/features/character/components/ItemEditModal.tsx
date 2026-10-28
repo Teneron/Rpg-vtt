@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import type { Item } from '../characterTypes';
 
 interface ItemEditModalProps {
@@ -36,11 +37,11 @@ export const ItemEditModal: React.FC<ItemEditModalProps> = ({ item, onSave, onCl
         setFormData((prev: Partial<Item>) => ({ ...prev, [field]: value }));
     };
 
-    return (
+    const modalContent = (
         <div className="modal-overlay" style={{
             position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
             background: 'rgba(0,0,0,0.85)', display: 'flex', justifyContent: 'center', alignItems: 'center',
-            zIndex: 1100, backdropFilter: 'blur(4px)'
+            zIndex: 100100, backdropFilter: 'blur(4px)'
         }}>
             <div className="modal-content animate-fade-in" style={{
                 background: '#1a1a1a', padding: '25px', borderRadius: '12px',
@@ -176,4 +177,7 @@ export const ItemEditModal: React.FC<ItemEditModalProps> = ({ item, onSave, onCl
             </div>
         </div>
     );
+
+    if (typeof document === 'undefined') return null;
+    return createPortal(modalContent, document.body);
 };

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { Character, Companion } from '../characterTypes';
 import {
     COMPANION_PRESETS,
@@ -195,9 +196,9 @@ export const CompanionModal: React.FC<CompanionModalProps> = ({
         return p.category === categoryFilter;
     });
 
-    return (
+    const modalContent = (
         <div
-            className="modal-overlay"
+            className="modal-overlay companion-modal-overlay"
             style={{
                 position: 'fixed',
                 top: 0,
@@ -209,7 +210,7 @@ export const CompanionModal: React.FC<CompanionModalProps> = ({
                 display: 'flex',
                 justifyContent: 'center',
                 alignItems: 'center',
-                zIndex: 2100,
+                zIndex: 100050,
                 padding: '16px'
             }}
             onClick={onClose}
@@ -727,7 +728,7 @@ export const CompanionModal: React.FC<CompanionModalProps> = ({
 
                                 {/* VITALS & COMBAT STATS ROW */}
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '14px' }}>
-                                    {/* CA (ARMOR CLASS - TRAVADA PELO LIVRO) */}
+                                    {/* CA (ARMOR CLASS - COM FÓRMULA OFICIAL E AJUSTE MANUAL) */}
                                     <div
                                         style={{
                                             background: '#161b28',
@@ -744,10 +745,71 @@ export const CompanionModal: React.FC<CompanionModalProps> = ({
                                             <div>
                                                 <div style={{ fontSize: '0.72rem', color: '#94a3b8', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '4px' }}>
                                                     <span>Classe de Armadura</span>
-                                                    <Lock size={10} color="#64748b" />
+                                                    {activeCompanion.acOverride !== undefined && (
+                                                        <span style={{ fontSize: '0.65rem', color: '#f59e0b', background: '#3b2505', padding: '1px 5px', borderRadius: '3px', fontWeight: 'bold' }}>
+                                                            Ajustado
+                                                        </span>
+                                                    )}
                                                 </div>
-                                                <div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#f8fafc' }}>{activeCompanion.ac}</div>
+                                                <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+                                                    <span style={{ fontSize: '1.4rem', fontWeight: 'bold', color: activeCompanion.acOverride !== undefined ? '#f59e0b' : '#f8fafc' }}>
+                                                        {activeCompanion.ac}
+                                                    </span>
+                                                    {activeCompanion.acBreakdown && (
+                                                        <span style={{ fontSize: '0.75rem', color: '#38bdf8' }} title={activeCompanion.acBreakdown}>
+                                                            ({activeCompanion.acBreakdown})
+                                                        </span>
+                                                    )}
+                                                </div>
                                             </div>
+                                        </div>
+
+                                        <div style={{ display: 'flex', gap: '6px' }}>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    const current = activeCompanion.ac;
+                                                    const res = prompt(
+                                                        `Ajustar CA do companheiro (Barda / Magia / Armadura Arcana / Bônus):\nValor atual: ${current}`,
+                                                        String(current)
+                                                    );
+                                                    if (res === null) return;
+                                                    const val = parseInt(res, 10);
+                                                    if (!isNaN(val) && val > 0) {
+                                                        updateActiveCompanion({ acOverride: val, ac: val });
+                                                    }
+                                                }}
+                                                style={{
+                                                    background: '#1e293b',
+                                                    border: '1px solid #334155',
+                                                    color: '#38bdf8',
+                                                    borderRadius: '4px',
+                                                    padding: '4px 8px',
+                                                    fontSize: '0.75rem',
+                                                    cursor: 'pointer'
+                                                }}
+                                                title="Ajustar CA (ex: se equipou barda ou recebeu magia)"
+                                            >
+                                                Ajustar
+                                            </button>
+                                            {activeCompanion.acOverride !== undefined && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => updateActiveCompanion({ acOverride: undefined })}
+                                                    style={{
+                                                        background: '#1e293b',
+                                                        border: '1px solid #334155',
+                                                        color: '#94a3b8',
+                                                        borderRadius: '4px',
+                                                        padding: '4px 8px',
+                                                        fontSize: '0.75rem',
+                                                        cursor: 'pointer'
+                                                    }}
+                                                    title="Restaurar fórmula padrão do livro"
+                                                >
+                                                    Reset
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
 
@@ -784,12 +846,34 @@ export const CompanionModal: React.FC<CompanionModalProps> = ({
                                             />
                                         </div>
 
-                                        <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', marginTop: '2px' }}>
+                                        <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', marginTop: '2px', flexWrap: 'wrap' }}>
                                             <button onClick={() => handleAdjustHp(-5)} style={{ background: '#334155', color: '#fff', border: 'none', borderRadius: '4px', padding: '2px 8px', fontSize: '0.75rem', cursor: 'pointer' }}>-5</button>
                                             <button onClick={() => handleAdjustHp(-1)} style={{ background: '#334155', color: '#fff', border: 'none', borderRadius: '4px', padding: '2px 8px', fontSize: '0.75rem', cursor: 'pointer' }}>-1</button>
                                             <button onClick={() => handleAdjustHp(+1)} style={{ background: '#334155', color: '#fff', border: 'none', borderRadius: '4px', padding: '2px 8px', fontSize: '0.75rem', cursor: 'pointer' }}>+1</button>
                                             <button onClick={() => handleAdjustHp(+5)} style={{ background: '#334155', color: '#fff', border: 'none', borderRadius: '4px', padding: '2px 8px', fontSize: '0.75rem', cursor: 'pointer' }}>+5</button>
                                             <button onClick={() => handleAdjustHp(999)} style={{ background: '#15803d', color: '#fff', border: 'none', borderRadius: '4px', padding: '2px 8px', fontSize: '0.75rem', cursor: 'pointer' }} title="Descanso Longo (Curar Tudo)">Curar Total</button>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    const cur = activeCompanion.hp.max;
+                                                    const res = prompt(`Ajustar Pontos de Vida Máximos:\nValor atual: ${cur}`, String(cur));
+                                                    if (res === null) return;
+                                                    const val = parseInt(res, 10);
+                                                    if (!isNaN(val) && val > 0) {
+                                                        updateActiveCompanion({
+                                                            hp: {
+                                                                ...activeCompanion.hp,
+                                                                max: val,
+                                                                current: Math.min(activeCompanion.hp.current, val)
+                                                            }
+                                                        });
+                                                    }
+                                                }}
+                                                style={{ background: '#1e293b', color: '#94a3b8', border: '1px solid #334155', borderRadius: '4px', padding: '2px 8px', fontSize: '0.75rem', cursor: 'pointer' }}
+                                                title="Ajustar PV Máximo"
+                                            >
+                                                Editar Máx
+                                            </button>
                                         </div>
                                     </div>
                                 </div>
@@ -994,4 +1078,7 @@ export const CompanionModal: React.FC<CompanionModalProps> = ({
             </div>
         </div>
     );
+
+    if (typeof document === 'undefined') return null;
+    return createPortal(modalContent, document.body);
 };

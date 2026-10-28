@@ -115,17 +115,17 @@ button {
 
 /* Universal Modal Overlay */
 .modal-overlay {
-  position: fixed !important;
-  top: 0 !important;
-  left: 0 !important;
-  right: 0 !important;
-  bottom: 0 !important;
-  width: 100vw !important;
-  height: 100vh !important;
-  background: rgba(0, 0, 0, 0.85) !important;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.85);
   backdrop-filter: blur(4px);
-  display: flex !important;
-  justify-content: center !important;
-  align-items: center !important;
-  z-index: 9999 !important;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999;
 }

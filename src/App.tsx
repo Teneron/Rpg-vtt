@@ -756,16 +756,16 @@ function AppContent() {
 
         {/* --- CENTRAL CHARACTER SHEET MODAL --- */}
         {activeTab === 'character' && selectedCharacterId && (
-          <div className="modal-overlay" style={{
+          <div className="char-sheet-modal-overlay" style={{
             position: 'fixed', top: 'var(--header-h)', left: 0, right: 0, bottom: 0,
-            background: 'rgba(0,0,0,0.2)',
+            background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(4px)',
             display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000
           }}>
             <div className="glass-panel" style={{
-              width: '90%', maxWidth: '1200px', height: '90%',
+              width: '92%', maxWidth: '1360px', height: 'calc(100vh - var(--header-h) - 20px)',
               overflow: 'hidden', display: 'flex', flexDirection: 'column',
               boxShadow: '0 0 50px rgba(0,0,0,0.8)', border: '1px solid rgba(197, 160, 89, 0.3)',
-              background: 'rgba(20, 20, 20, 0.95)'
+              background: 'rgba(20, 20, 20, 0.96)', borderRadius: '12px'
             }}>
               <Suspense fallback={<LazyLoadingFallback />}>
                 <CharacterSheet
