@@ -1,5 +1,8 @@
 import React from 'react';
 import ReactDOM from 'react-dom';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { db } from '../../db/RPGDatabase';
+import { CharacterRepository } from '../character/characterRepository';
 import { usePeer } from '../multiplayer/SocketContext';
 import { Soundboard } from '../audio/Soundboard';
 import { RefreshCw, Shield, Copy, Check, Link2, Trash2, FileText, Users, UserCheck, MapPin, TrendingUp, BookOpen, Download, ChevronDown, ChevronUp, Minus, Plus, X } from 'lucide-react';
@@ -213,27 +216,97 @@ export const GMScreen: React.FC = () => {
     const { addToken, updateToken, tokens } = useMap();
     const { combatState, updateCombatant } = useCombat();
 
-    // Filtra exclusivamente os jogadores reais na mesa (exclui o próprio Mestre)
-    const players = React.useMemo(() => {
-        const allPlayers = Object.values(connectedPlayersData).filter(p => p.peerId !== peerId && !p.isHost);
+    // Reatividade imediata para atualizações do repositório de fichas
+    const [cacheVersion, setCacheVersion] = React.useState(0);
+    React.useEffect(() => {
+        const handleUpdate = () => setCacheVersion(v => v + 1);
+        window.addEventListener('rpg_characters_updated', handleUpdate);
+        return () => window.removeEventListener('rpg_characters_updated', handleUpdate);
+    }, []);
 
-        // Deduplica por peerId ou id de ficha para evitar sessões fantasmas
-        const deduplicatedMap: Record<string, typeof allPlayers[0]> = {};
-        allPlayers.forEach(p => {
-            const key = p.peerId || p.character?.id || p.name;
-            const existing = deduplicatedMap[key];
-            if (!existing || (!existing.isOnline && p.isOnline)) {
-                deduplicatedMap[key] = p;
+    // Consulta reativa em tempo real de todas as fichas persistidas no banco IndexedDB (Dexie)
+    const dbCharacters = useLiveQuery(
+        () => db.characters.toArray(),
+        []
+    ) || [];
+
+    // Filtra e combina jogadores conectados em tempo real com personagens persistidos no banco da campanha
+    const players = React.useMemo(() => {
+        const livePlayers = Object.values(connectedPlayersData).filter(p => p.peerId !== peerId && !p.isHost);
+
+        // Agrupa todas as fichas persistidas em Dexie e no cache de CharacterRepository
+        const storedMap = new Map<string, Character>();
+        dbCharacters.forEach(c => {
+            if (c && c.id) storedMap.set(c.id, c);
+        });
+
+        const summaries = CharacterRepository.listAll('', currentAdventureId || 'default');
+        summaries.forEach(s => {
+            if (!storedMap.has(s.id)) {
+                const loaded = CharacterRepository.load(s.id);
+                if (loaded) storedMap.set(loaded.id, loaded);
+            }
+        });
+
+        const targetAdvId = (currentAdventureId || '').trim();
+
+        // Filtra fichas da campanha ativa (ou sem campanha atribuída / default).
+        // Se nenhuma coincidir com a campanha ativa, inclui todas as fichas salvas localmente
+        // para garantir que nenhuma ficha seja ocultada do Mestre ao carregar a mesa.
+        const allStoredList = Array.from(storedMap.values());
+        const matchingChars = allStoredList.filter(c => {
+            if (!targetAdvId || targetAdvId === 'default') return true;
+            return c.adventureId === targetAdvId || !c.adventureId || c.adventureId === 'default';
+        });
+        const campaignStoredChars = matchingChars.length > 0 ? matchingChars : allStoredList;
+
+        const deduplicatedMap: Record<string, {
+            peerId: string;
+            name: string;
+            character: Character;
+            isOnline?: boolean;
+            isHost?: boolean;
+            isStored?: boolean;
+        }> = {};
+
+        // 1. Jogadores conectados ao vivo no WebSocket
+        livePlayers.forEach(p => {
+            const key = p.character?.id || p.peerId || p.name;
+            deduplicatedMap[key] = {
+                ...p,
+                isOnline: p.isOnline ?? true,
+                isStored: false
+            };
+        });
+
+        // 2. Fichas salvas no banco da campanha (IndexedDB / Dexie)
+        campaignStoredChars.forEach(char => {
+            if (!char || !char.id) return;
+            const existing = deduplicatedMap[char.id];
+            if (existing) {
+                existing.isStored = true;
+                if (!existing.character) {
+                    existing.character = char;
+                }
+            } else {
+                deduplicatedMap[char.id] = {
+                    peerId: `db_${char.id}`,
+                    name: char.owner || char.name || 'Personagem Salvo',
+                    character: char,
+                    isOnline: false,
+                    isHost: false,
+                    isStored: true
+                };
             }
         });
 
         return Object.values(deduplicatedMap).sort((a, b) => {
             if (a.isOnline === b.isOnline) {
-                return (a.name || '').localeCompare(b.name || '');
+                return ((a.character?.name || a.name) || '').localeCompare((b.character?.name || b.name) || '');
             }
             return a.isOnline ? -1 : 1;
         });
-    }, [connectedPlayersData, peerId]);
+    }, [connectedPlayersData, peerId, dbCharacters, currentAdventureId, cacheVersion]);
 
     const onlinePlayers = React.useMemo(() => {
         return players.filter(p => p.isOnline);
@@ -276,7 +349,7 @@ export const GMScreen: React.FC = () => {
         const currentHp = p.character.hp?.current ?? 0;
         const maxHp = p.character.hp?.max ?? 1;
         const newCurrent = Math.max(0, Math.min(maxHp, currentHp + delta));
-        const updatedChar = {
+        const updatedChar: Character = {
             ...p.character,
             hp: {
                 ...p.character.hp,
@@ -286,10 +359,16 @@ export const GMScreen: React.FC = () => {
             lastModified: Date.now()
         };
 
-        // 1. Sincroniza a ficha remota do jogador
-        updateRemotePlayerCharacter(p.peerId, updatedChar as any);
+        // 1. Salva imediatamente no banco persistente da campanha (Dexie & Cache)
+        CharacterRepository.save(updatedChar);
+        db.characters.put(updatedChar).catch(console.error);
 
-        // 2. Sincroniza tokens correspondentes no tabuleiro de batalha
+        // 2. Sincroniza a ficha remota do jogador se estiver conectado
+        if (p.peerId && !p.peerId.startsWith('db_')) {
+            updateRemotePlayerCharacter(p.peerId, updatedChar as any);
+        }
+
+        // 3. Sincroniza tokens correspondentes no tabuleiro de batalha
         if (tokens && updateToken) {
             tokens.forEach(t => {
                 if (t.characterId === p.character?.id) {
@@ -300,7 +379,7 @@ export const GMScreen: React.FC = () => {
             });
         }
 
-        // 3. Sincroniza combatente na iniciativa se houver combate ativo
+        // 4. Sincroniza combatente na iniciativa se houver combate ativo
         if (combatState?.combatants && updateCombatant) {
             combatState.combatants.forEach(c => {
                 if (c.characterId === p.character?.id) {
@@ -347,7 +426,15 @@ export const GMScreen: React.FC = () => {
         };
 
         const regened = regenerateCharacterStats(updatedChar);
-        updateRemotePlayerCharacter(p.peerId, regened as any);
+
+        // 1. Salva imediatamente no banco persistente da campanha (Dexie & Cache)
+        CharacterRepository.save(regened);
+        db.characters.put(regened).catch(console.error);
+
+        // 2. Sincroniza a ficha remota do jogador se estiver conectado
+        if (p.peerId && !p.peerId.startsWith('db_')) {
+            updateRemotePlayerCharacter(p.peerId, regened as any);
+        }
 
         if (tokens && updateToken) {
             tokens.forEach(t => {
@@ -363,7 +450,7 @@ export const GMScreen: React.FC = () => {
     };
 
     const handleClearOffline = () => {
-        players.filter(p => !p.isOnline).forEach(p => {
+        players.filter(p => !p.isOnline && !p.isStored).forEach(p => {
             removePlayer(p.peerId);
         });
     };
@@ -623,16 +710,16 @@ export const GMScreen: React.FC = () => {
 
             <h3 style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: '#c5a059', borderBottom: '1px solid #333', paddingBottom: '6px', marginTop: '16px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span>Jogadores ({onlinePlayers.length} online{players.length > onlinePlayers.length ? ` / ${players.length} total` : ''})</span>
+                    <span>Jogadores & Fichas ({onlinePlayers.length} online{players.length > onlinePlayers.length ? ` / ${players.length} total` : ''})</span>
                 </div>
-                {players.some(p => !p.isOnline) && (
+                {players.some(p => !p.isOnline && !p.isStored) && (
                     <button
                         type="button"
                         onClick={handleClearOffline}
-                        title="Limpar jogadores desconectados da lista"
+                        title="Limpar sessões desconectadas temporárias"
                         style={{ fontSize: '0.72rem', padding: '3px 8px', background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#fca5a5', borderRadius: '4px', cursor: 'pointer' }}
                     >
-                        Limpar Offline
+                        Limpar Desconectados
                     </button>
                 )}
             </h3>
@@ -648,7 +735,7 @@ export const GMScreen: React.FC = () => {
                     border: '1px dashed #554433',
                     marginBottom: '20px'
                 }}>
-                    Nenhum jogador conectado no momento. Compartilhe o código ou o link da sala acima para que os jogadores entrem na sua mesa.
+                    Nenhum jogador ou ficha salva nesta mesa ainda. Compartilhe o código ou link da sala acima para os jogadores entrarem ou crie fichas pelo Criador de Personagens.
                 </div>
             ) : (
                 <div className="gm-players-grid">
@@ -699,9 +786,13 @@ export const GMScreen: React.FC = () => {
                                     </div>
                                     <small>
                                         {!p.isOnline ? (
-                                            <span style={{ color: '#ef4444', fontWeight: 'bold' }}>Offline</span>
+                                            p.isStored ? (
+                                                <span style={{ color: '#60a5fa', fontWeight: 'bold' }}>Offline (Salvo)</span>
+                                            ) : (
+                                                <span style={{ color: '#ef4444', fontWeight: 'bold' }}>Offline</span>
+                                            )
                                         ) : (
-                                            <span style={{ color: '#22c55e', fontWeight: 'bold' }}>Online</span>
+                                            <span style={{ color: '#22c55e', fontWeight: 'bold' }}>● Online</span>
                                         )}
                                         <div style={{ color: '#aaa', fontSize: '0.72rem', marginTop: '2px' }}>
                                             {character.race || ''} {character.class || ''}
@@ -869,9 +960,19 @@ export const GMScreen: React.FC = () => {
                                     </button>
                                     <button
                                         type="button"
-                                        onClick={() => {
-                                            if (confirm(`Remover "${character.name || p.name}" da mesa?`)) {
-                                                removePlayer(p.peerId);
+                                        onClick={async () => {
+                                            const targetName = character.name || p.name;
+                                            if (confirm(`Remover "${targetName}" da mesa?`)) {
+                                                if (p.isStored && character.id) {
+                                                    try {
+                                                        await CharacterRepository.deleteAsync(character.id, character.owner || 'default', currentAdventureId || 'default');
+                                                    } catch (err) {
+                                                        console.error('Erro ao excluir ficha:', err);
+                                                    }
+                                                }
+                                                if (p.peerId && !p.peerId.startsWith('db_')) {
+                                                    removePlayer(p.peerId);
+                                                }
                                             }
                                         }}
                                         title="Remover Jogador da Mesa"
