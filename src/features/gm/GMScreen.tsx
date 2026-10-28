@@ -1,7 +1,8 @@
 import React from 'react';
+import ReactDOM from 'react-dom';
 import { usePeer } from '../multiplayer/SocketContext';
 import { Soundboard } from '../audio/Soundboard';
-import { RefreshCw, Shield, Copy, Check, Link2, Trash2, FileText, Users, UserCheck, MapPin, TrendingUp, BookOpen, Download, ChevronDown, ChevronUp, Minus, Plus } from 'lucide-react';
+import { RefreshCw, Shield, Copy, Check, Link2, Trash2, FileText, Users, UserCheck, MapPin, TrendingUp, BookOpen, Download, ChevronDown, ChevronUp, Minus, Plus, X } from 'lucide-react';
 import { getMinXPForLevel, regenerateCharacterStats, type Character } from '../character/characterTypes';
 import { playSynthSound } from '../audio/audioSynth';
 
@@ -886,17 +887,105 @@ export const GMScreen: React.FC = () => {
             )}
 
             {/* MODAL DE EDIÇÃO DE FICHA PELO MESTRE */}
-            {editingPlayer && editingPlayer.character && (
-                <div className="modal-overlay" style={{ zIndex: 2000 }}>
-                    <div style={{ width: '95vw', height: '95vh', background: '#111', border: '1px solid #444', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-                        <CharacterSheet
-                            characterId={editingPlayer.character.id}
-                            initialData={editingPlayer.character}
-                            isGM={true}
-                            onExit={() => setEditingPlayer(null)}
-                        />
+            {editingPlayer && editingPlayer.character && typeof document !== 'undefined' && ReactDOM.createPortal(
+                <div
+                    className="modal-overlay"
+                    style={{
+                        position: 'fixed',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        width: '100vw',
+                        height: '100vh',
+                        background: 'rgba(0, 0, 0, 0.88)',
+                        backdropFilter: 'blur(5px)',
+                        display: 'flex',
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        zIndex: 99999,
+                        padding: '16px',
+                        boxSizing: 'border-box'
+                    }}
+                    onClick={() => setEditingPlayer(null)}
+                >
+                    <div
+                        style={{
+                            width: '96vw',
+                            maxWidth: '1440px',
+                            height: '94vh',
+                            background: '#12141c',
+                            borderRadius: '12px',
+                            border: '1px solid #333644',
+                            boxShadow: '0 25px 60px rgba(0,0,0,0.9), 0 0 30px rgba(197, 160, 89, 0.25)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            overflow: 'hidden',
+                            position: 'relative'
+                        }}
+                        onClick={e => e.stopPropagation()}
+                    >
+                        <div
+                            style={{
+                                padding: '12px 20px',
+                                background: 'linear-gradient(90deg, #181920 0%, #20222e 100%)',
+                                borderBottom: '1px solid #2e3040',
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                flexShrink: 0
+                            }}
+                        >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <span style={{
+                                    background: '#c5a059',
+                                    color: '#000',
+                                    fontWeight: 'bold',
+                                    fontSize: '0.75rem',
+                                    padding: '3px 8px',
+                                    borderRadius: '4px',
+                                    letterSpacing: '0.5px'
+                                }}>
+                                    MESTRE
+                                </span>
+                                <span style={{ fontWeight: 'bold', fontSize: '1.05rem', color: '#f8fafc' }}>
+                                    Inspecionando Ficha de {editingPlayer.character.name || editingPlayer.name}
+                                </span>
+                            </div>
+
+                            <button
+                                onClick={() => setEditingPlayer(null)}
+                                style={{
+                                    background: '#ef4444',
+                                    color: '#fff',
+                                    border: 'none',
+                                    borderRadius: '6px',
+                                    padding: '6px 14px',
+                                    cursor: 'pointer',
+                                    fontWeight: 'bold',
+                                    fontSize: '0.82rem',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    boxShadow: '0 2px 8px rgba(239, 68, 68, 0.4)'
+                                }}
+                            >
+                                <X size={16} />
+                                <span>Fechar Ficha</span>
+                            </button>
+                        </div>
+
+                        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+                            <CharacterSheet
+                                characterId={editingPlayer.character.id}
+                                initialData={editingPlayer.character}
+                                isGM={true}
+                                onExit={() => setEditingPlayer(null)}
+                            />
+                        </div>
                     </div>
-                </div>
+                </div>,
+                document.body
             )}
         </div>
     );
