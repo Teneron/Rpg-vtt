@@ -41,9 +41,10 @@ import {
   RefreshCw
 } from 'lucide-react';
 
+// Static import for dice overlay (lightweight UI, defers 3D scene internally) to prevent stale chunk errors
+import { DiceOverlay, DiceSidebar } from './features/dice/DiceRoller';
+
 // Lazy loaded heavy components to optimize initial bundle size & load on demand
-const DiceOverlay = lazy(() => import('./features/dice/DiceRoller').then(m => ({ default: m.DiceOverlay })));
-const DiceSidebar = lazy(() => import('./features/dice/DiceRoller').then(m => ({ default: m.DiceSidebar })));
 const CharacterSheet = lazy(() => import('./features/character/CharacterSheet').then(m => ({ default: m.CharacterSheet })));
 const CharacterSelection = lazy(() => import('./features/character/CharacterSelection').then(m => ({ default: m.CharacterSelection })));
 const GMScreen = lazy(() => import('./features/gm/GMScreen').then(m => ({ default: m.GMScreen })));
