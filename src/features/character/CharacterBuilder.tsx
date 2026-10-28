@@ -934,72 +934,13 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                                             </li>
                                         ))}
                                     </ul>
-                                    {selectedClass?.subclasses && selectedClass.subclasses.length > 0 && (
-                                        <div style={{
-                                            marginTop: '16px',
-                                            padding: '14px',
-                                            background: 'rgba(255, 215, 0, 0.04)',
-                                            borderRadius: '8px',
-                                            border: '1px solid rgba(255, 215, 0, 0.25)',
-                                            display: 'flex',
-                                            flexDirection: 'column',
-                                            gap: '10px'
-                                        }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
-                                                <span style={{ color: '#ffd700', fontSize: '0.9rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                    🛡️ Subclasses da Classe ({selectedClass.name}) — Escolha no 3º Nível
-                                                </span>
-                                                <span style={{ fontSize: '0.75rem', color: '#94a3b8', background: 'rgba(255,255,255,0.06)', padding: '2px 8px', borderRadius: '10px' }}>
-                                                    Regras Oficiais D&D 5.5e (2024)
-                                                </span>
-                                            </div>
-                                            <p style={{ margin: 0, fontSize: '0.82rem', color: '#cbd5e1', lineHeight: '1.4' }}>
-                                                No D&D 5.5e oficial, todos os personagens escolhem seu arquétipo de subclasse no <strong>3º Nível</strong> durante a evolução. Conheça as opções detalhadas disponíveis:
-                                            </p>
-                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '4px' }}>
-                                                {selectedClass.subclasses.map(sub => (
-                                                    <div key={sub.id} style={{
-                                                        padding: '10px 12px',
-                                                        background: 'rgba(0, 0, 0, 0.4)',
-                                                        borderRadius: '6px',
-                                                        border: '1px solid rgba(255, 255, 255, 0.08)'
-                                                    }}>
-                                                        <div style={{ color: '#ffd700', fontWeight: 600, fontSize: '0.88rem', marginBottom: '4px' }}>
-                                                            {sub.name}
-                                                        </div>
-                                                        <p style={{ margin: '0 0 8px 0', fontSize: '0.82rem', color: '#cbd5e1', lineHeight: '1.4' }}>
-                                                            {sub.description}
-                                                        </p>
-                                                        {sub.features && sub.features.length > 0 && (
-                                                            <div style={{
-                                                                paddingLeft: '10px',
-                                                                borderLeft: '2px solid rgba(255, 215, 0, 0.35)',
-                                                                display: 'flex',
-                                                                flexDirection: 'column',
-                                                                gap: '4px'
-                                                            }}>
-                                                                {sub.features.map(f => (
-                                                                    <div key={f.name} style={{ fontSize: '0.78rem', color: '#94a3b8', lineHeight: '1.3' }}>
-                                                                        <strong style={{ color: '#f1f5f9' }}>Nv {f.level} - {f.name}:</strong> {f.description}
-                                                                    </div>
-                                                                ))}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    )}
+                                    <p style={{ fontSize: '0.8rem', color: '#94a3b8', fontStyle: 'italic', marginTop: '12px' }}>
+                                        🛡️ <em>As especializações de Subclasse são desbloqueadas e escolhidas no <strong>3º Nível</strong> durante a evolução do personagem.</em>
+                                    </p>
                                 </div>
                             </div>
                         </div>
                     )}
-
-                    {/* ... (Steps 1, 2, 3, 4, 5 hidden for brevity, assume unchanged unless targeting) ... */}
-                    {/* Actually, replace_file_content takes range. I need to be careful with range. */}
-                    {/* I will split this into two edits if the range is too wide or use multi_replace. */}
-                    {/* It is wide. Subclass is line ~523. Life Step is ~808. */}
-                    {/* I will use multi_replace. */}
 
                     {/* STEP 1: Attributes */}
                     {steps[currentStep].label === 'Atributos' && (
