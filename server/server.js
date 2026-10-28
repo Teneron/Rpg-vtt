@@ -306,6 +306,9 @@ if (fs.existsSync(distPath)) {
     app.use(express.static(distPath));
     app.use((req, res, next) => {
         if (req.path.startsWith('/socket.io') || req.path === '/health') return next();
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
         res.sendFile(path.join(distPath, 'index.html'));
     });
 } else {
