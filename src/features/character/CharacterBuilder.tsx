@@ -151,6 +151,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
     const [selectedRaceCantrips, setSelectedRaceCantrips] = useState<string[]>([]); // New state
     const [selectedFeats, setSelectedFeats] = useState<string[]>([]);
     const [selectedEquipmentChoices, setSelectedEquipmentChoices] = useState<Record<number, number>>({});
+    const [selectedRogueExpertises, setSelectedRogueExpertises] = useState<string[]>([]);
 
     const [spellSearch, setSpellSearch] = useState('');
     const [spellSchoolFilter, setSpellSchoolFilter] = useState('all');
@@ -166,6 +167,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
             setSelectedCantrips([]);
             setSelectedFeats([]);
             setSelectedEquipmentChoices({}); // Reset equipment choices
+            setSelectedRogueExpertises([]);
             setSpellSearch('');
             setSpellSchoolFilter('all');
             onUpdate({ ...character, hpRolled: undefined });
@@ -243,6 +245,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
     const toggleSkill = React.useCallback((skill: string) => {
         if (selectedSkills.includes(skill)) {
             setSelectedSkills(prev => prev.filter(s => s !== skill));
+            setSelectedRogueExpertises(prev => prev.filter(s => s !== skill));
         } else {
             const limit = selectedClass?.skillChoices.count || 2;
             if (selectedSkills.length < limit) {
@@ -250,6 +253,18 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
             }
         }
     }, [selectedSkills, selectedClass]);
+
+    const toggleRogueExpertise = React.useCallback((skill: string) => {
+        setSelectedRogueExpertises(prev => {
+            if (prev.includes(skill)) {
+                return prev.filter(s => s !== skill);
+            }
+            if (prev.length < 2) {
+                return [...prev, skill];
+            }
+            return prev;
+        });
+    }, []);
 
     const toggleSpell = React.useCallback((spellId: string, isCantrip: boolean) => {
         const config = selectedClass?.spellcastingConfig;
@@ -672,10 +687,15 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
             });
         }
 
-        nextChar.skills = nextChar.skills.map(s => ({ ...s, proficient: false }));
+        nextChar.skills = nextChar.skills.map(s => ({ ...s, proficient: false, expertise: false }));
         finalSkillNames.forEach(skillName => {
             const sk = nextChar.skills.find(s => s.name === skillName);
-            if (sk) sk.proficient = true;
+            if (sk) {
+                sk.proficient = true;
+                if (selectedClassId === 'rogue' && selectedRogueExpertises.includes(skillName)) {
+                    sk.expertise = true;
+                }
+            }
         });
 
         // Proficiencies (Tools & Languages)
@@ -761,7 +781,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
 
         onUpdate(regenerateCharacterStats(nextChar));
         onClose();
-    }, [character, charName, selectedClass, selectedRace, selectedBackground, baseStats, selectedSkills, isSpellCaster, selectedCantrips, selectedSpells, selectedAlignment, selectedTools, selectedLanguages, selectedFeats, selectedEquipmentChoices, getAttributeBonus, activeSystem, effectiveStartingLevel, onUpdate, onClose]);
+    }, [character, charName, selectedClass, selectedRace, selectedBackground, baseStats, selectedSkills, selectedRogueExpertises, isSpellCaster, selectedCantrips, selectedSpells, selectedAlignment, selectedTools, selectedLanguages, selectedFeats, selectedEquipmentChoices, getAttributeBonus, activeSystem, effectiveStartingLevel, onUpdate, onClose]);
 
     // Render using Portal
     return ReactDOM.createPortal(
@@ -1162,6 +1182,59 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                                             );
                                         })}
                                     </div>
+
+                                    {selectedClassId === 'rogue' && (
+                                        <div style={{ marginTop: '16px', padding: '12px', background: 'rgba(255, 215, 0, 0.06)', border: '1px solid rgba(255, 215, 0, 0.3)', borderRadius: '6px' }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                                                <span style={{ color: '#ffd700', fontWeight: 'bold', fontSize: '0.88rem' }}>
+                                                    ⭐ Especialização (Expertise — Ladino Nv 1):
+                                                </span>
+                                                <span style={{
+                                                    fontSize: '0.78rem',
+                                                    fontWeight: 600,
+                                                    color: selectedRogueExpertises.length === 2 ? '#4ade80' : '#f59e0b',
+                                                    background: selectedRogueExpertises.length === 2 ? 'rgba(74, 222, 128, 0.1)' : 'rgba(245, 158, 11, 0.1)',
+                                                    padding: '2px 8px',
+                                                    borderRadius: '10px'
+                                                }}>
+                                                    {selectedRogueExpertises.length}/2 Selecionadas
+                                                </span>
+                                            </div>
+                                            <p style={{ margin: '0 0 10px 0', fontSize: '0.78rem', color: '#cbd5e1', lineHeight: '1.4' }}>
+                                                Escolha 2 de suas perícias já proficientes. O seu Bônus de Proficiência será dobrado em testes realizados com elas.
+                                            </p>
+                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                                {Array.from(new Set([...selectedSkills, ...(selectedBackground?.skillProficiencies as string[] || [])])).map(skill => {
+                                                    const isExpert = selectedRogueExpertises.includes(skill);
+                                                    return (
+                                                        <button
+                                                            key={skill}
+                                                            type="button"
+                                                            onClick={() => toggleRogueExpertise(skill)}
+                                                            style={{
+                                                                padding: '5px 10px',
+                                                                borderRadius: '4px',
+                                                                fontSize: '0.8rem',
+                                                                fontWeight: isExpert ? 'bold' : 'normal',
+                                                                background: isExpert ? '#ffd700' : 'rgba(0,0,0,0.4)',
+                                                                color: isExpert ? '#000' : '#ffd700',
+                                                                border: '1px solid #ffd700',
+                                                                cursor: 'pointer',
+                                                                transition: 'all 0.15s ease'
+                                                            }}
+                                                        >
+                                                            {isExpert ? '✓ ' : '+ '}{skill} {isExpert ? '(Especialista)' : ''}
+                                                        </button>
+                                                    );
+                                                })}
+                                                {selectedSkills.length === 0 && (!selectedBackground?.skillProficiencies || selectedBackground.skillProficiencies.length === 0) && (
+                                                    <span style={{ fontSize: '0.75rem', color: '#94a3b8', fontStyle: 'italic' }}>
+                                                        Selecione primeiro suas perícias proficientes acima.
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                                 <div className="builder-col">
                                     <SkillDescriptionPreview defaultText="Passe o mouse sobre uma perícia para ver os detalhes." hoveredSkill={hoveredSkill} />
@@ -1531,6 +1604,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                             disabled={
                                 remainingPoints !== 0 ||
                                 selectedSkills.length < (selectedClass?.skillChoices.count || 2) ||
+                                (selectedClassId === 'rogue' && selectedRogueExpertises.length < 2) ||
                                 (!!selectedClass?.toolChoices && selectedTools.length < selectedClass.toolChoices.count) ||
                                 (!!selectedRace?.languageChoices && selectedLanguages.length < selectedRace.languageChoices.count) ||
                                 (!!selectedRace?.cantripChoices && selectedRaceCantrips.length < selectedRace.cantripChoices.count)
@@ -1539,6 +1613,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                                 opacity: (
                                     remainingPoints !== 0 ||
                                     selectedSkills.length < (selectedClass?.skillChoices.count || 2) ||
+                                    (selectedClassId === 'rogue' && selectedRogueExpertises.length < 2) ||
                                     (!!selectedClass?.toolChoices && selectedTools.length < selectedClass.toolChoices.count) ||
                                     (!!selectedRace?.languageChoices && selectedLanguages.length < selectedRace.languageChoices.count) ||
                                     (!!selectedRace?.cantripChoices && selectedRaceCantrips.length < selectedRace.cantripChoices.count)
@@ -1546,6 +1621,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                                 cursor: (
                                     remainingPoints !== 0 ||
                                     selectedSkills.length < (selectedClass?.skillChoices.count || 2) ||
+                                    (selectedClassId === 'rogue' && selectedRogueExpertises.length < 2) ||
                                     (!!selectedClass?.toolChoices && selectedTools.length < selectedClass.toolChoices.count) ||
                                     (!!selectedRace?.languageChoices && selectedLanguages.length < selectedRace.languageChoices.count) ||
                                     (!!selectedRace?.cantripChoices && selectedRaceCantrips.length < selectedRace.cantripChoices.count)
