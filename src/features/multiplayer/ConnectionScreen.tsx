@@ -206,14 +206,14 @@ export const ConnectionScreen: React.FC<ConnectionScreenProps> = ({ onStartGame,
     };
 
     const checkGmPassword = () => {
-        if (gmPassword === 'mestre' || gmPassword === 'admin') {
+        if (gmPassword === 'mestre') {
             if (mode === 'gm-rules-auth') {
                 if (onOpenGMRules) onOpenGMRules();
             } else {
                 setMode('gm-setup');
             }
         } else {
-            alert('Senha incorreta! Tente "mestre" ou "admin".');
+            alert('Senha incorreta!');
         }
     };
 
@@ -467,7 +467,7 @@ export const ConnectionScreen: React.FC<ConnectionScreenProps> = ({ onStartGame,
                         <input
                             type="password"
                             style={inputStyle}
-                            placeholder="Senha do Mestre (ex: mestre)"
+                            placeholder="Senha do Mestre"
                             value={gmPassword}
                             onChange={e => setGmPassword(e.target.value)}
                             onKeyDown={e => e.key === 'Enter' && checkGmPassword()}
