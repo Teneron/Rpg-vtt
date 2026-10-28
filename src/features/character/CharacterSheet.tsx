@@ -912,6 +912,7 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
                 <CompanionModal
                     character={character}
                     onUpdateCharacter={updateCharacter}
+                    isGM={isGM}
                     onClose={() => setShowCompanions(false)}
                     onRoll={handleRoll}
                     onRollDiceFormula={(formula) => {

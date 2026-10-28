@@ -1,11 +1,16 @@
 import React, { useState } from 'react';
-import type { Character, Companion, CompanionAttack, CompanionFeature } from '../characterTypes';
-import { COMPANION_PRESETS, instantiateCompanion, createCustomCompanion } from '../data/companionPresets';
+import type { Character, Companion } from '../characterTypes';
+import {
+    COMPANION_PRESETS,
+    instantiateCompanion,
+    checkMeetsRequirement,
+    type CompanionPreset
+} from '../data/companionPresets';
 import { useMap } from '../../map/MapContext';
 import { useCombat } from '../../combat/CombatContext';
 import {
     PawPrint, Shield, Heart, Swords, Plus, Trash2,
-    Eye, Sparkles, X, Check, Dices, ChevronRight, Edit2
+    Eye, Sparkles, X, Check, Dices, ChevronRight, AlertCircle, Info, Lock
 } from 'lucide-react';
 
 interface CompanionModalProps {
@@ -14,6 +19,7 @@ interface CompanionModalProps {
     onClose: () => void;
     onRoll?: (title: string, modifier: number) => void;
     onRollDiceFormula?: (formula: string, title: string) => void;
+    isGM?: boolean;
 }
 
 export const CompanionModal: React.FC<CompanionModalProps> = ({
@@ -21,14 +27,15 @@ export const CompanionModal: React.FC<CompanionModalProps> = ({
     onUpdateCharacter,
     onClose,
     onRoll,
-    onRollDiceFormula
+    onRollDiceFormula,
+    isGM = false
 }) => {
     const companions = character.companions || [];
     const [selectedCompanionId, setSelectedCompanionId] = useState<string>(
         companions[0]?.id || ''
     );
     const [showPresetPicker, setShowPresetPicker] = useState(companions.length === 0);
-    const [editingDetails, setEditingDetails] = useState(false);
+    const [categoryFilter, setCategoryFilter] = useState<'all' | 'beast_master' | 'chain_warlock' | 'find_familiar' | 'steed' | 'market_animal'>('all');
 
     // Map & Combat contexts for spawning & initiative
     const { tokens, addToken, removeToken, updateToken } = useMap();
@@ -72,27 +79,25 @@ export const CompanionModal: React.FC<CompanionModalProps> = ({
         saveCompanions(nextList);
     };
 
-    // Preset addition
-    const handleAddPreset = (presetId: string) => {
+    // Preset addition strictly following official rules
+    const handleSelectPreset = (preset: CompanionPreset) => {
+        const check = checkMeetsRequirement(character, preset);
+        if (!check.meets && !isGM) {
+            const proceed = confirm(
+                `Aviso de Regras Oficiais do D&D:\n\n${check.reason}\n\nO jogador só pode ter este companheiro com a classe/magia exigida ou autorização expressa do Mestre.\n\nDeseja prosseguir mesmo assim?`
+            );
+            if (!proceed) return;
+        }
+
         const wisMod = character.attributes?.wis?.modifier ?? 2;
         const charLevel = character.level || 1;
         const profBonus = character.proficiencyBonus || 2;
 
-        const newComp = instantiateCompanion(presetId, charLevel, wisMod, profBonus);
+        const newComp = instantiateCompanion(preset.id, charLevel, wisMod, profBonus);
         const nextList = [...companions, newComp];
         saveCompanions(nextList);
         setSelectedCompanionId(newComp.id);
         setShowPresetPicker(false);
-    };
-
-    // Custom addition
-    const handleAddCustom = () => {
-        const custom = createCustomCompanion();
-        const nextList = [...companions, custom];
-        saveCompanions(nextList);
-        setSelectedCompanionId(custom.id);
-        setShowPresetPicker(false);
-        setEditingDetails(true);
     };
 
     // Remove companion
@@ -122,7 +127,7 @@ export const CompanionModal: React.FC<CompanionModalProps> = ({
             // Despawn
             removeToken(activeTokenOnMap.id);
         } else {
-            // Spawn near character token or center
+            // Spawn near character token or safe map position
             const pcToken = tokens.find(t => t.characterId === character.id);
             const targetX = pcToken ? Math.max(0, pcToken.position.x + 1) : 4;
             const targetY = pcToken ? Math.max(0, pcToken.position.y) : 4;
@@ -173,7 +178,7 @@ export const CompanionModal: React.FC<CompanionModalProps> = ({
         }
     };
 
-    // HP Adjustments
+    // HP Adjustments (Taking Damage or Healing in play)
     const handleAdjustHp = (delta: number) => {
         if (!activeCompanion) return;
         const current = activeCompanion.hp.current;
@@ -183,6 +188,12 @@ export const CompanionModal: React.FC<CompanionModalProps> = ({
             hp: { ...activeCompanion.hp, current: nextVal }
         });
     };
+
+    // Filter presets
+    const filteredPresets = COMPANION_PRESETS.filter(p => {
+        if (categoryFilter === 'all') return true;
+        return p.category === categoryFilter;
+    });
 
     return (
         <div
@@ -208,8 +219,8 @@ export const CompanionModal: React.FC<CompanionModalProps> = ({
                 style={{
                     background: '#12141c',
                     width: '95%',
-                    maxWidth: '920px',
-                    maxHeight: '90vh',
+                    maxWidth: '940px',
+                    maxHeight: '92vh',
                     borderRadius: '12px',
                     border: '1px solid #2a3142',
                     boxShadow: '0 20px 50px rgba(0,0,0,0.8), 0 0 20px rgba(56, 189, 248, 0.2)',
@@ -223,7 +234,7 @@ export const CompanionModal: React.FC<CompanionModalProps> = ({
                 {/* MODAL HEADER */}
                 <div
                     style={{
-                        padding: '16px 20px',
+                        padding: '14px 20px',
                         background: 'linear-gradient(90deg, #161a26 0%, #1a2234 100%)',
                         borderBottom: '1px solid #2a3142',
                         display: 'flex',
@@ -247,11 +258,16 @@ export const CompanionModal: React.FC<CompanionModalProps> = ({
                             <PawPrint size={20} color="#fff" />
                         </div>
                         <div>
-                            <h2 style={{ margin: 0, fontSize: '1.25rem', color: '#f8fafc', fontWeight: 700, letterSpacing: '0.5px' }}>
-                                Companheiros, Familiares & Pets
-                            </h2>
-                            <p style={{ margin: 0, fontSize: '0.8rem', color: '#94a3b8' }}>
-                                Gerencie fichas de pets, controle de token exclusivo no mapa e ações de combate
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <h2 style={{ margin: 0, fontSize: '1.2rem', color: '#f8fafc', fontWeight: 700, letterSpacing: '0.5px' }}>
+                                    Pets, Familiares & Montarias (Regras Oficiais D&D)
+                                </h2>
+                                <span style={{ fontSize: '0.7rem', background: '#0284c7', color: '#fff', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>
+                                    PHB 2024 / 5e
+                                </span>
+                            </div>
+                            <p style={{ margin: '2px 0 0', fontSize: '0.78rem', color: '#94a3b8' }}>
+                                Estatísticas e opções vinculadas estritamente aos recursos de classe e magias do livro
                             </p>
                         </div>
                     </div>
@@ -275,7 +291,7 @@ export const CompanionModal: React.FC<CompanionModalProps> = ({
                             }}
                         >
                             <Plus size={15} />
-                            <span>Novo Pet / Preset</span>
+                            <span>Adicionar Companheiro Oficial</span>
                         </button>
 
                         <button
@@ -301,7 +317,7 @@ export const CompanionModal: React.FC<CompanionModalProps> = ({
                     {/* LEFT SIDEBAR: LIST OF PETS */}
                     <div
                         style={{
-                            width: '240px',
+                            width: '230px',
                             background: '#0d0f17',
                             borderRight: '1px solid #1f2533',
                             padding: '12px',
@@ -312,7 +328,7 @@ export const CompanionModal: React.FC<CompanionModalProps> = ({
                         }}
                     >
                         <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '4px' }}>
-                            Seus Companheiros ({companions.length})
+                            Companheiros Ativos ({companions.length})
                         </span>
 
                         {companions.length === 0 && (
@@ -332,7 +348,6 @@ export const CompanionModal: React.FC<CompanionModalProps> = ({
                                     onClick={() => {
                                         setSelectedCompanionId(comp.id);
                                         setShowPresetPicker(false);
-                                        setEditingDetails(false);
                                     }}
                                     style={{
                                         display: 'flex',
@@ -391,17 +406,17 @@ export const CompanionModal: React.FC<CompanionModalProps> = ({
                     </div>
 
                     {/* RIGHT MAIN AREA */}
-                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto', background: '#12141c', padding: '20px' }}>
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto', background: '#12141c', padding: '18px 20px' }}>
                         {showPresetPicker ? (
-                            /* PRESET PICKER VIEW */
+                            /* OFFICIAL PRESET PICKER VIEW */
                             <div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '14px' }}>
                                     <div>
                                         <h3 style={{ margin: 0, fontSize: '1.15rem', color: '#38bdf8' }}>
-                                            Escolha um Modelo de Companheiro
+                                            Companheiros Oficiais do Livro do Jogador (PHB)
                                         </h3>
-                                        <p style={{ margin: '4px 0 0', fontSize: '0.82rem', color: '#94a3b8' }}>
-                                            Estatísticas ajustadas automaticamente de acordo com o nível e sabedoria de {character.name}.
+                                        <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: '#94a3b8' }}>
+                                            Selecione o modelo concedido pela sua classe, subclasse ou magia. As estatísticas e fórmulas são travadas nas regras do D&D.
                                         </p>
                                     </div>
                                     {companions.length > 0 && (
@@ -412,7 +427,7 @@ export const CompanionModal: React.FC<CompanionModalProps> = ({
                                                 border: '1px solid #475569',
                                                 color: '#cbd5e1',
                                                 borderRadius: '6px',
-                                                padding: '5px 12px',
+                                                padding: '4px 10px',
                                                 cursor: 'pointer',
                                                 fontSize: '0.8rem'
                                             }}
@@ -422,116 +437,155 @@ export const CompanionModal: React.FC<CompanionModalProps> = ({
                                     )}
                                 </div>
 
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '14px', marginBottom: '20px' }}>
-                                    {COMPANION_PRESETS.map(preset => (
-                                        <div
-                                            key={preset.id}
-                                            onClick={() => handleAddPreset(preset.id)}
+                                {/* CATEGORY FILTER BUTTONS */}
+                                <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', marginBottom: '16px', paddingBottom: '4px' }}>
+                                    {[
+                                        { id: 'all', label: 'Todos Oficiais' },
+                                        { id: 'beast_master', label: 'Mestre das Bestas (Guardião)' },
+                                        { id: 'chain_warlock', label: 'Pacto da Corrente (Bruxo)' },
+                                        { id: 'find_familiar', label: 'Encontrar Familiar' },
+                                        { id: 'steed', label: 'Montaria (Paladino)' },
+                                        { id: 'market_animal', label: 'Mercado (PHB Cap. 5)' }
+                                    ].map(f => (
+                                        <button
+                                            key={f.id}
+                                            onClick={() => setCategoryFilter(f.id as any)}
                                             style={{
-                                                background: '#161b28',
-                                                border: '1px solid #283348',
-                                                borderRadius: '10px',
-                                                padding: '14px',
+                                                background: categoryFilter === f.id ? '#0284c7' : '#161b28',
+                                                color: categoryFilter === f.id ? '#fff' : '#94a3b8',
+                                                border: categoryFilter === f.id ? '1px solid #38bdf8' : '1px solid #283348',
+                                                borderRadius: '6px',
+                                                padding: '4px 10px',
+                                                fontSize: '0.75rem',
+                                                fontWeight: 'bold',
                                                 cursor: 'pointer',
-                                                transition: 'all 0.2s',
-                                                display: 'flex',
-                                                flexDirection: 'column',
-                                                justifyContent: 'space-between'
-                                            }}
-                                            onMouseEnter={e => {
-                                                e.currentTarget.style.borderColor = '#38bdf8';
-                                                e.currentTarget.style.transform = 'translateY(-2px)';
-                                            }}
-                                            onMouseLeave={e => {
-                                                e.currentTarget.style.borderColor = '#283348';
-                                                e.currentTarget.style.transform = 'translateY(0)';
+                                                whiteSpace: 'nowrap'
                                             }}
                                         >
-                                            <div>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
-                                                    <div
-                                                        style={{
-                                                            width: '44px',
-                                                            height: '44px',
-                                                            borderRadius: '50%',
-                                                            overflow: 'hidden',
-                                                            border: '2px solid #38bdf8',
-                                                            flexShrink: 0
-                                                        }}
-                                                    >
-                                                        <img src={preset.avatarUrl} alt={preset.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                                    </div>
-                                                    <div>
-                                                        <div style={{ fontWeight: 'bold', fontSize: '0.98rem', color: '#f8fafc' }}>
-                                                            {preset.name}
-                                                        </div>
-                                                        <div style={{ fontSize: '0.75rem', color: '#38bdf8' }}>
-                                                            {preset.creatureType}
-                                                        </div>
-                                                    </div>
-                                                </div>
-
-                                                <p style={{ fontSize: '0.8rem', color: '#94a3b8', lineHeight: 1.4, margin: '0 0 10px' }}>
-                                                    {preset.description}
-                                                </p>
-
-                                                <div style={{ display: 'flex', gap: '8px', fontSize: '0.75rem', color: '#cbd5e1', marginBottom: '8px' }}>
-                                                    <span style={{ background: '#0f172a', padding: '2px 6px', borderRadius: '4px' }}>
-                                                        Tam: {preset.size}
-                                                    </span>
-                                                    <span style={{ background: '#0f172a', padding: '2px 6px', borderRadius: '4px' }}>
-                                                        Vel: {preset.speed}
-                                                    </span>
-                                                    <span style={{ background: '#0f172a', padding: '2px 6px', borderRadius: '4px' }}>
-                                                        CA: {preset.baseAc}{preset.acAddsPb ? ' + PB' : ''}
-                                                    </span>
-                                                </div>
-                                            </div>
-
-                                            <button
-                                                style={{
-                                                    marginTop: '8px',
-                                                    background: '#0284c7',
-                                                    color: '#fff',
-                                                    border: 'none',
-                                                    borderRadius: '6px',
-                                                    padding: '6px 12px',
-                                                    fontWeight: 'bold',
-                                                    fontSize: '0.8rem',
-                                                    cursor: 'pointer',
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    justifyContent: 'center',
-                                                    gap: '6px'
-                                                }}
-                                            >
-                                                <span>Adicionar à Ficha</span>
-                                                <ChevronRight size={14} />
-                                            </button>
-                                        </div>
+                                            {f.label}
+                                        </button>
                                     ))}
                                 </div>
 
-                                <div style={{ borderTop: '1px solid #1f2533', paddingTop: '16px', textAlign: 'center' }}>
-                                    <button
-                                        onClick={handleAddCustom}
-                                        style={{
-                                            background: '#1e293b',
-                                            color: '#cbd5e1',
-                                            border: '1px dashed #475569',
-                                            borderRadius: '8px',
-                                            padding: '10px 20px',
-                                            cursor: 'pointer',
-                                            fontSize: '0.85rem',
-                                            fontWeight: 'bold',
-                                            display: 'inline-flex',
-                                            alignItems: 'center',
-                                            gap: '8px'
-                                        }}
-                                    >
-                                        <Plus size={16} />
-                                        <span>Criar Companheiro / Pet Personalizado do Zero</span>
-                                    </button>
+                                {/* PRESET CARDS GRID */}
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))', gap: '14px' }}>
+                                    {filteredPresets.map(preset => {
+                                        const reqCheck = checkMeetsRequirement(character, preset);
+
+                                        return (
+                                            <div
+                                                key={preset.id}
+                                                onClick={() => handleSelectPreset(preset)}
+                                                style={{
+                                                    background: '#161b28',
+                                                    border: reqCheck.meets ? '1px solid #1e3a5f' : '1px solid #283348',
+                                                    borderRadius: '10px',
+                                                    padding: '14px',
+                                                    cursor: 'pointer',
+                                                    transition: 'all 0.2s',
+                                                    display: 'flex',
+                                                    flexDirection: 'column',
+                                                    justifyContent: 'space-between',
+                                                    position: 'relative'
+                                                }}
+                                                onMouseEnter={e => {
+                                                    e.currentTarget.style.borderColor = reqCheck.meets ? '#38bdf8' : '#eab308';
+                                                    e.currentTarget.style.transform = 'translateY(-2px)';
+                                                }}
+                                                onMouseLeave={e => {
+                                                    e.currentTarget.style.borderColor = reqCheck.meets ? '#1e3a5f' : '#283348';
+                                                    e.currentTarget.style.transform = 'translateY(0)';
+                                                }}
+                                            >
+                                                <div>
+                                                    {/* TOP AVATAR & NAME */}
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+                                                        <div
+                                                            style={{
+                                                                width: '44px',
+                                                                height: '44px',
+                                                                borderRadius: '50%',
+                                                                overflow: 'hidden',
+                                                                border: reqCheck.meets ? '2px solid #38bdf8' : '2px solid #475569',
+                                                                flexShrink: 0
+                                                            }}
+                                                        >
+                                                            <img src={preset.avatarUrl} alt={preset.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                                        </div>
+                                                        <div>
+                                                            <div style={{ fontWeight: 'bold', fontSize: '0.98rem', color: '#f8fafc' }}>
+                                                                {preset.name}
+                                                            </div>
+                                                            <div style={{ fontSize: '0.75rem', color: '#38bdf8' }}>
+                                                                {preset.creatureType}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* REQUIREMENT BADGE */}
+                                                    <div
+                                                        style={{
+                                                            fontSize: '0.72rem',
+                                                            borderRadius: '4px',
+                                                            padding: '4px 8px',
+                                                            marginBottom: '8px',
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            gap: '5px',
+                                                            background: reqCheck.meets ? 'rgba(34, 197, 94, 0.12)' : 'rgba(234, 179, 8, 0.1)',
+                                                            border: reqCheck.meets ? '1px solid rgba(34, 197, 94, 0.3)' : '1px solid rgba(234, 179, 8, 0.3)',
+                                                            color: reqCheck.meets ? '#4ade80' : '#facc15'
+                                                        }}
+                                                    >
+                                                        {reqCheck.meets ? <Check size={12} /> : <AlertCircle size={12} />}
+                                                        <span>{preset.requiredSource}</span>
+                                                    </div>
+
+                                                    <p style={{ fontSize: '0.8rem', color: '#94a3b8', lineHeight: 1.4, margin: '0 0 10px' }}>
+                                                        {preset.description}
+                                                    </p>
+
+                                                    <div style={{ display: 'flex', gap: '6px', fontSize: '0.72rem', color: '#cbd5e1', marginBottom: '8px', flexWrap: 'wrap' }}>
+                                                        <span style={{ background: '#0f172a', padding: '2px 6px', borderRadius: '4px' }}>
+                                                            Tam: {preset.size}
+                                                        </span>
+                                                        <span style={{ background: '#0f172a', padding: '2px 6px', borderRadius: '4px' }}>
+                                                            Vel: {preset.speed}
+                                                        </span>
+                                                        <span style={{ background: '#0f172a', padding: '2px 6px', borderRadius: '4px' }}>
+                                                            CA: {preset.baseAc}{preset.acAddsPb ? ' + PB' : ''}
+                                                        </span>
+                                                        {preset.canAttack === false && (
+                                                            <span style={{ background: '#3b0764', color: '#d8b4fe', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>
+                                                                Apoio (Não ataca)
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+
+                                                <button
+                                                    style={{
+                                                        marginTop: '8px',
+                                                        background: reqCheck.meets ? '#0284c7' : '#334155',
+                                                        color: '#fff',
+                                                        border: 'none',
+                                                        borderRadius: '6px',
+                                                        padding: '6px 12px',
+                                                        fontWeight: 'bold',
+                                                        fontSize: '0.8rem',
+                                                        cursor: 'pointer',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        gap: '6px'
+                                                    }}
+                                                >
+                                                    <span>{reqCheck.meets ? 'Adicionar à Ficha' : 'Adicionar com Autorização'}</span>
+                                                    <ChevronRight size={14} />
+                                                </button>
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             </div>
                         ) : activeCompanion ? (
@@ -576,40 +630,12 @@ export const CompanionModal: React.FC<CompanionModalProps> = ({
 
                                         <div>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                                {editingDetails ? (
-                                                    <input
-                                                        type="text"
-                                                        value={activeCompanion.name}
-                                                        onChange={e => updateActiveCompanion({ name: e.target.value })}
-                                                        style={{
-                                                            background: '#0f172a',
-                                                            border: '1px solid #38bdf8',
-                                                            color: '#f8fafc',
-                                                            borderRadius: '4px',
-                                                            padding: '2px 8px',
-                                                            fontSize: '1.15rem',
-                                                            fontWeight: 'bold'
-                                                        }}
-                                                    />
-                                                ) : (
-                                                    <h3 style={{ margin: 0, fontSize: '1.25rem', color: '#f8fafc', fontWeight: 'bold' }}>
-                                                        {activeCompanion.name}
-                                                    </h3>
-                                                )}
-
-                                                <button
-                                                    onClick={() => setEditingDetails(!editingDetails)}
-                                                    style={{
-                                                        background: 'none',
-                                                        border: 'none',
-                                                        color: '#64748b',
-                                                        cursor: 'pointer',
-                                                        padding: '4px'
-                                                    }}
-                                                    title={editingDetails ? 'Concluir Edição' : 'Editar Nome & Detalhes'}
-                                                >
-                                                    {editingDetails ? <Check size={16} color="#4ade80" /> : <Edit2 size={14} />}
-                                                </button>
+                                                <h3 style={{ margin: 0, fontSize: '1.25rem', color: '#f8fafc', fontWeight: 'bold' }}>
+                                                    {activeCompanion.name}
+                                                </h3>
+                                                <span title="Estatísticas protegidas pelas regras oficiais do D&D" style={{ display: 'flex', alignItems: 'center', gap: '3px', fontSize: '0.72rem', background: '#0f172a', color: '#38bdf8', border: '1px solid #1e293b', padding: '2px 6px', borderRadius: '4px' }}>
+                                                    <Lock size={11} /> Regra Oficial
+                                                </span>
                                             </div>
 
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px', flexWrap: 'wrap' }}>
@@ -699,43 +725,9 @@ export const CompanionModal: React.FC<CompanionModalProps> = ({
                                     </div>
                                 </div>
 
-                                {editingDetails && (
-                                    /* AVATAR URL & SPEED EDITING */
-                                    <div style={{ background: '#161d2b', border: '1px solid #29354a', borderRadius: '8px', padding: '12px', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                                        <div style={{ flex: 1, minWidth: '200px' }}>
-                                            <label style={{ fontSize: '0.75rem', color: '#94a3b8' }}>URL da Imagem / Avatar:</label>
-                                            <input
-                                                type="text"
-                                                value={activeCompanion.avatarUrl || ''}
-                                                onChange={e => updateActiveCompanion({ avatarUrl: e.target.value })}
-                                                placeholder="https://..."
-                                                style={{ width: '100%', background: '#0f172a', border: '1px solid #334155', color: '#fff', borderRadius: '4px', padding: '4px 8px', fontSize: '0.8rem' }}
-                                            />
-                                        </div>
-                                        <div style={{ width: '130px' }}>
-                                            <label style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Deslocamento:</label>
-                                            <input
-                                                type="text"
-                                                value={activeCompanion.speed}
-                                                onChange={e => updateActiveCompanion({ speed: e.target.value })}
-                                                style={{ width: '100%', background: '#0f172a', border: '1px solid #334155', color: '#fff', borderRadius: '4px', padding: '4px 8px', fontSize: '0.8rem' }}
-                                            />
-                                        </div>
-                                        <div style={{ width: '100px' }}>
-                                            <label style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Visão (m):</label>
-                                            <input
-                                                type="number"
-                                                value={activeCompanion.visionRange || 0}
-                                                onChange={e => updateActiveCompanion({ visionRange: Number(e.target.value) })}
-                                                style={{ width: '100%', background: '#0f172a', border: '1px solid #334155', color: '#fff', borderRadius: '4px', padding: '4px 8px', fontSize: '0.8rem' }}
-                                            />
-                                        </div>
-                                    </div>
-                                )}
-
                                 {/* VITALS & COMBAT STATS ROW */}
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '14px' }}>
-                                    {/* CA (ARMOR CLASS) */}
+                                    {/* CA (ARMOR CLASS - TRAVADA PELO LIVRO) */}
                                     <div
                                         style={{
                                             background: '#161b28',
@@ -750,21 +742,16 @@ export const CompanionModal: React.FC<CompanionModalProps> = ({
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                             <Shield size={24} color="#38bdf8" />
                                             <div>
-                                                <div style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase' }}>Classe de Armadura</div>
+                                                <div style={{ fontSize: '0.72rem', color: '#94a3b8', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                    <span>Classe de Armadura</span>
+                                                    <Lock size={10} color="#64748b" />
+                                                </div>
                                                 <div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#f8fafc' }}>{activeCompanion.ac}</div>
                                             </div>
                                         </div>
-                                        {editingDetails && (
-                                            <input
-                                                type="number"
-                                                value={activeCompanion.ac}
-                                                onChange={e => updateActiveCompanion({ ac: Number(e.target.value) })}
-                                                style={{ width: '50px', background: '#0f172a', border: '1px solid #334155', color: '#fff', borderRadius: '4px', padding: '4px', textAlign: 'center', fontSize: '1rem', fontWeight: 'bold' }}
-                                            />
-                                        )}
                                     </div>
 
-                                    {/* HP (VITALITY) */}
+                                    {/* HP (VITALITY - DANO E CURA EM JOGO) */}
                                     <div
                                         style={{
                                             background: '#161b28',
@@ -779,7 +766,7 @@ export const CompanionModal: React.FC<CompanionModalProps> = ({
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                                 <Heart size={20} color="#f43f5e" />
-                                                <span style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase' }}>Pontos de Vida</span>
+                                                <span style={{ fontSize: '0.72rem', color: '#94a3b8', textTransform: 'uppercase' }}>Pontos de Vida</span>
                                             </div>
                                             <span style={{ fontWeight: 'bold', fontSize: '1.1rem', color: '#f8fafc' }}>
                                                 {activeCompanion.hp.current} / {activeCompanion.hp.max}
@@ -802,15 +789,16 @@ export const CompanionModal: React.FC<CompanionModalProps> = ({
                                             <button onClick={() => handleAdjustHp(-1)} style={{ background: '#334155', color: '#fff', border: 'none', borderRadius: '4px', padding: '2px 8px', fontSize: '0.75rem', cursor: 'pointer' }}>-1</button>
                                             <button onClick={() => handleAdjustHp(+1)} style={{ background: '#334155', color: '#fff', border: 'none', borderRadius: '4px', padding: '2px 8px', fontSize: '0.75rem', cursor: 'pointer' }}>+1</button>
                                             <button onClick={() => handleAdjustHp(+5)} style={{ background: '#334155', color: '#fff', border: 'none', borderRadius: '4px', padding: '2px 8px', fontSize: '0.75rem', cursor: 'pointer' }}>+5</button>
-                                            <button onClick={() => handleAdjustHp(999)} style={{ background: '#15803d', color: '#fff', border: 'none', borderRadius: '4px', padding: '2px 8px', fontSize: '0.75rem', cursor: 'pointer' }} title="Descanso Longo (Curar Tudo)">Total</button>
+                                            <button onClick={() => handleAdjustHp(999)} style={{ background: '#15803d', color: '#fff', border: 'none', borderRadius: '4px', padding: '2px 8px', fontSize: '0.75rem', cursor: 'pointer' }} title="Descanso Longo (Curar Tudo)">Curar Total</button>
                                         </div>
                                     </div>
                                 </div>
 
                                 {/* ATTRIBUTES GRID */}
                                 <div style={{ background: '#161b28', border: '1px solid #283348', borderRadius: '8px', padding: '14px' }}>
-                                    <div style={{ fontSize: '0.78rem', fontWeight: 'bold', color: '#94a3b8', textTransform: 'uppercase', marginBottom: '10px' }}>
-                                        Atributos & Modificadores (Clique para rolar teste)
+                                    <div style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#94a3b8', textTransform: 'uppercase', marginBottom: '10px', display: 'flex', justifyContent: 'space-between' }}>
+                                        <span>Atributos & Salvaguardas (Clique para rolar teste)</span>
+                                        <span style={{ color: '#64748b' }}><Lock size={11} style={{ verticalAlign: 'middle' }} /> Travado pelo Livro</span>
                                     </div>
 
                                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '8px' }}>
@@ -847,103 +835,83 @@ export const CompanionModal: React.FC<CompanionModalProps> = ({
                                     </div>
                                 </div>
 
-                                {/* ATTACKS & ACTIONS */}
+                                {/* ATTACKS & COMBAT ACTIONS */}
                                 <div style={{ background: '#161b28', border: '1px solid #283348', borderRadius: '8px', padding: '14px' }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                             <Swords size={18} color="#f43f5e" />
                                             <span style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#f8fafc' }}>
-                                                Ataques & Ações de Combate
+                                                Ações de Combate Oficiais
                                             </span>
                                         </div>
-
-                                        <button
-                                            onClick={() => {
-                                                const nextAttacks: CompanionAttack[] = [
-                                                    ...activeCompanion.attacks,
-                                                    { name: 'Novo Ataque', attackBonus: 3, damage: '1d6 + 2', damageType: 'Físico', range: '1,5m' }
-                                                ];
-                                                updateActiveCompanion({ attacks: nextAttacks });
-                                            }}
-                                            style={{
-                                                background: '#1e293b',
-                                                border: '1px solid #334155',
-                                                color: '#cbd5e1',
-                                                borderRadius: '4px',
-                                                padding: '4px 8px',
-                                                fontSize: '0.75rem',
-                                                cursor: 'pointer',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                gap: '4px'
-                                            }}
-                                        >
-                                            <Plus size={13} />
-                                            <span>Adicionar Ataque</span>
-                                        </button>
                                     </div>
 
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                        {activeCompanion.attacks.map((atk, index) => (
-                                            <div
-                                                key={index}
-                                                style={{
-                                                    background: '#0d111a',
-                                                    border: '1px solid #232d40',
-                                                    borderRadius: '6px',
-                                                    padding: '10px 12px',
-                                                    display: 'flex',
-                                                    justifyContent: 'space-between',
-                                                    alignItems: 'center',
-                                                    gap: '10px'
-                                                }}
-                                            >
-                                                <div style={{ flex: 1 }}>
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                        <span style={{ fontWeight: 'bold', fontSize: '0.9rem', color: '#f8fafc' }}>
-                                                            {atk.name}
-                                                        </span>
-                                                        <span style={{ fontSize: '0.75rem', color: '#38bdf8', background: '#0f172a', padding: '1px 6px', borderRadius: '4px' }}>
-                                                            {atk.attackBonus >= 0 ? `+${atk.attackBonus}` : atk.attackBonus} para acertar
-                                                        </span>
-                                                        <span style={{ fontSize: '0.75rem', color: '#fca5a5' }}>
-                                                            {atk.damage} ({atk.damageType})
-                                                        </span>
-                                                    </div>
-                                                    {atk.description && (
-                                                        <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '4px', lineHeight: 1.3 }}>
-                                                            {atk.description}
+                                    {activeCompanion.attacks.length === 0 ? (
+                                        <div
+                                            style={{
+                                                padding: '12px 14px',
+                                                background: '#1e2433',
+                                                borderRadius: '6px',
+                                                border: '1px solid #334155',
+                                                color: '#cbd5e1',
+                                                fontSize: '0.82rem',
+                                                lineHeight: 1.5,
+                                                display: 'flex',
+                                                alignItems: 'flex-start',
+                                                gap: '10px'
+                                            }}
+                                        >
+                                            <Info size={18} color="#38bdf8" style={{ flexShrink: 0, marginTop: '2px' }} />
+                                            <div>
+                                                <strong style={{ color: '#38bdf8' }}>Regra Oficial do D&D (Livro do Jogador / PHB):</strong>
+                                                <p style={{ margin: '4px 0 0', color: '#94a3b8' }}>
+                                                    Familiares comuns <strong>não realizam jogadas de ataque</strong> em combate. Eles operam no turno usando as ações:
+                                                    <br />• <strong>Ajudar (Help):</strong> Concede Vantagem na próxima jogada de ataque de você ou um aliado contra um alvo.
+                                                    <br />• <strong>Sobrevoo / Flyby:</strong> Voa para perto, ajuda e se afasta sem sofrer ataques de oportunidade.
+                                                    <br />• <strong>Descarregar Magias:</strong> Conjuradores podem transmitir magias com alcance de toque através do familiar.
+                                                </p>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                            {activeCompanion.attacks.map((atk, index) => (
+                                                <div
+                                                    key={index}
+                                                    style={{
+                                                        background: '#0d111a',
+                                                        border: '1px solid #232d40',
+                                                        borderRadius: '6px',
+                                                        padding: '10px 12px',
+                                                        display: 'flex',
+                                                        justifyContent: 'space-between',
+                                                        alignItems: 'center',
+                                                        gap: '10px'
+                                                    }}
+                                                >
+                                                    <div style={{ flex: 1 }}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                            <span style={{ fontWeight: 'bold', fontSize: '0.9rem', color: '#f8fafc' }}>
+                                                                {atk.name}
+                                                            </span>
+                                                            <span style={{ fontSize: '0.75rem', color: '#38bdf8', background: '#0f172a', padding: '1px 6px', borderRadius: '4px' }}>
+                                                                {atk.attackBonus >= 0 ? `+${atk.attackBonus}` : atk.attackBonus} para acertar
+                                                            </span>
+                                                            <span style={{ fontSize: '0.75rem', color: '#fca5a5' }}>
+                                                                {atk.damage} ({atk.damageType})
+                                                            </span>
                                                         </div>
-                                                    )}
-                                                </div>
+                                                        {atk.description && (
+                                                            <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '4px', lineHeight: 1.3 }}>
+                                                                {atk.description}
+                                                            </div>
+                                                        )}
+                                                    </div>
 
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                    <button
-                                                        onClick={() => onRoll && onRoll(`Ataque de ${atk.name} (${activeCompanion.name})`, atk.attackBonus)}
-                                                        style={{
-                                                            background: '#0284c7',
-                                                            color: '#fff',
-                                                            border: 'none',
-                                                            borderRadius: '4px',
-                                                            padding: '6px 10px',
-                                                            fontSize: '0.75rem',
-                                                            fontWeight: 'bold',
-                                                            cursor: 'pointer',
-                                                            display: 'flex',
-                                                            alignItems: 'center',
-                                                            gap: '4px'
-                                                        }}
-                                                        title="Rolar d20 + bônus de ataque"
-                                                    >
-                                                        <Dices size={14} />
-                                                        <span>Rolar Ataque</span>
-                                                    </button>
-
-                                                    {onRollDiceFormula && (
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                                         <button
-                                                            onClick={() => onRollDiceFormula(atk.damage, `Dano de ${atk.name} (${activeCompanion.name})`)}
+                                                            onClick={() => onRoll && onRoll(`Ataque de ${atk.name} (${activeCompanion.name})`, atk.attackBonus)}
                                                             style={{
-                                                                background: '#e11d48',
+                                                                background: '#0284c7',
                                                                 color: '#fff',
                                                                 border: 'none',
                                                                 borderRadius: '4px',
@@ -955,67 +923,47 @@ export const CompanionModal: React.FC<CompanionModalProps> = ({
                                                                 alignItems: 'center',
                                                                 gap: '4px'
                                                             }}
-                                                            title="Rolar dados de dano"
+                                                            title="Rolar d20 + bônus de ataque"
                                                         >
-                                                            <span>Rolar Dano</span>
+                                                            <Dices size={14} />
+                                                            <span>Rolar Ataque</span>
                                                         </button>
-                                                    )}
 
-                                                    <button
-                                                        onClick={() => {
-                                                            const nextAttacks = activeCompanion.attacks.filter((_, i) => i !== index);
-                                                            updateActiveCompanion({ attacks: nextAttacks });
-                                                        }}
-                                                        style={{
-                                                            background: 'none',
-                                                            border: 'none',
-                                                            color: '#64748b',
-                                                            cursor: 'pointer',
-                                                            padding: '4px'
-                                                        }}
-                                                    >
-                                                        <Trash2 size={14} />
-                                                    </button>
+                                                        {onRollDiceFormula && (
+                                                            <button
+                                                                onClick={() => onRollDiceFormula(atk.damage, `Dano de ${atk.name} (${activeCompanion.name})`)}
+                                                                style={{
+                                                                    background: '#e11d48',
+                                                                    color: '#fff',
+                                                                    border: 'none',
+                                                                    borderRadius: '4px',
+                                                                    padding: '6px 10px',
+                                                                    fontSize: '0.75rem',
+                                                                    fontWeight: 'bold',
+                                                                    cursor: 'pointer',
+                                                                    display: 'flex',
+                                                                    alignItems: 'center',
+                                                                    gap: '4px'
+                                                                }}
+                                                                title="Rolar dados de dano"
+                                                            >
+                                                                <span>Rolar Dano</span>
+                                                            </button>
+                                                        )}
+                                                    </div>
                                                 </div>
-                                            </div>
-                                        ))}
-                                    </div>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* FEATURES & SPECIAL TRAITS */}
                                 <div style={{ background: '#161b28', border: '1px solid #283348', borderRadius: '8px', padding: '14px' }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                            <Sparkles size={18} color="#eab308" />
-                                            <span style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#f8fafc' }}>
-                                                Características Especiais & Habilidades
-                                            </span>
-                                        </div>
-
-                                        <button
-                                            onClick={() => {
-                                                const nextFeatures: CompanionFeature[] = [
-                                                    ...activeCompanion.features,
-                                                    { name: 'Nova Habilidade', description: 'Descrição dos efeitos da habilidade.' }
-                                                ];
-                                                updateActiveCompanion({ features: nextFeatures });
-                                            }}
-                                            style={{
-                                                background: '#1e293b',
-                                                border: '1px solid #334155',
-                                                color: '#cbd5e1',
-                                                borderRadius: '4px',
-                                                padding: '4px 8px',
-                                                fontSize: '0.75rem',
-                                                cursor: 'pointer',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                gap: '4px'
-                                            }}
-                                        >
-                                            <Plus size={13} />
-                                            <span>Adicionar Habilidade</span>
-                                        </button>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                                        <Sparkles size={18} color="#eab308" />
+                                        <span style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#f8fafc' }}>
+                                            Características Especiais & Habilidades (Livro de Regras)
+                                        </span>
                                     </div>
 
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -1029,20 +977,9 @@ export const CompanionModal: React.FC<CompanionModalProps> = ({
                                                     padding: '10px 12px'
                                                 }}
                                             >
-                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                                    <span style={{ fontWeight: 'bold', fontSize: '0.88rem', color: '#f1c40f' }}>
-                                                        {feat.name}
-                                                    </span>
-                                                    <button
-                                                        onClick={() => {
-                                                            const nextFeatures = activeCompanion.features.filter((_, i) => i !== index);
-                                                            updateActiveCompanion({ features: nextFeatures });
-                                                        }}
-                                                        style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', padding: '2px' }}
-                                                    >
-                                                        <Trash2 size={13} />
-                                                    </button>
-                                                </div>
+                                                <span style={{ fontWeight: 'bold', fontSize: '0.88rem', color: '#f1c40f' }}>
+                                                    {feat.name}
+                                                </span>
                                                 <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: '#cbd5e1', lineHeight: 1.4 }}>
                                                     {feat.description}
                                                 </p>
