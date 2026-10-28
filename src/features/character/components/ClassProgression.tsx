@@ -351,9 +351,9 @@ export const ClassProgression: React.FC<ClassProgressionProps> = ({ classData, c
                     )}
 
                     {/* TAB 3: SUBCLASSES */}
-                    {activeTab === 'subclasses' && progression?.subclasses && (
+                    {activeTab === 'subclasses' && (activeClass.subclasses || progression?.subclasses) && (
                         <div className="subclasses-grid">
-                            {progression.subclasses.map(sub => (
+                            {(activeClass.subclasses || []).map(sub => (
                                 <div key={sub.id} className="subclass-card">
                                     <div className="subclass-card-header">
                                         <span className="subclass-icon" style={{ display: 'flex', alignItems: 'center' }}>
@@ -362,11 +362,23 @@ export const ClassProgression: React.FC<ClassProgressionProps> = ({ classData, c
                                         <div>
                                             <h4>{sub.name}</h4>
                                             <span className="milestones-pill">
-                                                Níveis: {sub.milestoneLevels.map(l => `${l}º`).join(', ')}
+                                                Subclasse Oficial D&D 5.5e
                                             </span>
                                         </div>
                                     </div>
-                                    <p className="subclass-desc">{sub.description}</p>
+                                    <p className="subclass-desc" style={{ marginBottom: '10px' }}>{sub.description}</p>
+                                    {sub.features && sub.features.length > 0 && (
+                                        <div style={{ marginTop: '8px', borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '8px' }}>
+                                            <strong style={{ fontSize: '0.8rem', color: '#c5a059', display: 'block', marginBottom: '6px' }}>Habilidades Concedidas:</strong>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                                                {sub.features.map(f => (
+                                                    <div key={f.name} style={{ fontSize: '0.8rem', color: '#cbd5e1', lineHeight: '1.3' }}>
+                                                        <strong style={{ color: '#ffd700' }}>Nv {f.level} - {f.name}:</strong> {f.description}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             ))}
                         </div>

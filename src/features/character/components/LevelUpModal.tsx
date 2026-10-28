@@ -143,16 +143,27 @@ export const LevelUpModal: React.FC<LevelUpModalProps> = ({ character, onUpdate,
     const hasSubclassChoice = !character.subclass && newLevel >= subclassLevel && (classData?.subclasses?.length || 0) > 0;
     const hasClassSpecialChoice = hasFightingStyleChoice || hasInvocationChoice || hasSubclassChoice;
 
+    // Allowed expertise gains strictly according to official D&D 5.5e (2024) rules
+    const allowedExpertiseGains = useMemo(() => {
+        if (isBard && (newLevel === 2 || newLevel === 9)) return 2;
+        if (isRogue && newLevel === 6) return 2;
+        if (isRanger && newLevel === 2) return 1;
+        if (isRanger && newLevel === 9) return 2;
+        return 0;
+    }, [isBard, isRogue, isRanger, newLevel]);
+
     // Steps Pipeline
     type StepId = 'summary' | 'hp' | 'skills' | 'choices' | 'spells' | 'feat' | 'finish';
     const steps = useMemo<{ id: StepId; label: string }[]>(() => {
         const list: { id: StepId; label: string }[] = [
             { id: 'summary', label: '1. Visão Geral' },
-            { id: 'hp', label: '2. Pontos de Vida' },
-            { id: 'skills', label: '3. Perícias & Expertise' }
+            { id: 'hp', label: '2. Pontos de Vida' }
         ];
+        if (allowedExpertiseGains > 0) {
+            list.push({ id: 'skills', label: `${list.length + 1}. Especialização (Expertise)` });
+        }
         if (hasClassSpecialChoice) {
-            list.push({ id: 'choices', label: '4. Escolha de Classe' });
+            list.push({ id: 'choices', label: `${list.length + 1}. Escolha de Classe` });
         }
         if (isCaster) {
             list.push({ id: 'spells', label: `${list.length + 1}. Magias` });
@@ -162,7 +173,7 @@ export const LevelUpModal: React.FC<LevelUpModalProps> = ({ character, onUpdate,
         }
         list.push({ id: 'finish', label: `${list.length + 1}. Concluir` });
         return list;
-    }, [hasClassSpecialChoice, isCaster, isAsiLevel]);
+    }, [allowedExpertiseGains, hasClassSpecialChoice, isCaster, isAsiLevel]);
 
     const [currentStepIdx, setCurrentStepIdx] = useState<number>(0);
     const currentStep = steps[currentStepIdx]?.id || 'summary';
@@ -171,10 +182,24 @@ export const LevelUpModal: React.FC<LevelUpModalProps> = ({ character, onUpdate,
     const [hpChoice, setHpChoice] = useState<'avg' | 'roll'>('avg');
     const [rolledHp, setRolledHp] = useState<number | null>(null);
 
-    // Skills & Expertise State (Working copy)
-    const [workingSkills, setWorkingSkills] = useState<Skill[]>(() => {
-        return (character.skills || []).map(s => ({ ...s }));
-    });
+    // Expertise Selection State (gained only at official milestone levels)
+    const [selectedNewExpertises, setSelectedNewExpertises] = useState<string[]>([]);
+    const eligibleSkillsForExpertise = useMemo(() => {
+        return (character.skills || []).filter(s => s.proficient && !s.expertise);
+    }, [character.skills]);
+    const maxEligibleExpertises = Math.min(allowedExpertiseGains, eligibleSkillsForExpertise.length);
+
+    const toggleSelectExpertise = (skillName: string) => {
+        setSelectedNewExpertises(prev => {
+            if (prev.includes(skillName)) {
+                return prev.filter(name => name !== skillName);
+            }
+            if (prev.length < maxEligibleExpertises) {
+                return [...prev, skillName];
+            }
+            return prev;
+        });
+    };
 
     // Special Choices State
     const [selectedFightingStyle, setSelectedFightingStyle] = useState<string>('');
@@ -215,42 +240,41 @@ export const LevelUpModal: React.FC<LevelUpModalProps> = ({ character, onUpdate,
         playSynthSound('dice');
     };
 
-    // Toggle Expertise Handler
-    const toggleSkillExpertise = (skillName: string) => {
-        setWorkingSkills(prev => prev.map(s => {
-            if (s.name !== skillName) return s;
-            const newExpertise = !s.expertise;
-            const attrKey = s.attribute;
-            const attrMod = character.attributes[attrKey]?.modifier ?? 0;
-            let val = attrMod;
-            if (s.proficient) val += profBonus;
-            if (newExpertise) val += profBonus;
-            return {
-                ...s,
-                expertise: newExpertise,
-                value: val
-            };
-        }));
-    };
-
-    // Toggle Proficiency Handler
-    const toggleSkillProficiency = (skillName: string) => {
-        setWorkingSkills(prev => prev.map(s => {
-            if (s.name !== skillName) return s;
-            const newProf = !s.proficient;
-            const attrKey = s.attribute;
-            const attrMod = character.attributes[attrKey]?.modifier ?? 0;
-            let val = attrMod;
-            if (newProf) val += profBonus;
-            if (s.expertise && newProf) val += profBonus;
-            return {
-                ...s,
-                proficient: newProf,
-                expertise: newProf ? s.expertise : false,
-                value: val
-            };
-        }));
-    };
+    // Step Validation Handler
+    const isNextDisabled = useMemo(() => {
+        if (currentStep === 'hp') {
+            return hpChoice === 'roll' && rolledHp === null;
+        }
+        if (currentStep === 'skills') {
+            return selectedNewExpertises.length < maxEligibleExpertises;
+        }
+        if (currentStep === 'choices') {
+            if (hasSubclassChoice && !selectedSubclass) return true;
+            if (hasFightingStyleChoice && !selectedFightingStyle) return true;
+            if (hasInvocationChoice && !selectedInvocation) return true;
+            return false;
+        }
+        if (currentStep === 'feat') {
+            if (progressionType === 'feat') return !selectedFeat;
+            if (progressionType === 'asi') return !asiTargets.attr1 || !asiTargets.attr2;
+        }
+        return false;
+    }, [
+        currentStep,
+        hpChoice,
+        rolledHp,
+        selectedNewExpertises.length,
+        maxEligibleExpertises,
+        hasSubclassChoice,
+        selectedSubclass,
+        hasFightingStyleChoice,
+        selectedFightingStyle,
+        hasInvocationChoice,
+        selectedInvocation,
+        progressionType,
+        selectedFeat,
+        asiTargets
+    ]);
 
     // Finish & Apply Progression
     const handleFinish = () => {
@@ -294,18 +318,24 @@ export const LevelUpModal: React.FC<LevelUpModalProps> = ({ character, onUpdate,
             }
         }
 
-        if (hasSubclassChoice && selectedSubclass) {
-            const sc = classData?.subclasses?.find(s => s.id === selectedSubclass);
-            if (sc) {
-                (sc.features || []).filter(f => f.level <= newLevel).forEach(f => {
-                    if (!existingNames.has(f.name)) {
-                        featuresToAdd.push({
-                            ...f,
-                            type: f.type || 'passive'
-                        });
-                    }
-                });
-            }
+        // Subclass Resolution
+        const chosenSubclass = classData?.subclasses?.find(s => s.id === selectedSubclass);
+        const finalSubclassName = chosenSubclass?.name || (hasSubclassChoice ? selectedSubclass : character.subclass);
+
+        // Add Subclass features (both for newly chosen subclass and future milestone levels)
+        const activeSubclassName = finalSubclassName;
+        const matchedSubclass = classData?.subclasses?.find(
+            s => s.name === activeSubclassName || s.id === activeSubclassName || s.id === selectedSubclass
+        );
+        if (matchedSubclass) {
+            (matchedSubclass.features || []).filter(f => f.level <= newLevel).forEach(f => {
+                if (!existingNames.has(f.name)) {
+                    featuresToAdd.push({
+                        ...f,
+                        type: f.type || 'passive'
+                    });
+                }
+            });
         }
 
         // 4. Spell Slots calculation from official 1 to 20 progression
@@ -319,7 +349,22 @@ export const LevelUpModal: React.FC<LevelUpModalProps> = ({ character, onUpdate,
             character.attributes.cha ? character.attributes.cha.modifier : 1
         );
 
-        // 6. Base Character Update (Queue aware)
+        // 6. Recalculate Skills with new Proficiency Bonus and newly chosen expertises
+        const updatedSkills: Skill[] = (character.skills || []).map(s => {
+            const isNewlyExpert = selectedNewExpertises.includes(s.name);
+            const hasExpertise = !!s.expertise || isNewlyExpert;
+            const attrMod = character.attributes[s.attribute]?.modifier ?? 0;
+            let val = attrMod;
+            if (s.proficient) val += profBonus;
+            if (hasExpertise) val += profBonus;
+            return {
+                ...s,
+                expertise: hasExpertise,
+                value: val
+            };
+        });
+
+        // 7. Base Character Update (Queue aware)
         const targetLevel = character.levelUpTarget;
         const isEndOfQueue = !targetLevel || newLevel >= targetLevel;
 
@@ -332,9 +377,9 @@ export const LevelUpModal: React.FC<LevelUpModalProps> = ({ character, onUpdate,
             levelUpTarget: isEndOfQueue ? undefined : targetLevel,
             hp: { ...character.hp, max: newMaxHp, current: newCurrentHp },
             hitDice: updatedHitDice,
-            skills: workingSkills,
+            skills: updatedSkills,
             features: [...(character.features || []), ...featuresToAdd],
-            subclass: selectedSubclass || character.subclass,
+            subclass: finalSubclassName,
             spellSlots: updatedSpellSlots,
             classResources: updatedResources,
             hpRolled: hpChoice === 'roll' ? finalHpGain : false
@@ -378,6 +423,10 @@ export const LevelUpModal: React.FC<LevelUpModalProps> = ({ character, onUpdate,
             setSelectedSpells([]);
             setSelectedFeat(null);
             setRolledHp(null);
+            setSelectedNewExpertises([]);
+            setSelectedSubclass('');
+            setSelectedFightingStyle('');
+            setSelectedInvocation('');
         }
     };
 
@@ -430,7 +479,11 @@ export const LevelUpModal: React.FC<LevelUpModalProps> = ({ character, onUpdate,
                             key={st.id}
                             type="button"
                             className={`lvl-step-tab ${currentStepIdx === idx ? 'active' : ''} ${currentStepIdx > idx ? 'completed' : ''}`}
-                            onClick={() => setCurrentStepIdx(idx)}
+                            onClick={() => {
+                                if (idx <= currentStepIdx || !isNextDisabled) {
+                                    setCurrentStepIdx(idx);
+                                }
+                            }}
                         >
                             <span>{st.label}</span>
                             {currentStepIdx > idx && <Check size={12} color="#22c55e" />}
@@ -470,6 +523,29 @@ export const LevelUpModal: React.FC<LevelUpModalProps> = ({ character, onUpdate,
                                     <span className="val">{modCon >= 0 ? `+${modCon}` : modCon}</span>
                                 </div>
                             </div>
+
+                            {hasSubclassChoice && (
+                                <div style={{
+                                    marginTop: '16px',
+                                    padding: '12px 14px',
+                                    background: 'rgba(255, 215, 0, 0.08)',
+                                    border: '1px solid rgba(255, 215, 0, 0.35)',
+                                    borderRadius: '8px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '12px'
+                                }}>
+                                    <Sparkles size={24} color="#ffd700" style={{ flexShrink: 0 }} />
+                                    <div>
+                                        <strong style={{ color: '#ffd700', fontSize: '0.9rem', display: 'block' }}>
+                                            Marco do 3º Nível: Escolha de Subclasse!
+                                        </strong>
+                                        <span style={{ fontSize: '0.82rem', color: '#cbd5e1' }}>
+                                            Nesta evolução você escolherá a especialização definitiva do seu {classData?.name || character.class}, desbloqueando poderes e arquétipos exclusivos de D&D 5.5e (2024).
+                                        </span>
+                                    </div>
+                                </div>
+                            )}
 
                             <div style={{ marginTop: '20px' }}>
                                 <h4 style={{ color: '#e2e8f0', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -565,64 +641,116 @@ export const LevelUpModal: React.FC<LevelUpModalProps> = ({ character, onUpdate,
                         </div>
                     )}
 
-                    {/* 3. SKILLS & EXPERTISE STEP */}
+                    {/* 3. SKILLS & EXPERTISE STEP (Only active on official Expertise milestone levels) */}
                     {currentStep === 'skills' && (
                         <div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                                 <div>
-                                    <h3 style={{ margin: 0, color: '#ffd700' }}>Perícias & Especialização (Expertise)</h3>
+                                    <h3 style={{ margin: 0, color: '#ffd700' }}>Especialização em Perícias (Expertise)</h3>
                                     <p style={{ margin: '4px 0 0 0', color: '#94a3b8', fontSize: '0.85rem' }}>
                                         {isBard && newLevel === 2 ? 'Bardo Nível 2: Escolha 2 perícias treinadas para Especialização (dobra o bônus de proficiência).' :
-                                         isRanger && newLevel === 2 ? 'Guardião Nível 2 (Explorador Nato): Escolha 1 perícia para Especialização.' :
-                                         isRogue && newLevel === 6 ? 'Ladino Nível 6: Escolha 2 perícias adicionais para Especialização.' :
-                                         'Selecione Especializações ou ajuste o treinamento de perícias do seu personagem.'}
+                                         isBard && newLevel === 9 ? 'Bardo Nível 9: Escolha 2 perícias treinadas adicionais para Especialização.' :
+                                         isRanger && newLevel === 2 ? 'Guardião Nível 2 (Explorador Nato): Escolha 1 perícia treinada para Especialização.' :
+                                         isRanger && newLevel === 9 ? 'Guardião Nível 9: Escolha 2 perícias treinadas adicionais para Especialização.' :
+                                         isRogue && newLevel === 6 ? 'Ladino Nível 6: Escolha 2 perícias treinadas adicionais para Especialização.' :
+                                         `Escolha ${allowedExpertiseGains} perícia(s) já treinada(s) para receber Especialização.`}
                                     </p>
+                                    <div style={{
+                                        marginTop: '6px',
+                                        fontSize: '0.82rem',
+                                        fontWeight: 600,
+                                        color: selectedNewExpertises.length === maxEligibleExpertises ? '#4ade80' : '#f59e0b'
+                                    }}>
+                                        Perícias Selecionadas: {selectedNewExpertises.length} de {maxEligibleExpertises}
+                                    </div>
                                 </div>
                                 <UserCheck size={28} color="#ffd700" />
                             </div>
 
-                            <div className="lvl-skills-grid">
-                                {workingSkills.map(skill => {
-                                    return (
-                                        <div
-                                            key={skill.name}
-                                            className={`lvl-skill-item ${skill.expertise ? 'has-expertise' : ''}`}
-                                        >
-                                            <div className="lvl-skill-info">
-                                                <span className="lvl-skill-name">{skill.name}</span>
-                                                <span className="lvl-skill-attr">{skill.attribute}</span>
+                            {eligibleSkillsForExpertise.length === 0 ? (
+                                <div style={{ padding: '16px', background: 'rgba(255,255,255,0.05)', borderRadius: '6px', color: '#94a3b8', textAlign: 'center' }}>
+                                    Nenhuma perícia treinada disponível para receber especialização.
+                                </div>
+                            ) : (
+                                <div className="lvl-skills-grid">
+                                    {(character.skills || []).map(skill => {
+                                        const alreadyHasExpertise = !!skill.expertise;
+                                        const isSelected = selectedNewExpertises.includes(skill.name);
+                                        const isEligible = skill.proficient && !alreadyHasExpertise;
+                                        const canSelect = isSelected || selectedNewExpertises.length < maxEligibleExpertises;
+
+                                        const attrMod = character.attributes[skill.attribute]?.modifier ?? 0;
+                                        let displayBonus = attrMod;
+                                        if (skill.proficient) displayBonus += profBonus;
+                                        if (alreadyHasExpertise || isSelected) displayBonus += profBonus;
+
+                                        return (
+                                            <div
+                                                key={skill.name}
+                                                className={`lvl-skill-item ${alreadyHasExpertise || isSelected ? 'has-expertise' : ''}`}
+                                                style={{
+                                                    opacity: !skill.proficient ? 0.4 : 1,
+                                                    cursor: isEligible && canSelect ? 'pointer' : 'default',
+                                                    borderColor: isSelected ? '#ffd700' : undefined
+                                                }}
+                                                onClick={() => {
+                                                    if (isEligible) toggleSelectExpertise(skill.name);
+                                                }}
+                                            >
+                                                <div className="lvl-skill-info">
+                                                    <span className="lvl-skill-name">{skill.name}</span>
+                                                    <span className="lvl-skill-attr">{skill.attribute}</span>
+                                                </div>
+
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                    {!skill.proficient && (
+                                                        <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                                                            Não treinado
+                                                        </span>
+                                                    )}
+
+                                                    {skill.proficient && !alreadyHasExpertise && (
+                                                        <button
+                                                            type="button"
+                                                            className={`lvl-skill-btn-toggle ${isSelected ? 'active' : ''}`}
+                                                            style={{
+                                                                background: isSelected ? '#ffd700' : 'rgba(255,215,0,0.1)',
+                                                                color: isSelected ? '#000' : '#ffd700',
+                                                                borderColor: '#ffd700',
+                                                                cursor: canSelect ? 'pointer' : 'not-allowed'
+                                                            }}
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                toggleSelectExpertise(skill.name);
+                                                            }}
+                                                            title={isSelected ? 'Clique para remover especialização' : 'Clique para conceder especialização'}
+                                                        >
+                                                            {isSelected ? '✓ Selecionada' : '+ Especializar'}
+                                                        </button>
+                                                    )}
+
+                                                    {alreadyHasExpertise && (
+                                                        <span style={{
+                                                            fontSize: '0.75rem',
+                                                            background: 'rgba(255,215,0,0.15)',
+                                                            color: '#ffd700',
+                                                            padding: '2px 6px',
+                                                            borderRadius: '4px',
+                                                            border: '1px solid rgba(255,215,0,0.3)'
+                                                        }}>
+                                                            Já Especialista
+                                                        </span>
+                                                    )}
+
+                                                    <span className="lvl-skill-bonus">
+                                                        {displayBonus >= 0 ? `+${displayBonus}` : displayBonus}
+                                                    </span>
+                                                </div>
                                             </div>
-
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                <button
-                                                    type="button"
-                                                    className={`lvl-skill-btn-toggle ${skill.proficient ? 'active' : ''}`}
-                                                    onClick={() => toggleSkillProficiency(skill.name)}
-                                                    title="Alternar Proficiência (+PB)"
-                                                >
-                                                    {skill.proficient ? 'Treinado' : 'Não treinado'}
-                                                </button>
-
-                                                {skill.proficient && (
-                                                    <button
-                                                        type="button"
-                                                        className={`lvl-skill-btn-toggle ${skill.expertise ? 'active' : ''}`}
-                                                        style={{ background: skill.expertise ? '#ffd700' : 'rgba(255,215,0,0.1)', color: skill.expertise ? '#000' : '#ffd700', borderColor: '#ffd700' }}
-                                                        onClick={() => toggleSkillExpertise(skill.name)}
-                                                        title="Especialização (Dobra o PB)"
-                                                    >
-                                                        {skill.expertise ? 'Especialista' : '+ Expertise'}
-                                                    </button>
-                                                )}
-
-                                                <span className="lvl-skill-bonus">
-                                                    {skill.value >= 0 ? `+${skill.value}` : skill.value}
-                                                </span>
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
                         </div>
                     )}
 
@@ -690,12 +818,27 @@ export const LevelUpModal: React.FC<LevelUpModalProps> = ({ character, onUpdate,
 
                             {hasSubclassChoice && (
                                 <div>
-                                    <h3 style={{ margin: '0 0 6px 0', color: '#ffd700' }}>Escolha sua Subclasse (3º Nível)</h3>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                                        <h3 style={{ margin: 0, color: '#ffd700', fontSize: '1.15rem' }}>
+                                            Escolha sua Subclasse (3º Nível)
+                                        </h3>
+                                        <span style={{
+                                            fontSize: '0.8rem',
+                                            fontWeight: 600,
+                                            color: selectedSubclass ? '#4ade80' : '#f59e0b',
+                                            background: selectedSubclass ? 'rgba(74, 222, 128, 0.1)' : 'rgba(245, 158, 11, 0.1)',
+                                            padding: '3px 10px',
+                                            borderRadius: '12px',
+                                            border: `1px solid ${selectedSubclass ? '#4ade80' : '#f59e0b'}`
+                                        }}>
+                                            {selectedSubclass ? '✓ Subclasse Selecionada' : 'Seleção Obrigatória'}
+                                        </span>
+                                    </div>
                                     <p style={{ color: '#94a3b8', fontSize: '0.85rem', marginBottom: '14px' }}>
-                                        Selecione sua arquétipo definitivo de classe.
+                                        Selecione o arquétipo definitivo da sua classe ({classData?.name || character.class}). Esta escolha desbloqueia características exclusivas e define seu estilo de jogo no D&D 5.5e.
                                     </p>
 
-                                    <div className="lvl-choices-grid">
+                                    <div className="lvl-choices-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '14px' }}>
                                         {(classData?.subclasses || []).map(sc => {
                                             const isSelected = selectedSubclass === sc.id;
                                             return (
@@ -703,12 +846,62 @@ export const LevelUpModal: React.FC<LevelUpModalProps> = ({ character, onUpdate,
                                                     key={sc.id}
                                                     className={`lvl-choice-card ${isSelected ? 'selected' : ''}`}
                                                     onClick={() => setSelectedSubclass(sc.id)}
+                                                    style={{
+                                                        padding: '14px',
+                                                        borderRadius: '8px',
+                                                        border: isSelected ? '2px solid #ffd700' : '1px solid rgba(255,255,255,0.1)',
+                                                        background: isSelected ? 'rgba(255, 215, 0, 0.08)' : 'rgba(0,0,0,0.3)',
+                                                        cursor: 'pointer',
+                                                        display: 'flex',
+                                                        flexDirection: 'column',
+                                                        gap: '8px',
+                                                        transition: 'all 0.2s ease'
+                                                    }}
                                                 >
                                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                        <h4>{sc.name}</h4>
-                                                        {isSelected && <Check size={16} color="#ffd700" />}
+                                                        <h4 style={{ margin: 0, color: isSelected ? '#ffd700' : '#fff', fontSize: '1rem' }}>
+                                                            {sc.name}
+                                                        </h4>
+                                                        {isSelected ? (
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#ffd700', fontSize: '0.75rem', fontWeight: 'bold' }}>
+                                                                <Check size={16} />
+                                                                <span>Escolhida</span>
+                                                            </div>
+                                                        ) : (
+                                                            <span style={{ fontSize: '0.72rem', color: '#64748b' }}>Clique para escolher</span>
+                                                        )}
                                                     </div>
-                                                    <p>{sc.description}</p>
+                                                    <p style={{ margin: 0, fontSize: '0.84rem', color: '#cbd5e1', lineHeight: '1.4' }}>
+                                                        {sc.description}
+                                                    </p>
+
+                                                    {sc.features && sc.features.length > 0 && (
+                                                        <div style={{
+                                                            marginTop: '6px',
+                                                            paddingTop: '8px',
+                                                            borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+                                                            display: 'flex',
+                                                            flexDirection: 'column',
+                                                            gap: '6px'
+                                                        }}>
+                                                            <span style={{ fontSize: '0.75rem', color: '#ffd700', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                                                Habilidades do Arquétipo:
+                                                            </span>
+                                                            {sc.features.map(f => (
+                                                                <div key={f.name} style={{
+                                                                    fontSize: '0.8rem',
+                                                                    color: '#94a3b8',
+                                                                    lineHeight: '1.35',
+                                                                    padding: '4px 8px',
+                                                                    background: 'rgba(255,255,255,0.03)',
+                                                                    borderRadius: '4px'
+                                                                }}>
+                                                                    <strong style={{ color: '#f1f5f9' }}>Nv {f.level} - {f.name}: </strong>
+                                                                    <span>{f.description}</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
                                                 </div>
                                             );
                                         })}
@@ -919,6 +1112,18 @@ export const LevelUpModal: React.FC<LevelUpModalProps> = ({ character, onUpdate,
                                 </div>
                             )}
 
+                            {selectedSubclass && (
+                                <div style={{ marginTop: '14px', background: 'rgba(0,0,0,0.3)', padding: '10px 14px', borderRadius: '6px', border: '1px solid #ffd700' }}>
+                                    <strong style={{ color: '#ffd700' }}>Subclasse Escolhida:</strong> {classData?.subclasses?.find(s => s.id === selectedSubclass)?.name || selectedSubclass}
+                                </div>
+                            )}
+
+                            {selectedNewExpertises.length > 0 && (
+                                <div style={{ marginTop: '14px', background: 'rgba(0,0,0,0.3)', padding: '10px 14px', borderRadius: '6px', border: '1px solid #4ade80' }}>
+                                    <strong style={{ color: '#4ade80' }}>Novas Especializações (Expertise):</strong> {selectedNewExpertises.join(', ')}
+                                </div>
+                            )}
+
                             {selectedSpells.length > 0 && (
                                 <div style={{ marginTop: '14px', background: 'rgba(0,0,0,0.3)', padding: '10px 14px', borderRadius: '6px', border: '1px solid #60a5fa' }}>
                                     <strong style={{ color: '#60a5fa' }}>Novas Magias Aprendidas:</strong> {selectedSpells.map(s => s.name).join(', ')}
@@ -946,7 +1151,7 @@ export const LevelUpModal: React.FC<LevelUpModalProps> = ({ character, onUpdate,
                                 type="button"
                                 className="lvl-btn-primary"
                                 onClick={nextStep}
-                                disabled={currentStep === 'hp' && hpChoice === 'roll' && rolledHp === null}
+                                disabled={isNextDisabled}
                             >
                                 <span>Avançar</span>
                                 <ArrowRight size={14} />

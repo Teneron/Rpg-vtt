@@ -592,7 +592,7 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
                                 )}
                             </div>
                             <div className="meta-val display-flex readonly-text">
-                                {character.class || '---'} {character.level}
+                                {character.class || '---'} {character.subclass ? `(${character.subclass})` : ''} {character.level}
                             </div>
                         </div>
                         <div className="meta-field">

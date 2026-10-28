@@ -76,7 +76,6 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
     const [selectedClassId, setSelectedClassId] = useState<string>(initialClassId);
     const [selectedAlignment, setSelectedAlignment] = useState<string>(character.alignment || 'Neutro');
     const [selectedBackgroundId, setSelectedBackgroundId] = useState<string>(initialBackgroundId);
-    const [selectedSubclassId, setSelectedSubclassId] = useState<string | null>(null);
     const [hoveredSkill, setHoveredSkill] = useState<string | null>(null);
 
     const availableLanguages = React.useMemo(() => {
@@ -167,7 +166,6 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
             setSelectedCantrips([]);
             setSelectedFeats([]);
             setSelectedEquipmentChoices({}); // Reset equipment choices
-            setSelectedSubclassId(null);
             setSpellSearch('');
             setSpellSchoolFilter('all');
             onUpdate({ ...character, hpRolled: undefined });
@@ -177,7 +175,6 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
 
     // Memoized derived data
     const selectedClass = React.useMemo(() => CLASSES.find(c => c.id === selectedClassId), [selectedClassId]);
-    const selectedSubclass = React.useMemo(() => selectedClass?.subclasses?.find(s => s.id === selectedSubclassId), [selectedClass, selectedSubclassId]);
     const selectedRace = React.useMemo(() => RACES.find(r => r.id === selectedRaceId), [selectedRaceId]);
     const selectedBackground = React.useMemo(() => BACKGROUNDS.find(b => b.id === selectedBackgroundId), [selectedBackgroundId]);
     const isSpellCaster = React.useMemo(() => !!selectedClass?.spellcastingConfig, [selectedClass]);
@@ -453,28 +450,8 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
             nextChar.hitDice.current = nextChar.level;
         }
 
-        // Subclass
-        if (selectedSubclass) {
-            nextChar.subclass = selectedSubclass.name;
-
-            // Apply Specific School Mechanics
-            switch (selectedSubclass.id) {
-                case 'school_bear':
-                    // +2 HP per level (at level 1, +2)
-                    nextChar.hp.max += (2 * nextChar.level);
-                    nextChar.hp.current = nextChar.hp.max;
-                    nextChar.proficiencies.push('Armaduras Pesadas');
-                    break;
-                case 'school_viper':
-                    nextChar.proficiencies.push('Kit de Disfarce', 'Ferramentas de Ladrão');
-                    break;
-                case 'school_griffin':
-                    // No stat changes, just features/resources?
-                    // Maybe add a resource tracker for the bonus action signs?
-                    // For now, relied on feature text.
-                    break;
-            }
-        }
+        // Subclasses are chosen at Level 3 per official D&D 5.5e (2024) rules
+        nextChar.subclass = undefined;
 
         // Saves
         (Object.values(nextChar.attributes) as any[]).forEach(attr => attr.saveProficiency = false);
@@ -493,11 +470,6 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
         const classFeatures: ClassFeature[] = selectedClass.features
             .filter(f => f.level <= nextChar.level)
             .map(f => ({ ...f, type: f.type || 'passive' } as ClassFeature));
-
-        if (selectedSubclass) {
-            const subFeatures = selectedSubclass.features.map(f => ({ ...f, type: 'passive' } as ClassFeature));
-            classFeatures.push(...subFeatures);
-        }
 
         const raceFeatures: ClassFeature[] = (selectedRace.traits || []).map(t => ({
             name: t.name,
@@ -612,8 +584,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
         // Class Equipment parsing & intelligent auto-equipping
         const classEquip: any[] = [];
         const combinedEquipment = [
-            ...(selectedClass.startingEquipment || []),
-            ...(selectedSubclass?.startingEquipment || [])
+            ...(selectedClass.startingEquipment || [])
         ];
 
         if (selectedClass.equipmentChoices) {
@@ -963,33 +934,60 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                                             </li>
                                         ))}
                                     </ul>
-                                    {selectedClass?.subclasses && (
-                                        <div style={{ marginTop: '20px', padding: '10px', background: '#2c2c2c', borderRadius: '4px', border: '1px solid #c5a059' }}>
-                                            <h4 style={{ color: '#c5a059', marginBottom: '10px' }}>ESCOLHER SUBCLASSE</h4>
-                                            <select
-                                                value={selectedSubclassId || ''}
-                                                onChange={(e) => setSelectedSubclassId(e.target.value || null)}
-                                                style={{ width: '100%', padding: '5px' }}
-                                            >
-                                                <option value="">Selecione...</option>
-                                                {selectedClass.subclasses.map(s => (
-                                                    <option key={s.id} value={s.id}>{s.name}</option>
+                                    {selectedClass?.subclasses && selectedClass.subclasses.length > 0 && (
+                                        <div style={{
+                                            marginTop: '16px',
+                                            padding: '14px',
+                                            background: 'rgba(255, 215, 0, 0.04)',
+                                            borderRadius: '8px',
+                                            border: '1px solid rgba(255, 215, 0, 0.25)',
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            gap: '10px'
+                                        }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                                                <span style={{ color: '#ffd700', fontSize: '0.9rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                    🛡️ Subclasses da Classe ({selectedClass.name}) — Escolha no 3º Nível
+                                                </span>
+                                                <span style={{ fontSize: '0.75rem', color: '#94a3b8', background: 'rgba(255,255,255,0.06)', padding: '2px 8px', borderRadius: '10px' }}>
+                                                    Regras Oficiais D&D 5.5e (2024)
+                                                </span>
+                                            </div>
+                                            <p style={{ margin: 0, fontSize: '0.82rem', color: '#cbd5e1', lineHeight: '1.4' }}>
+                                                No D&D 5.5e oficial, todos os personagens escolhem seu arquétipo de subclasse no <strong>3º Nível</strong> durante a evolução. Conheça as opções detalhadas disponíveis:
+                                            </p>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '4px' }}>
+                                                {selectedClass.subclasses.map(sub => (
+                                                    <div key={sub.id} style={{
+                                                        padding: '10px 12px',
+                                                        background: 'rgba(0, 0, 0, 0.4)',
+                                                        borderRadius: '6px',
+                                                        border: '1px solid rgba(255, 255, 255, 0.08)'
+                                                    }}>
+                                                        <div style={{ color: '#ffd700', fontWeight: 600, fontSize: '0.88rem', marginBottom: '4px' }}>
+                                                            {sub.name}
+                                                        </div>
+                                                        <p style={{ margin: '0 0 8px 0', fontSize: '0.82rem', color: '#cbd5e1', lineHeight: '1.4' }}>
+                                                            {sub.description}
+                                                        </p>
+                                                        {sub.features && sub.features.length > 0 && (
+                                                            <div style={{
+                                                                paddingLeft: '10px',
+                                                                borderLeft: '2px solid rgba(255, 215, 0, 0.35)',
+                                                                display: 'flex',
+                                                                flexDirection: 'column',
+                                                                gap: '4px'
+                                                            }}>
+                                                                {sub.features.map(f => (
+                                                                    <div key={f.name} style={{ fontSize: '0.78rem', color: '#94a3b8', lineHeight: '1.3' }}>
+                                                                        <strong style={{ color: '#f1f5f9' }}>Nv {f.level} - {f.name}:</strong> {f.description}
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                 ))}
-                                            </select>
-                                            {selectedSubclass && (
-                                                <div style={{ fontSize: '0.9rem', color: '#aaa', marginTop: '5px' }}>
-                                                    {selectedSubclass.description}
-                                                    {selectedSubclass.features.length > 0 && (
-                                                        <ul style={{ paddingLeft: '20px', margin: '5px 0 0 0' }}>
-                                                            {selectedSubclass.features.map(f => (
-                                                                <li key={f.name}>
-                                                                    <strong>{f.name}</strong>: {f.description}
-                                                                </li>
-                                                            ))}
-                                                        </ul>
-                                                    )}
-                                                </div>
-                                            )}
+                                            </div>
                                         </div>
                                     )}
                                 </div>
@@ -1485,19 +1483,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                                                         <span style={{ color: '#fff' }}>{item}</span>
                                                     </li>
                                                 ))}
-                                                {selectedSubclass?.startingEquipment && (
-                                                    <>
-                                                        <div style={{ marginTop: '10px', color: '#c5a059', fontSize: '0.9rem', fontStyle: 'italic' }}>
-                                                            + {selectedSubclass.name}:
-                                                        </div>
-                                                        {selectedSubclass.startingEquipment.map((item, idx) => (
-                                                            <li key={`sub-${idx}`} style={{ marginBottom: '8px' }}>
-                                                                <span style={{ color: '#fff' }}>{item}</span>
-                                                            </li>
-                                                        ))}
-                                                    </>
-                                                )}
-                                                {(!selectedClass?.startingEquipment || selectedClass?.startingEquipment.length === 0) && (!selectedSubclass?.startingEquipment) && (
+                                                {(!selectedClass?.startingEquipment || selectedClass?.startingEquipment.length === 0) && (
                                                     <li style={{ color: '#aaa', fontStyle: 'italic' }}>Nenhum equipamento listado.</li>
                                                 )}
                                             </ul>
@@ -1566,8 +1552,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                                                 const hpEffect = f.effects?.find(e => e.type === 'hp_per_level');
                                                 return acc + (hpEffect ? hpEffect.value : 0);
                                             }, 0);
-                                            const bearBonus = (selectedSubclassId === 'school_bear') ? 2 : 0;
-                                            const totalBonus = featHp + bearBonus;
+                                            const totalBonus = featHp;
                                             const dieMax = parseInt(selectedClass?.hitDie.replace('d', '') || '10');
                                             const conMod = calculateModifier(baseStats.con + getAttributeBonus('con'));
                                             const totalHp = Math.max(1, dieMax + conMod) + totalBonus;
@@ -1576,9 +1561,8 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                                                 <>
                                                     {totalBonus > 0 && (
                                                         <p>
-                                                            Bônus de Talento/Escola: <strong style={{ color: '#4caf50' }}>+{totalBonus}</strong>
+                                                            Bônus de Talento: <strong style={{ color: '#4caf50' }}>+{totalBonus}</strong>
                                                             {bgFeat?.id === 'tough' && <span style={{ fontSize: '0.85rem', color: '#ffd700' }}> (Vigoroso do Antecedente)</span>}
-                                                            {bearBonus > 0 && <span style={{ fontSize: '0.85rem', color: '#c5a059' }}> (Escola do Urso)</span>}
                                                         </p>
                                                     )}
                                                     <div className="roll-result" style={{ marginTop: '20px' }}>

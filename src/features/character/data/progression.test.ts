@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { CLASSES } from './classes';
 import {
     normalizeClassId,
     getProficiencyBonus,
@@ -158,5 +159,27 @@ describe('progression.ts - 1 to 20 rules engine', () => {
         const allF5 = getFeaturesUpToLevel('fighter', 5);
         expect(allF5.length).toBeGreaterThan(f1.length);
         expect(allF5.some(f => f.level === 5)).toBe(true);
+    });
+
+    it('ensures all classes unlock subclasses at level 3 in D&D 5.5e with detailed descriptions and features', () => {
+        const dndClasses = CLASSES.filter(c => c.system !== 'witcher');
+        expect(dndClasses.length).toBe(12);
+
+        for (const cls of dndClasses) {
+            expect(getSubclassLevel(cls.id)).toBe(3);
+            expect(cls.subclasses).toBeDefined();
+            expect(cls.subclasses!.length).toBeGreaterThanOrEqual(1);
+
+            for (const sub of cls.subclasses!) {
+                expect(sub.name.length).toBeGreaterThan(0);
+                expect(sub.description.length).toBeGreaterThan(10);
+                expect(sub.features.length).toBeGreaterThan(0);
+                for (const f of sub.features) {
+                    expect(f.name.length).toBeGreaterThan(0);
+                    expect(f.description.length).toBeGreaterThan(10);
+                    expect(f.level).toBeGreaterThanOrEqual(3);
+                }
+            }
+        }
     });
 });
