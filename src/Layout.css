@@ -16,6 +16,13 @@
     --radius-lg: 12px;
     --radius-md: 8px;
     --shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.5);
+
+    /* Tokens de layout: fonte unica para alturas/larguras/espacamentos de overlays */
+    --header-h: 56px;
+    --sidebar-w: clamp(300px, 26vw, 380px);
+    --gap-overlay: 16px;
+    --chat-w: min(350px, calc(100vw - 32px));
+    --chat-toggle-h: 60px;
 }
 
 body,
@@ -77,15 +84,20 @@ html {
     display: flex;
     flex-direction: column;
     height: 100vh;
+    height: 100dvh;
+    min-width: 0;
     background: radial-gradient(circle at top center, #1e2230 0%, #0f1014 60%);
 }
 
 .app-header {
-    height: 60px;
+    height: var(--header-h);
+    margin: 0;
+    flex-shrink: 0;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0 24px;
+    gap: 8px;
+    padding: 0 16px;
     border-bottom: 1px solid var(--glass-border);
     background: rgba(15, 16, 20, 0.8);
     backdrop-filter: blur(10px);
@@ -157,7 +169,11 @@ html {
 }
 
 .sidebar-panel {
-    width: 380px;
+    width: var(--sidebar-w);
+    flex: 0 0 var(--sidebar-w);
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
     background: var(--bg-panel);
     border-right: 1px solid var(--glass-border);
     display: flex;
@@ -177,8 +193,8 @@ html {
 
 .sidebar-floating-toggle {
     position: absolute;
-    top: 16px;
-    left: 16px;
+    top: var(--gap-overlay);
+    left: var(--gap-overlay);
     z-index: 990;
     background: rgba(20, 22, 32, 0.85);
     border: 1px solid rgba(255, 215, 0, 0.4);
@@ -273,51 +289,140 @@ html {
 }
 
 
-/* --- Responsive Header for 1280px–1440px Notebooks --- */
-.app-header {
+/* --- Header responsivo: nada sai da tela entre 1024px e 1920px --- */
+.header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+    flex: 0 1 auto;
+}
+
+.header-right {
+    display: flex;
+    align-items: center;
     gap: 8px;
-    overflow-x: auto;
-    overflow-y: hidden;
-    scrollbar-width: none;
+    flex: 0 0 auto;
 }
 
-.app-header::-webkit-scrollbar {
-    display: none;
+.header-nav-primary,
+.header-nav-rules {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0 8px;
+    flex: 0 0 auto;
 }
 
-.app-header > * {
-    flex-shrink: 0;
+.header-nav-rules {
+    border-left: 1px solid #333;
+    padding-left: 12px;
+}
+
+.nav-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+}
+
+.hdr-exit-label {
+    white-space: nowrap;
+}
+
+.room-code-badge {
+    min-width: 0;
+    flex-shrink: 1;
+}
+
+/* Barra de ferramentas do mapa: flutua centralizada no topo da area do mapa */
+.map-floating-toolbar {
+    position: absolute;
+    top: var(--gap-overlay);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 600;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    gap: 6px;
+    width: max-content;
+    /* reserva espaco simetrico para o botao flutuante da sidebar */
+    max-width: calc(100% - 2 * (var(--gap-overlay) + 46px));
+    padding: 6px 8px;
+    border-radius: 12px;
+    background: rgba(20, 22, 30, 0.82);
+    border: 1px solid var(--glass-border);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
+}
+
+/* Conteudo da sidebar sempre rolavel dentro do painel */
+/* Os paineis internos usam height:100% e disputavam espaco com a barra de recolher:
+   flex 1 1 0 + min-height 0 faz o conteudo ocupar exatamente o espaco restante. */
+.sidebar-panel > :not(:first-child) {
+    flex: 1 1 0;
+    min-height: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow-x: hidden;
+    overflow-y: auto;
+}
+
+.sidebar-panel img,
+.sidebar-panel table {
+    max-width: 100%;
 }
 
 @media (max-width: 1480px) {
     .app-header {
         padding: 0 12px;
-        gap: 6px;
-    }
-
-    .header-nav-primary {
-        margin: 0 6px !important;
-        gap: 4px !important;
-    }
-
-    .header-nav-rules {
-        margin: 0 6px !important;
-        padding-left: 8px !important;
-        gap: 4px !important;
     }
 
     .nav-tab {
-        padding: 6px 10px;
+        padding: 7px 10px;
         font-size: 0.82rem;
     }
 
-    .app-title span {
-        font-size: 1rem;
+    /* Abas viram somente icone (titulo/aria-label mantem acessibilidade) */
+    .nav-tab .nav-label {
+        display: none;
+    }
+
+    .header-nav-primary,
+    .header-nav-rules {
+        margin: 0 4px;
+    }
+
+    .room-code-label {
+        display: none;
     }
 }
 
 @media (max-width: 1200px) {
     .app-title span {
         display: none;
+    }
+
+    .hdr-exit-label {
+        display: none;
+    }
+}
+
+@media (max-width: 1100px) {
+    .app-title {
+        display: none !important;
+    }
+
+    .header-left {
+        gap: 8px;
+    }
+}
+
+@media (max-height: 700px) {
+    :root {
+        --header-h: 50px;
     }
 }

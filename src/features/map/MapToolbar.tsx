@@ -19,7 +19,7 @@ export const MapHeaderControls: React.FC = () => {
 
     return (
         <>
-            <div className="map-header-controls" style={{ display: 'flex', gap: '6px', alignItems: 'center', flexShrink: 0 }}>
+            <div className="map-header-controls map-floating-toolbar">
                 <div style={{ display: 'flex', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', padding: '4px', gap: '4px' }}>
                     <button
                         className={`glass-button small ${interactionMode === 'select' ? 'active' : ''}`}
