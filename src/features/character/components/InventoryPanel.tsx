@@ -196,7 +196,7 @@ export const InventoryPanel: React.FC<InventoryPanelProps> = ({
                                     <div>
                                         <div style={{ fontWeight: 'bold', color: isEquipped ? '#c5a059' : '#e0e0e0', fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
                                             {item.name}
-                                            {isGM && onUpdateItem && (
+                                            {onUpdateItem && (
                                                 <button
                                                     onClick={(e) => {
                                                         e.stopPropagation();

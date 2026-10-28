@@ -266,7 +266,8 @@ export const BattleMap: React.FC = () => {
 
         setSelectedTokenId(token.id); // Select on click
 
-        const isOwner = myCharacter?.id === token.characterId;
+        const isOwner = (Boolean(token.characterId) && myCharacter?.id === token.characterId) ||
+            (Boolean(token.ownerId) && myCharacter?.id === token.ownerId);
 
         if (!isHost && !isOwner) {
             console.warn("Permission denied: You do not own this token.");

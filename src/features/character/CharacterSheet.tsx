@@ -19,7 +19,7 @@ import { CharacterBuilder } from './CharacterBuilder';
 import { usePeer } from '../multiplayer/SocketContext';
 import { useAdventure } from '../adventure/AdventureContext';
 import { CharacterRepository } from './characterRepository';
-import { Save, X, Settings, Sparkles, BookOpen, Table, Download, Upload } from 'lucide-react';
+import { Save, X, Settings, Sparkles, BookOpen, Table, Download, Upload, PawPrint } from 'lucide-react';
 
 // New Components
 import { AttributesPanel } from './components/AttributesPanel';
@@ -30,6 +30,7 @@ import { FeatsPanel } from './components/FeatsPanel';
 import { AbilitiesPanel } from './components/AbilitiesPanel';
 import { LevelUpModal } from './components/LevelUpModal';
 import { InventoryPanel } from './components/InventoryPanel';
+import { CompanionModal } from './components/CompanionModal';
 import { PlayerBestiaryPanel } from './components/PlayerBestiaryPanel';
 import { ManageSpellsModal } from './components/ManageSpellsModal';
 import { ClassProgression } from './components/ClassProgression';
@@ -435,6 +436,7 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
     }, [character.pendingLevelUp, isOwner]);
     const [activeTab, setActiveTab] = useState<'bio' | 'spells' | 'feats' | 'abilities'>('bio');
     const [showInventory, setShowInventory] = useState(false);
+    const [showCompanions, setShowCompanions] = useState(false);
     const [showBestiary, setShowBestiary] = useState(false);
     const [showManageSpells, setShowManageSpells] = useState(false);
     const [showProgressionModal, setShowProgressionModal] = useState(false);
@@ -804,18 +806,36 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
                 {/* 3. BIO, SPELLS & FEATS */}
                 <div className="sheet-col col-3">
                     {/* ACTION BUTTONS (SEPARATE) */}
-                    <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
+                    <div style={{ display: 'flex', gap: '8px', marginBottom: '10px', flexWrap: 'wrap' }}>
                         <button
                             className="btn-glow"
-                            style={{ flex: 1, padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}
+                            style={{ flex: 1, minWidth: '120px', padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}
                             onClick={() => setShowInventory(true)}
                         >
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                 <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path>
                                 <line x1="3" y1="6" x2="21" y2="6"></line>
                                 <path d="M16 10a4 4 0 0 1-8 0"></path>
                             </svg>
-                            Inventário
+                            <span>Inventário</span>
+                        </button>
+                        <button
+                            className="btn-glow"
+                            style={{
+                                flex: 1,
+                                minWidth: '140px',
+                                padding: '8px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '6px',
+                                borderColor: '#38bdf8',
+                                color: '#38bdf8'
+                            }}
+                            onClick={() => setShowCompanions(true)}
+                        >
+                            <PawPrint size={16} />
+                            <span>Pets / Companheiros {(character.companions?.length || 0) > 0 ? `(${character.companions?.length})` : ''}</span>
                         </button>
                         {character.system === 'witcher' && (
                             <button
@@ -887,6 +907,28 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
             </div>
 
             {/* MODALS */}
+            {/* COMPANION & PET MODAL */}
+            {showCompanions && (
+                <CompanionModal
+                    character={character}
+                    onUpdateCharacter={updateCharacter}
+                    onClose={() => setShowCompanions(false)}
+                    onRoll={handleRoll}
+                    onRollDiceFormula={(formula) => {
+                        const match = formula.match(/(\d+)d(\d+)(?:\s*([+-])\s*(\d+))?/i);
+                        if (match) {
+                            const count = parseInt(match[1]);
+                            const dieFace = parseInt(match[2]);
+                            const sign = match[3] === '-' ? -1 : 1;
+                            const mod = match[4] ? parseInt(match[4]) * sign : 0;
+                            const diceKey = ('d' + dieFace) as any;
+                            triggerRoll({ [diceKey]: count }, mod);
+                        } else {
+                            triggerRoll({ d6: 1 }, 0);
+                        }
+                    }}
+                />
+            )}
             {showInventory && (
                 <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
                     <div className="modal-content animate-fade-in" style={{ background: '#1a1a1a', padding: '20px', borderRadius: '8px', width: '800px', maxWidth: '95%', maxHeight: '90vh', overflowY: 'auto', border: '1px solid #444', position: 'relative' }}>

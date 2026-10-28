@@ -573,8 +573,12 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                 .replace(/[áàâã]/g, 'a').replace(/[éê]/g, 'e').replace(/[í]/g, 'i').replace(/[óôõ]/g, 'o').replace(/[ú]/g, 'u').replace(/ç/g, 'c');
             const def = ITEMS.find(i => i.id === id || i.name.toLowerCase() === name.toLowerCase());
 
+            const baseDefId = def ? def.id : id;
+            const uniqueId = `${baseDefId}_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
+
             bgEquip.push({
-                id: def ? def.id : id,
+                id: uniqueId,
+                defId: baseDefId,
                 name: def ? def.name : name,
                 quantity: quantity,
                 description: def?.description || `Equipamento concedido pelo Antecedente (${selectedBackground?.name || 'Antecedente'})`,
@@ -654,8 +658,12 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                     }
                 }
 
+                const baseClassDefId = def ? def.id : id;
+                const uniqueClassId = `${baseClassDefId}_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
+
                 classEquip.push({
-                    id: def ? def.id : id,
+                    id: uniqueClassId,
+                    defId: baseClassDefId,
                     name: def ? def.name : name,
                     quantity: quantity,
                     description: def ? (def.description || (def.type === 'weapon' ? `${def.damage} ${def.damageType}` : 'Equipamento')) : 'Item Inicial',

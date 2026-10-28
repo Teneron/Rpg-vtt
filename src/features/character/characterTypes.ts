@@ -1,6 +1,7 @@
 import type { Spell } from './data/spells';
 import { FEATS, type Feat } from './data/feats';
 import { RACES } from './data/races';
+import { ITEMS } from './data/items';
 
 export type { Spell, Feat };
 
@@ -27,6 +28,7 @@ export interface Skill {
 
 export interface Item {
     id: string;
+    defId?: string;
     name: string;
     quantity: number;
     description: string;
@@ -70,6 +72,57 @@ export interface ClassResource {
     current: number;
     max: number;
     rechargesOn: 'short' | 'long' | 'other';
+}
+
+
+export interface CompanionAttribute {
+    value: number;
+    modifier: number;
+}
+
+export interface CompanionAttributes {
+    str: CompanionAttribute;
+    dex: CompanionAttribute;
+    con: CompanionAttribute;
+    int: CompanionAttribute;
+    wis: CompanionAttribute;
+    cha: CompanionAttribute;
+}
+
+export interface CompanionAttack {
+    name: string;
+    attackBonus: number;
+    damage: string; // e.g. "1d8 + 4"
+    damageType: string; // e.g. "Cortante", "Perfurante", "Concussão", "Veneno"
+    range?: string; // e.g. "1,5m" ou "18m"
+    description?: string;
+}
+
+export interface CompanionFeature {
+    name: string;
+    description: string;
+}
+
+export interface Companion {
+    id: string;
+    name: string;
+    type: 'beast_companion' | 'familiar' | 'steed' | 'homunculus' | 'summon' | 'custom';
+    creatureType: string; // e.g. "Besta da Terra", "Besta do Céu", "Diabrete", "Coruja", "Cavalo de Guerra"
+    avatarUrl?: string;
+    size: 'Miúdo' | 'Pequeno' | 'Médio' | 'Grande' | 'Enorme';
+    hp: {
+        current: number;
+        max: number;
+        temp?: number;
+    };
+    ac: number;
+    speed: string; // e.g. "12m", "18m voo", "12m escalada"
+    visionRange?: number; // Metros de visão no escuro
+    attributes: CompanionAttributes;
+    attacks: CompanionAttack[];
+    features: CompanionFeature[];
+    skills?: string;
+    notes?: string;
 }
 
 export interface CharacterAttributes {
@@ -138,6 +191,7 @@ export interface Character {
     spells: Spell[]; // Magias conhecidas/preparadas
     feats: Feat[]; // Talentos
     inventory: Item[];
+    companions?: Companion[];
     notes: string;
     hpRolled?: boolean | number; // Persists the dice roll/mode
     proficiencies: string[]; // Armas, Armaduras, Ferramentas
@@ -321,6 +375,7 @@ export const initialCharacter: Character = {
     proficiencies: [],
     languages: ['Comum'],
     inventory: [],
+    companions: [],
     notes: '',
 
     // Defaults for new fields
@@ -475,25 +530,36 @@ export const regenerateCharacterStats = (char: Character): Character => {
         char.inventory.forEach(item => {
             if (!item.equipped) return;
 
-            if (item.type === 'armor') {
-                const isShield = item.name === 'Escudo' || item.name === 'Escudo de Madeira' || item.id === 'escudo' || item.id === 'escudo_de_madeira' || /escudo/i.test(item.name || '');
-                if (isShield) {
-                    shieldBonus += (item.ac || 2);
-                } else {
-                    // It's body armor
-                    isArmored = true;
-                    let dexBonus = 0;
-                    if (item.acDexBonus) {
-                        dexBonus = newDexMod;
-                        if (item.acMaxDex !== undefined) {
-                            dexBonus = Math.min(dexBonus, item.acMaxDex);
-                        }
-                    }
-                    if (!item.acDexBonus && dexBonus < 0) dexBonus = 0;
+            // Lookup definition for missing stats
+            let def = ITEMS.find(i => i.id === item.id || (item.defId && i.id === item.defId));
+            if (!def && item.name) {
+                const normName = item.name.toLowerCase().trim();
+                def = ITEMS.find(i => i.name.toLowerCase() === normName);
+            }
 
-                    const computedAC = (item.ac || 10) + dexBonus;
-                    armorAC = Math.max(armorAC, computedAC);
+            const itemType = (item.type || def?.type || '').toLowerCase();
+            const isShield = itemType === 'shield' || itemType === 'escudo' || /escudo/i.test(item.name || '') || item.id.includes('escudo');
+            const isArmor = itemType === 'armor' || itemType === 'armadura' || (!isShield && def?.type === 'armor');
+
+            if (isShield) {
+                shieldBonus += (item.ac ?? def?.ac ?? 2);
+            } else if (isArmor) {
+                isArmored = true;
+                const baseItemAC = item.ac ?? def?.ac ?? 10;
+                const allowsDex = item.acDexBonus ?? def?.acDexBonus ?? false;
+                const maxDex = item.acMaxDex ?? def?.acMaxDex;
+
+                let dexBonus = 0;
+                if (allowsDex) {
+                    dexBonus = newDexMod;
+                    if (maxDex !== undefined) {
+                        dexBonus = Math.min(dexBonus, maxDex);
+                    }
                 }
+                if (!allowsDex && dexBonus < 0) dexBonus = 0;
+
+                const computedAC = baseItemAC + dexBonus;
+                armorAC = Math.max(armorAC, computedAC);
             }
         });
     }
@@ -523,32 +589,57 @@ export const regenerateCharacterStats = (char: Character): Character => {
     const newAttacks: Attack[] = [];
     if (Array.isArray(char.inventory)) {
         char.inventory.forEach(item => {
-            if (item.type === 'weapon' && item.equipped) {
+            if (!item.equipped) return;
+
+            let def = ITEMS.find(i => i.id === item.id || (item.defId && i.id === item.defId));
+            if (!def && item.name) {
+                const normName = item.name.toLowerCase().trim();
+                def = ITEMS.find(i => i.name.toLowerCase() === normName);
+            }
+
+            const itemType = (item.type || def?.type || '').toLowerCase();
+            const isWeapon = itemType === 'weapon' || itemType === 'arma' || def?.type === 'weapon';
+
+            if (isWeapon) {
+                const props = item.properties || def?.properties || [];
+                const range = item.range || def?.range;
+                const damage = item.damage || def?.damage || '1d4';
+                const damageType = item.damageType || def?.damageType || 'físico';
+
                 // Determine Attribute (Str vs Dex)
                 let attrMod = newAttrs.str.modifier;
-                const isFinesse = item.properties?.includes('acuidade');
+                const isFinesse = props.some(p => p.toLowerCase().includes('acuidade'));
 
-                if (item.type === 'weapon') {
-                    if (item.range && !item.properties?.includes('arremesso')) {
-                        attrMod = newAttrs.dex.modifier;
-                    } else if (isFinesse) {
-                        attrMod = Math.max(newAttrs.str.modifier, newAttrs.dex.modifier);
-                    }
+                if (range && !props.some(p => p.toLowerCase().includes('arremesso'))) {
+                    attrMod = newAttrs.dex.modifier;
+                } else if (isFinesse) {
+                    attrMod = Math.max(newAttrs.str.modifier, newAttrs.dex.modifier);
                 }
 
                 const hitBonus = attrMod + profBonus;
                 const formattedMod = attrMod >= 0 ? `+ ${attrMod}` : `- ${Math.abs(attrMod)}`;
-                const damageDice = attrMod === 0 ? (item.damage || '1d4') : `${item.damage || '1d4'} ${formattedMod}`;
+                const damageDice = attrMod === 0 ? damage : `${damage} ${formattedMod}`;
 
                 newAttacks.push({
                     id: item.id,
                     name: item.name,
                     attackBonus: hitBonus,
                     damageDice: damageDice,
-                    damageType: item.damageType || 'físico',
-                    range: item.range,
-                    properties: item.properties?.join(', ')
+                    damageType: damageType,
+                    range: range,
+                    properties: props.join(', ')
                 });
+            }
+        });
+    }
+
+    // Retain custom non-item attacks
+    if (Array.isArray(char.attacks)) {
+        char.attacks.forEach(atk => {
+            if (atk.id === 'ataque_desarmado') return;
+            if (char.inventory?.some(i => i.id === atk.id)) return;
+            if (!newAttacks.some(a => a.id === atk.id)) {
+                newAttacks.push(atk);
             }
         });
     }
@@ -631,7 +722,18 @@ export const regenerateCharacterStats = (char: Character): Character => {
         deathSaves: { ...initialCharacter.deathSaves, ...(char.deathSaves || {}) },
         currency: { ...initialCharacter.currency, ...(char.currency || {}) },
         spellSlots: { ...initialCharacter.spellSlots, ...(char.spellSlots || {}) },
-        inventory: Array.isArray(char.inventory) ? char.inventory : [],
+        inventory: (() => {
+            const seenIds = new Set<string>();
+            return (Array.isArray(char.inventory) ? char.inventory : []).map((item, idx) => {
+                let id = item.id;
+                if (!id || seenIds.has(id)) {
+                    id = `${id || 'item'}_${idx}_${Math.random().toString(36).substring(2, 6)}`;
+                }
+                seenIds.add(id);
+                return { ...item, id };
+            });
+        })(),
+        companions: Array.isArray(char.companions) ? char.companions : [],
         spells: Array.isArray(char.spells) ? char.spells : [],
         feats: Array.isArray(char.feats) ? char.feats : [],
         features: Array.isArray(char.features) ? char.features : [],

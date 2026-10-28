@@ -96,6 +96,32 @@ export const Token: React.FC<TokenProps> = ({
             }}
             title={isHiddenByFog ? undefined : ((hasHpData && (isHost || isOwner)) ? `${token.name} (HP: ${currentHp}/${maxHp})` : token.name)}
         >
+            
+            {/* Companion Badge */}
+            {token.isCompanion && (
+                <div
+                    title="Pet / Companheiro"
+                    style={{
+                        position: 'absolute',
+                        bottom: '-3px',
+                        right: '-3px',
+                        width: '16px',
+                        height: '16px',
+                        borderRadius: '50%',
+                        background: '#0284c7',
+                        border: '1.5px solid #fff',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '9px',
+                        zIndex: 60,
+                        pointerEvents: 'none',
+                        boxShadow: '0 1px 3px rgba(0,0,0,0.5)'
+                    }}
+                >
+                    🐾
+                </div>
+            )}
             {/* HP Bar Overlay */}
             {showHpBar && (
                 <div style={{

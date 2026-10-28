@@ -598,7 +598,7 @@ io.on('connection', (socket) => {
                         const tokenObj = (d && typeof d.id === 'string')
                             ? d
                             : (isPlainObject(p.token) && typeof p.token.id === 'string' ? p.token : null);
-                        if (stamped.senderIsHost && tokenObj) {
+                        if (tokenObj && (stamped.senderIsHost || (tokenObj.isCompanion && typeof tokenObj.ownerId === 'string'))) {
                             const exists = room.gameState.map.tokens.some(t => isPlainObject(t) && t.id === tokenObj.id);
                             room.gameState.map.tokens = exists
                                 ? room.gameState.map.tokens.map(t => (isPlainObject(t) && t.id === tokenObj.id) ? tokenObj : t)

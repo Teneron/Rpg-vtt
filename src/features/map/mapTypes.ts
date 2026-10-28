@@ -8,6 +8,9 @@ export interface MapToken {
     characterId?: string; // Linked Character ID (PC)
     monsterId?: string; // Linked Bestiary Monster ID (NPC/Monster)
     combatantId?: string; // Linked Combat Tracker ID (Active Instance)
+    ownerId?: string; // Character ID who owns this token (e.g. for pets / companions / summons)
+    isCompanion?: boolean; // Se é token de pet / companheiro / familiar
+    companionId?: string; // ID do companion vinculado na ficha do dono
     name: string;
     color: string;
     position: Position;

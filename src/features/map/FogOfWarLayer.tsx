@@ -133,12 +133,13 @@ export function computeMapVisionZones(
             : (tokens || []);
     } else {
         visionTokens = (tokens || []).filter(t =>
-            Boolean(t.characterId && myCharacter && t.characterId === myCharacter.id)
+            Boolean(t.characterId && myCharacter && t.characterId === myCharacter.id) ||
+            Boolean(t.ownerId && myCharacter && t.ownerId === myCharacter.id)
         );
     }
 
     visionTokens.forEach(token => {
-        const isPcToken = Boolean(token.characterId);
+        const isPcToken = Boolean(token.characterId) || Boolean(token.ownerId);
         let vision = token.visionRange || 0;
 
         if (vision === 0 && token.characterId) {
@@ -147,6 +148,11 @@ export function computeMapVisionZones(
                 vision = onlinePlayer.character.visionRange || 0;
             } else if (myCharacter && token.characterId === myCharacter.id) {
                 vision = myCharacter.visionRange || 0;
+            }
+        } else if (vision === 0 && token.ownerId && myCharacter && token.ownerId === myCharacter.id) {
+            const comp = myCharacter.companions?.find((c: any) => c.id === token.companionId);
+            if (comp && comp.visionRange) {
+                vision = comp.visionRange;
             }
         }
 
