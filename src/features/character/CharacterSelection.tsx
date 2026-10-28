@@ -31,13 +31,13 @@ export const CharacterSelection: React.FC<CharacterSelectionProps> = ({ onSelect
     ) ? 'witcher' : 'dnd55e';
 
     const loadList = useCallback(async () => {
-        if (username) {
-            const advId = currentAdventureId || 'default';
-            const list = await CharacterRepository.listAllAsync(username, advId);
-            // Filter by normalized system family (dnd5e and dnd55e treated as compatible)
-            const filtered = list.filter(c => normalizeSystemId(c.system) === activeSystem);
-            setCharacters(filtered);
-        }
+        const advId = currentAdventureId || 'default';
+        const list = await CharacterRepository.listAllAsync(username || '', advId);
+        // Filter by normalized system family (dnd5e and dnd55e treated as compatible)
+        const matchingSystem = list.filter(c => normalizeSystemId(c.system) === activeSystem);
+        // If there are characters matching the active system, show them.
+        // Otherwise, if any characters exist in database, display them all so nothing is ever hidden!
+        setCharacters(matchingSystem.length > 0 ? matchingSystem : list);
     }, [username, currentAdventureId, activeSystem]);
 
     useEffect(() => {

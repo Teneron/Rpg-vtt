@@ -102,6 +102,7 @@ export const CharacterRepository = {
                 }
 
                 isInitialized = true;
+                dispatchCharactersUpdated();
             } catch (err) {
                 console.error('[CharacterRepo] Failed to initialize from IndexedDB:', err);
             }
@@ -156,29 +157,66 @@ export const CharacterRepository = {
 
     /**
      * Synchronous list of all characters matching owner and adventureId from cache.
-     * Matching is resilient to casing and leading/trailing whitespace.
+     * Resilient and non-destructive: prioritizes matching owner/adventure, but ensures
+     * that all characters saved in local storage remain accessible and never vanish.
      */
-    listAll(owner: string, adventureId: string = 'default'): CharacterSummary[] {
-        if (!owner || !owner.trim()) return [];
-
-        const targetOwner = (owner || 'default').trim().toLowerCase();
+    listAll(owner?: string, adventureId: string = 'default'): CharacterSummary[] {
+        const targetOwner = (owner || '').trim().toLowerCase();
         const targetAdvId = (adventureId || 'default').trim().toLowerCase();
         const summaries: CharacterSummary[] = [];
+        const seenIds = new Set<string>();
 
+        const toSummary = (char: Character): CharacterSummary => ({
+            id: char.id,
+            name: char.name || 'Sem Nome',
+            race: char.race || '',
+            class: char.class || '',
+            level: typeof char.level === 'number' && Number.isFinite(char.level) ? char.level : 1,
+            adventureId: char.adventureId || 'default',
+            system: char.system
+        });
+
+        // 1. Exact matches: owner AND adventureId
         for (const char of characterCache.values()) {
+            if (!char || !char.id || seenIds.has(char.id)) continue;
             const cOwner = (char.owner || 'default').trim().toLowerCase();
             const cAdvId = (char.adventureId || 'default').trim().toLowerCase();
-            if (cOwner === targetOwner && cAdvId === targetAdvId) {
-                summaries.push({
-                    id: char.id,
-                    name: char.name || 'Sem Nome',
-                    race: char.race || '',
-                    class: char.class || '',
-                    level: typeof char.level === 'number' && Number.isFinite(char.level) ? char.level : 1,
-                    adventureId: char.adventureId || 'default',
-                    system: char.system
-                });
+
+            if (targetOwner && cOwner === targetOwner && cAdvId === targetAdvId) {
+                seenIds.add(char.id);
+                summaries.push(toSummary(char));
             }
+        }
+
+        // 2. Owner matches across other adventures (so the player can use their characters in any room!)
+        if (targetOwner) {
+            for (const char of characterCache.values()) {
+                if (!char || !char.id || seenIds.has(char.id)) continue;
+                const cOwner = (char.owner || 'default').trim().toLowerCase();
+                if (cOwner === targetOwner) {
+                    seenIds.add(char.id);
+                    summaries.push(toSummary(char));
+                }
+            }
+        }
+
+        // 3. Characters matching this adventureId (even if owner nickname was slightly different)
+        if (targetAdvId && targetAdvId !== 'default') {
+            for (const char of characterCache.values()) {
+                if (!char || !char.id || seenIds.has(char.id)) continue;
+                const cAdvId = (char.adventureId || 'default').trim().toLowerCase();
+                if (cAdvId === targetAdvId) {
+                    seenIds.add(char.id);
+                    summaries.push(toSummary(char));
+                }
+            }
+        }
+
+        // 4. Fallback: Include all characters stored locally on this client so nothing is ever hidden or lost
+        for (const char of characterCache.values()) {
+            if (!char || !char.id || seenIds.has(char.id)) continue;
+            seenIds.add(char.id);
+            summaries.push(toSummary(char));
         }
 
         // Trigger background init if not already done
@@ -192,7 +230,7 @@ export const CharacterRepository = {
     /**
      * Asynchronous version of listAll guaranteeing Dexie synchronization.
      */
-    async listAllAsync(owner: string, adventureId: string = 'default'): Promise<CharacterSummary[]> {
+    async listAllAsync(owner?: string, adventureId: string = 'default'): Promise<CharacterSummary[]> {
         await this.init();
         return this.listAll(owner, adventureId);
     },
