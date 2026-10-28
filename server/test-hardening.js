@@ -280,35 +280,9 @@ async function main() {
             playerName: 'MestreReal',
             isHost: true,
             hostToken: secretToken,
-            userId: 'real-host-id',
-            settings: { startingLevel: 5 }
+            userId: 'real-host-id'
         });
         check(authHostRejoin && authHostRejoin.success && authHostRejoin.isHost === true, 'Host can successfully reconnect and retain authority using secret hostToken');
-        check(authHostRejoin?.settings?.startingLevel === 5, 'Host receives configured startingLevel=5');
-
-        // Test room_settings_updated event
-        let playerReceivedSettings = null;
-        authPlayer.on('room_settings_updated', (data) => { playerReceivedSettings = data; });
-
-        // Non-host player cannot update room settings
-        const unauthorizedSettingsUpdate = await new Promise((resolve) => {
-            authPlayer.emit('update_room_settings', { roomId: 'auth-room', settings: { startingLevel: 10 } }, resolve);
-            setTimeout(() => resolve(null), 1000);
-        });
-        check(unauthorizedSettingsUpdate?.success === false, 'Player cannot update room settings');
-
-        // Host updates room settings
-        const hostSettingsUpdate = await new Promise((resolve) => {
-            authHost.emit('update_room_settings', {
-                roomId: 'auth-room',
-                hostToken: secretToken,
-                settings: { startingLevel: 10 }
-            }, resolve);
-            setTimeout(() => resolve(null), 1000);
-        });
-        check(hostSettingsUpdate?.success === true && hostSettingsUpdate?.settings?.startingLevel === 10, 'Host can update room settings to startingLevel=10');
-        await sleep(100);
-        check(playerReceivedSettings?.settings?.startingLevel === 10, 'Player receives room_settings_updated broadcast with startingLevel=10');
     } finally {
         sockets.forEach(s => { try { s.disconnect(); } catch { /* ignore */ } });
         if (!childExited) child.kill();

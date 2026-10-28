@@ -16,7 +16,6 @@ export interface AdventureSummary {
     name: string;
     system?: string;
     description?: string;
-    settings?: Campaign['settings'];
     createdAt: number;
     updatedAt: number;
 }
@@ -38,7 +37,7 @@ interface AdventureContextType {
     currentAdventure: Adventure | null;
     adventures: AdventureSummary[];
     loadAdventure: (id: string) => Promise<void>;
-    createAdventure: (name: string, system?: string, customId?: string, settings?: Campaign['settings']) => Promise<Adventure>;
+    createAdventure: (name: string, system?: string, customId?: string) => Promise<Adventure>;
     deleteAdventure: (id: string) => Promise<void>;
     closeAdventure: () => void;
     updateAdventurePatch: (patch: Partial<Campaign>) => Promise<void>;
@@ -296,14 +295,13 @@ export const AdventureProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         };
     }, [currentAdventureId, currentAdventureName, isHost, roomSystem]);
 
-    const createAdventure = async (name: string, system: string = 'dnd55e', customId?: string, settings?: Campaign['settings']): Promise<Adventure> => {
+    const createAdventure = async (name: string, system: string = 'dnd55e', customId?: string): Promise<Adventure> => {
         const id = customId || crypto.randomUUID();
         const initialSceneId = crypto.randomUUID();
         const newAdv: Adventure = {
             id,
             name,
             system,
-            settings: settings || { startingLevel: 1 },
             activeSceneId: initialSceneId,
             createdAt: Date.now(),
             updatedAt: Date.now(),

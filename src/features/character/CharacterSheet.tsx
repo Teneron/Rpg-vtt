@@ -17,7 +17,6 @@ import { useDice } from '../dice/DiceContext';
 import { CharacterBuilder } from './CharacterBuilder';
 // import { usePlayerSync } from '../multiplayer/usePlayerSync';
 import { usePeer } from '../multiplayer/SocketContext';
-import { useAdventure } from '../adventure/AdventureContext';
 import { CharacterRepository } from './characterRepository';
 import { Save, X, Settings, Sparkles, BookOpen, Table, Download, Upload } from 'lucide-react';
 
@@ -420,19 +419,14 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
         triggerRoll({ d20: 1 }, modifier);
     }, [triggerRoll]);
 
-    const { roomSettings } = usePeer();
-    const { currentAdventure } = useAdventure();
-    const campaignStartingLevel = roomSettings?.startingLevel || currentAdventure?.settings?.startingLevel || 1;
-
-    const isOwner = !isGM || myCharacter?.id === characterId;
-    const [showBuilder, setShowBuilder] = useState(isOwner && !character.class);
-    const [showLevelModal, setShowLevelModal] = useState(isOwner && (character.pendingLevelUp || false));
+    const [showBuilder, setShowBuilder] = useState(!isGM && !character.class);
+    const [showLevelModal, setShowLevelModal] = useState(!isGM && (character.pendingLevelUp || false));
 
     useEffect(() => {
-        if (isOwner && character.pendingLevelUp) {
+        if (!isGM && character.pendingLevelUp) {
             setShowLevelModal(true);
         }
-    }, [character.pendingLevelUp, isOwner]);
+    }, [character.pendingLevelUp, isGM]);
     const [activeTab, setActiveTab] = useState<'bio' | 'spells' | 'feats' | 'abilities'>('bio');
     const [showInventory, setShowInventory] = useState(false);
     const [showBestiary, setShowBestiary] = useState(false);
@@ -940,14 +934,10 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
             {showBuilder && (
                 <CharacterBuilder
                     character={character}
-                    startingLevel={campaignStartingLevel}
                     onUpdate={(updatedChar) => {
                         setCharacter(updatedChar);
                         handleSave(updatedChar);
                         dirtyRef.current = false;
-                        if (updatedChar.pendingLevelUp) {
-                            setShowLevelModal(true);
-                        }
                     }}
                     onClose={() => setShowBuilder(false)}
                 />

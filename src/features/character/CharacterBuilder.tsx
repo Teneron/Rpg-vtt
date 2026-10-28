@@ -15,11 +15,9 @@ import {
     type CharacterAttributes,
     regenerateCharacterStats,
     calculateModifier,
-    type ClassFeature,
-    XP_TABLE
+    type ClassFeature
 } from './characterTypes';
 import { usePeer } from '../multiplayer/SocketContext';
-import { getSpellSlotsForLevel, getClassResourcesForLevel } from './data/progression';
 import { ClassProgression } from './components/ClassProgression';
 import './CharacterBuilder.css';
 
@@ -27,13 +25,10 @@ interface CharacterBuilderProps {
     character: Character;
     onUpdate: (char: Character) => void;
     onClose: () => void;
-    startingLevel?: number;
 }
 
-export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, onUpdate, onClose, startingLevel }) => {
-    const { currentAdventureId, roomSystem, roomSettings } = usePeer();
-
-    const effectiveStartingLevel = Math.max(1, Math.min(20, startingLevel ?? roomSettings?.startingLevel ?? 1));
+export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, onUpdate, onClose }) => {
+    const { currentAdventureId, roomSystem } = usePeer();
 
     // Detect active system strictly (witcher if character/room is witcher, otherwise dnd55e)
     const activeSystem: 'witcher' | 'dnd55e' = (
@@ -755,10 +750,10 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
 
         // Initialize Spell Slots for Casters at Level 1
         if (isSpellCaster || selectedClass?.spellcastingConfig) {
-            nextChar.spellSlots = getSpellSlotsForLevel(selectedClass.id, 1);
-        } else {
+            const isWarlock = /bruxo|warlock/i.test(selectedClass?.name || '');
+            const slot1Count = isWarlock ? 1 : 2;
             nextChar.spellSlots = {
-                1: { max: 0, used: 0 },
+                1: { max: slot1Count, used: 0 },
                 2: { max: 0, used: 0 },
                 3: { max: 0, used: 0 },
                 4: { max: 0, used: 0 },
@@ -770,49 +765,16 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
             };
         }
 
-        // Initialize Class Resources for Level 1
-        nextChar.classResources = getClassResourcesForLevel(selectedClass.id, 1);
-
-        // Multi-level Queue Setup: If starting level > 1, configure target queue for LevelUpModal
-        if (effectiveStartingLevel > 1) {
-            nextChar.levelUpTarget = effectiveStartingLevel;
-            nextChar.level = 2;
-            nextChar.pendingLevelUp = true;
-            nextChar.experience = XP_TABLE[2] || 300;
-            nextChar.nextLevelExperience = XP_TABLE[3] || 900;
-        } else {
-            nextChar.level = 1;
-            nextChar.levelUpTarget = undefined;
-            nextChar.pendingLevelUp = false;
-            nextChar.experience = 0;
-            nextChar.nextLevelExperience = XP_TABLE[2] || 300;
-        }
-
         onUpdate(regenerateCharacterStats(nextChar));
         onClose();
-    }, [character, charName, selectedClass, selectedRace, selectedBackground, baseStats, selectedSkills, isSpellCaster, selectedCantrips, selectedSpells, selectedAlignment, selectedTools, selectedLanguages, selectedFeats, selectedEquipmentChoices, getAttributeBonus, activeSystem, effectiveStartingLevel, onUpdate, onClose]);
+    }, [character, charName, selectedClass, selectedRace, selectedBackground, baseStats, selectedSkills, isSpellCaster, selectedCantrips, selectedSpells, selectedAlignment, selectedTools, selectedLanguages, selectedFeats, selectedEquipmentChoices, getAttributeBonus, activeSystem, onUpdate, onClose]);
 
     // Render using Portal
     return ReactDOM.createPortal(
         <div className="char-builder-modal">
             <div className="builder-content">
                 <div className="builder-header">
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <h2>{activeSystem === 'witcher' ? 'Criação de Personagem — The Witcher' : 'Criação de Personagem — D&D 5.5e (2024)'}</h2>
-                        {effectiveStartingLevel > 1 && (
-                            <span style={{
-                                background: 'rgba(255, 215, 0, 0.15)',
-                                border: '1px solid #ffd700',
-                                color: '#ffd700',
-                                padding: '3px 10px',
-                                borderRadius: '12px',
-                                fontSize: '0.8rem',
-                                fontWeight: 'bold'
-                            }}>
-                                Meta da Campanha: Nível {effectiveStartingLevel}
-                            </span>
-                        )}
-                    </div>
+                    <h2>{activeSystem === 'witcher' ? 'Criação de Personagem — The Witcher' : 'Criação de Personagem — D&D 5.5e (2024)'}</h2>
                     <button className="btn-close-header" onClick={onClose} title="Fechar"><X size={18} /></button>
                 </div>
 
@@ -1628,7 +1590,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                             }}
                             title={remainingPoints !== 0 ? `Distribua todos os 27 pontos (${remainingPoints} restantes)!` : "Tudo pronto!"}
                         >
-                            {effectiveStartingLevel > 1 ? `Concluir e Evoluir (Nível ${effectiveStartingLevel})` : 'Concluir Personagem'} {remainingPoints !== 0 ? `(${remainingPoints} pts restantes)` : ''}
+                            Concluir Personagem {remainingPoints !== 0 ? `(${remainingPoints} pts restantes)` : ''}
                         </button>
                     }
                 </div>

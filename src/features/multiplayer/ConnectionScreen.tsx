@@ -15,10 +15,7 @@ import {
     Key,
     Loader2,
     Download,
-    Upload,
-    Minus,
-    Plus,
-    TrendingUp
+    Upload
 } from 'lucide-react';
 import { usePeer } from './SocketContext';
 import { useAdventure } from '../adventure/AdventureContext';
@@ -49,31 +46,6 @@ const resolveCampaignSystemId = (rawSystem?: string | null, campaignId?: string 
     return 'dnd55e';
 };
 
-const getTierInfo = (level: number) => {
-    if (level <= 4) {
-        return {
-            title: 'Tier 1 — Aventureiros Locais (Níveis 1-4)',
-            desc: 'Ameaças locais, vilarejos, bandidos, goblins e rastejadores de masmorras iniciantes.'
-        };
-    }
-    if (level <= 10) {
-        return {
-            title: 'Tier 2 — Heróis do Reino (Níveis 5-10)',
-            desc: 'Ameaças a cidades e províncias, magias de 3º a 5º círculo, monstros formidáveis e dragões jovens.'
-        };
-    }
-    if (level <= 16) {
-        return {
-            title: 'Tier 3 — Mestres do Reino (Níveis 11-16)',
-            desc: 'Ameaças de nível continental, viagens planares, conjurações de 6º a 8º círculo e lendas vivas.'
-        };
-    }
-    return {
-        title: 'Tier 4 — Mestres do Multiverso (Níveis 17-20)',
-        desc: 'Poder quase divino, magias de 9º círculo, ameaças interplanares, deuses e arquidemônios.'
-    };
-};
-
 export const ConnectionScreen: React.FC<ConnectionScreenProps> = ({ onStartGame, onOpenPlayerRules, onOpenGMRules }) => {
     const { startHosting, connectToHost, peerId, connections, peerError, currentAdventureId, isConnecting: isPeerConnecting } = usePeer();
     const {
@@ -85,8 +57,7 @@ export const ConnectionScreen: React.FC<ConnectionScreenProps> = ({ onStartGame,
         rebindAdventureId,
         currentAdventure,
         downloadCampaignBackup,
-        importCampaign,
-        updateAdventurePatch
+        importCampaign
     } = useAdventure();
 
     const campaignFileInputRef = React.useRef<HTMLInputElement | null>(null);
@@ -99,9 +70,6 @@ export const ConnectionScreen: React.FC<ConnectionScreenProps> = ({ onStartGame,
             const text = await file.text();
             const imported = await importCampaign(text);
             await loadAdventure(imported.id);
-            if (imported.settings?.startingLevel) {
-                setStartingLevel(imported.settings.startingLevel);
-            }
             const resolvedSys = resolveCampaignSystemId(imported.system, imported.id);
             setSelectedSystemId(resolvedSys);
             localStorage.setItem('rpg_selected_system', resolvedSys);
@@ -134,7 +102,6 @@ export const ConnectionScreen: React.FC<ConnectionScreenProps> = ({ onStartGame,
     const [targetId, setTargetId] = useState('');
     const [gmPassword, setGmPassword] = useState('');
     const [advName, setAdvName] = useState('');
-    const [startingLevel, setStartingLevel] = useState<number>(() => currentAdventure?.settings?.startingLevel || 1);
     const [copied, setCopied] = useState(false);
     const [copiedInviteLink, setCopiedInviteLink] = useState(false);
     const [copiedRoomCode, setCopiedRoomCode] = useState(false);
@@ -223,7 +190,6 @@ export const ConnectionScreen: React.FC<ConnectionScreenProps> = ({ onStartGame,
         let finalCode = (customRoomCode.trim().toUpperCase()) || generateRoomCode(selectedSystem.id);
         let activeAdvName = advName.trim();
         const existingAdv = adventures.find(a => a.id === finalCode);
-        const effectiveSettings = { startingLevel: Math.max(1, Math.min(20, startingLevel || 1)) };
 
         if (advName.trim()) {
             // Explicit creation of a brand-new adventure: avoid overwriting an existing campaign with the same room code
@@ -235,7 +201,7 @@ export const ConnectionScreen: React.FC<ConnectionScreenProps> = ({ onStartGame,
                 finalCode = freshCode;
                 setCustomRoomCode(finalCode);
             }
-            const newAdv = await createAdventure(advName.trim(), selectedSystem.id, finalCode, effectiveSettings);
+            const newAdv = await createAdventure(advName.trim(), selectedSystem.id, finalCode);
             activeAdvName = newAdv.name;
             setAdvName('');
         } else if (currentAdventure) {
@@ -250,14 +216,12 @@ export const ConnectionScreen: React.FC<ConnectionScreenProps> = ({ onStartGame,
                 await loadAdventure(finalCode);
                 activeAdvName = existingAdv.name;
             }
-            await updateAdventurePatch({ settings: effectiveSettings });
         } else if (existingAdv) {
             await loadAdventure(finalCode);
             activeAdvName = existingAdv.name;
-            await updateAdventurePatch({ settings: effectiveSettings });
         } else {
             const advTitle = `Campanha ${selectedSystem.name.split('(')[0].trim()} [${finalCode}]`;
-            const newAdv = await createAdventure(advTitle, selectedSystem.id, finalCode, effectiveSettings);
+            const newAdv = await createAdventure(advTitle, selectedSystem.id, finalCode);
             activeAdvName = newAdv.name;
         }
 
@@ -266,10 +230,10 @@ export const ConnectionScreen: React.FC<ConnectionScreenProps> = ({ onStartGame,
         localStorage.setItem('rpg_last_room_code', finalCode);
         localStorage.setItem('rpg_selected_system', selectedSystem.id);
 
-        console.log('Starting host with Adventure ID / Room Code:', finalCode, 'System:', selectedSystem.id, 'Settings:', effectiveSettings);
+        console.log('Starting host with Adventure ID / Room Code:', finalCode, 'System:', selectedSystem.id);
 
         const advNameDisplay = activeAdvName || `${selectedSystem.name} [${finalCode}]`;
-        await startHosting(name.trim(), finalCode, advNameDisplay, selectedSystem.id, effectiveSettings);
+        await startHosting(name.trim(), finalCode, advNameDisplay, selectedSystem.id);
         setMode('host');
     };
 
@@ -621,11 +585,6 @@ export const ConnectionScreen: React.FC<ConnectionScreenProps> = ({ onStartGame,
                                         setAdvName('');
                                         const found = adventures.find(a => a.id === advId);
                                         if (found) {
-                                            if (found.settings?.startingLevel) {
-                                                setStartingLevel(found.settings.startingLevel);
-                                            } else {
-                                                setStartingLevel(1);
-                                            }
                                             const resolvedSys = resolveCampaignSystemId(found.system, found.id);
                                             setSelectedSystemId(resolvedSys);
                                             localStorage.setItem('rpg_selected_system', resolvedSys);
@@ -738,111 +697,6 @@ export const ConnectionScreen: React.FC<ConnectionScreenProps> = ({ onStartGame,
                                 value={advName}
                                 onChange={e => setAdvName(e.target.value)}
                             />
-                        </div>
-
-                        {/* Nível Inicial dos Personagens */}
-                        <div style={{ width: '100%', background: 'rgba(0,0,0,0.3)', padding: '16px', borderRadius: '12px', border: '1px solid rgba(255, 215, 0, 0.25)', marginBottom: '20px', boxSizing: 'border-box' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.88rem', color: '#ffd700', fontWeight: 'bold' }}>
-                                    <TrendingUp size={15} color="#ffd700" />
-                                    <span>Nível Inicial dos Personagens:</span>
-                                </label>
-                                <span style={{
-                                    fontSize: '0.85rem',
-                                    fontWeight: 'bold',
-                                    color: '#ffd700',
-                                    background: 'rgba(255, 215, 0, 0.12)',
-                                    border: '1px solid #ffd700',
-                                    padding: '2px 10px',
-                                    borderRadius: '12px'
-                                }}>
-                                    Nível {startingLevel}
-                                </span>
-                            </div>
-
-                            {/* Stepper Controls */}
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
-                                <button
-                                    type="button"
-                                    onClick={() => setStartingLevel(prev => Math.max(1, prev - 1))}
-                                    disabled={startingLevel <= 1}
-                                    style={{
-                                        width: '40px', height: '40px', borderRadius: '8px',
-                                        background: startingLevel <= 1 ? '#222' : '#333344',
-                                        border: '1px solid #555', color: startingLevel <= 1 ? '#666' : '#fff',
-                                        fontSize: '1.2rem', cursor: startingLevel <= 1 ? 'not-allowed' : 'pointer',
-                                        display: 'flex', alignItems: 'center', justifyContent: 'center'
-                                    }}
-                                    title="Diminuir Nível"
-                                >
-                                    <Minus size={16} />
-                                </button>
-
-                                <input
-                                    type="range"
-                                    min={1}
-                                    max={20}
-                                    value={startingLevel}
-                                    onChange={e => setStartingLevel(parseInt(e.target.value) || 1)}
-                                    style={{ flex: 1, accentColor: '#ffd700', cursor: 'pointer' }}
-                                />
-
-                                <button
-                                    type="button"
-                                    onClick={() => setStartingLevel(prev => Math.min(20, prev + 1))}
-                                    disabled={startingLevel >= 20}
-                                    style={{
-                                        width: '40px', height: '40px', borderRadius: '8px',
-                                        background: startingLevel >= 20 ? '#222' : '#333344',
-                                        border: '1px solid #555', color: startingLevel >= 20 ? '#666' : '#fff',
-                                        fontSize: '1.2rem', cursor: startingLevel >= 20 ? 'not-allowed' : 'pointer',
-                                        display: 'flex', alignItems: 'center', justifyContent: 'center'
-                                    }}
-                                    title="Aumentar Nível"
-                                >
-                                    <Plus size={16} />
-                                </button>
-                            </div>
-
-                            {/* Quick Select Chips */}
-                            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '10px' }}>
-                                {[1, 3, 5, 10, 15, 20].map(lvl => (
-                                    <button
-                                        key={lvl}
-                                        type="button"
-                                        onClick={() => setStartingLevel(lvl)}
-                                        style={{
-                                            flex: '1 1 auto',
-                                            padding: '6px 8px',
-                                            fontSize: '0.75rem',
-                                            fontWeight: startingLevel === lvl ? 'bold' : 'normal',
-                                            borderRadius: '6px',
-                                            border: startingLevel === lvl ? '1px solid #ffd700' : '1px solid rgba(255,255,255,0.15)',
-                                            background: startingLevel === lvl ? 'rgba(255, 215, 0, 0.2)' : 'rgba(255,255,255,0.05)',
-                                            color: startingLevel === lvl ? '#ffd700' : '#ddd',
-                                            cursor: 'pointer',
-                                            transition: 'all 0.15s ease'
-                                        }}
-                                    >
-                                        {lvl === 1 ? 'Nv. 1 (Iniciante)' : lvl === 3 ? 'Nv. 3 (Subclasses)' : lvl === 5 ? 'Nv. 5 (Herói)' : `Nv. ${lvl}`}
-                                    </button>
-                                ))}
-                            </div>
-
-                            {/* Tier Explanation */}
-                            <div style={{
-                                background: 'rgba(0,0,0,0.3)',
-                                borderLeft: '3px solid #ffd700',
-                                padding: '8px 12px',
-                                borderRadius: '0 6px 6px 0',
-                                fontSize: '0.76rem',
-                                color: '#bbb'
-                            }}>
-                                <strong style={{ color: '#ffd700', display: 'block', marginBottom: '2px' }}>
-                                    {getTierInfo(startingLevel).title}
-                                </strong>
-                                <span>{getTierInfo(startingLevel).desc}</span>
-                            </div>
                         </div>
 
                         {/* Botões de Ação */}
