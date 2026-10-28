@@ -1,10 +1,18 @@
 import React, { useState, useMemo } from 'react';
-import type { Character, ClassFeature, Spell, Skill, CharacterAttributes, ClassResource } from '../characterTypes';
-import { regenerateCharacterStats, calculateModifier, calculateProficiencyBonus } from '../characterTypes';
+import type { Character, Spell, Skill, CharacterAttributes } from '../characterTypes';
+import { regenerateCharacterStats, calculateModifier, XP_TABLE } from '../characterTypes';
 import { CLASSES } from '../data/classes';
 import { SPELLS } from '../data/spells';
 import { FEATS, type Feat } from '../data/feats';
 import { playSynthSound } from '../../audio/audioSynth';
+import {
+    getSpellSlotsForLevel,
+    getClassResourcesForLevel,
+    getFeaturesForLevel,
+    getProficiencyBonus,
+    isAsiLevel as checkIsAsiLevel,
+    getSubclassLevel
+} from '../data/progression';
 import {
     Check,
     Shield,
@@ -127,11 +135,12 @@ export const LevelUpModal: React.FC<LevelUpModalProps> = ({ character, onUpdate,
     const isRogue = /ladino|rogue/i.test(classNameLower);
     const isWizard = /mago|wizard/i.test(classNameLower);
     const isCaster = !!classData?.spellcastingConfig || isPaladin || isRanger;
-    const isAsiLevel = newLevel % 4 === 0 || newLevel === 19;
+    const isAsiLevel = checkIsAsiLevel(classData?.id || character.class, newLevel);
 
     const hasFightingStyleChoice = (isFighter && newLevel === 2) || (isPaladin && newLevel === 2) || (isRanger && newLevel === 2);
     const hasInvocationChoice = isWarlock && newLevel === 2;
-    const hasSubclassChoice = newLevel === 3 && (classData?.subclasses?.length || 0) > 0;
+    const subclassLevel = getSubclassLevel(classData?.id || character.class);
+    const hasSubclassChoice = !character.subclass && newLevel >= subclassLevel && (classData?.subclasses?.length || 0) > 0;
     const hasClassSpecialChoice = hasFightingStyleChoice || hasInvocationChoice || hasSubclassChoice;
 
     // Steps Pipeline
@@ -195,8 +204,8 @@ export const LevelUpModal: React.FC<LevelUpModalProps> = ({ character, onUpdate,
     const avgHp = Math.max(1, Math.floor(hitDieValue / 2) + 1 + modCon + totalBonus);
     const finalHpGain = hpChoice === 'avg' ? avgHp : (rolledHp !== null ? rolledHp : avgHp);
 
-    const profBonus = calculateProficiencyBonus(newLevel);
-    const newFeatures = (classData?.features || []).filter(f => f.level === newLevel) as unknown as ClassFeature[];
+    const profBonus = getProficiencyBonus(newLevel);
+    const newFeatures = getFeaturesForLevel(classData?.id || character.class, newLevel);
 
     // Roll HP Handler
     const handleRollHp = () => {
@@ -299,75 +308,28 @@ export const LevelUpModal: React.FC<LevelUpModalProps> = ({ character, onUpdate,
             }
         }
 
-        // 4. Spell Slots calculation
-        const updatedSpellSlots = { ...(character.spellSlots || {}) };
-        if (isCaster) {
-            if (newLevel === 2) {
-                if (isPaladin || isRanger) {
-                    updatedSpellSlots[1] = { max: 2, used: 0 };
-                } else if (isWarlock) {
-                    updatedSpellSlots[1] = { max: 2, used: 0 };
-                } else {
-                    // Full casters (Wizard, Sorcerer, Bard, Cleric, Druid)
-                    updatedSpellSlots[1] = { max: 3, used: 0 };
-                }
-            } else if (newLevel === 3) {
-                if (isWarlock) {
-                    updatedSpellSlots[2] = { max: 2, used: 0 };
-                } else if (isPaladin || isRanger) {
-                    updatedSpellSlots[1] = { max: 3, used: 0 };
-                } else {
-                    updatedSpellSlots[1] = { max: 4, used: 0 };
-                    updatedSpellSlots[2] = { max: 2, used: 0 };
-                }
-            }
-        }
+        // 4. Spell Slots calculation from official 1 to 20 progression
+        const updatedSpellSlots = getSpellSlotsForLevel(classData?.id || character.class, newLevel);
 
-        // 5. Class Resources calculation
-        const updatedResources: ClassResource[] = [...(character.classResources || [])];
-        const ensureResource = (id: string, name: string, maxVal: number, recharge: 'short' | 'long') => {
-            const idx = updatedResources.findIndex(r => r.id === id);
-            if (idx >= 0) {
-                updatedResources[idx].max = maxVal;
-                updatedResources[idx].current = maxVal;
-            } else {
-                updatedResources.push({
-                    id,
-                    name,
-                    max: maxVal,
-                    current: maxVal,
-                    rechargesOn: recharge
-                });
-            }
-        };
+        // 5. Class Resources calculation from official 1 to 20 progression
+        const updatedResources = getClassResourcesForLevel(
+            classData?.id || character.class,
+            newLevel,
+            character.classResources,
+            character.attributes.cha ? character.attributes.cha.modifier : 1
+        );
 
-        if (isFighter && newLevel >= 2) {
-            ensureResource('action_surge', 'Surto de Ação (Action Surge)', 1, 'short');
-            ensureResource('second_wind', 'Retomar o Fôlego (Second Wind)', 2, 'short');
-        }
-        if (/mon[kg]|monge/i.test(classNameLower) && newLevel >= 2) {
-            ensureResource('focus_points', 'Pontos de Foco (Ki)', newLevel, 'short');
-        }
-        if (/feiticeiro|sorcerer/i.test(classNameLower) && newLevel >= 2) {
-            ensureResource('sorcery_points', 'Pontos de Feitiçaria (Fonte de Magia)', newLevel, 'long');
-        }
-        if (/druid|druida/i.test(classNameLower) && newLevel >= 2) {
-            ensureResource('wild_shape', 'Forma Selvagem (Wild Shape)', 2, 'short');
-        }
-        if (/cl[ée]rigo|cleric/i.test(classNameLower) && newLevel >= 2) {
-            ensureResource('channel_divinity', 'Canalizar Divindade', 2, 'short');
-        }
-        if (/bardo|bard/i.test(classNameLower)) {
-            const chaMod = Math.max(1, character.attributes.cha.modifier);
-            ensureResource('bardic_inspiration', 'Inspiração de Bardo', chaMod, 'short');
-        }
-        if (/b[áa]rbar/i.test(classNameLower)) {
-            ensureResource('rage', 'Fúria (Rage)', newLevel >= 3 ? 3 : 2, 'long');
-        }
+        // 6. Base Character Update (Queue aware)
+        const targetLevel = character.levelUpTarget;
+        const isEndOfQueue = !targetLevel || newLevel >= targetLevel;
 
-        // 6. Base Character Update
         const nextChar: Character = {
             ...character,
+            level: isEndOfQueue ? newLevel : newLevel + 1,
+            experience: XP_TABLE[isEndOfQueue ? newLevel : newLevel + 1] || character.experience,
+            nextLevelExperience: XP_TABLE[isEndOfQueue ? newLevel + 1 : newLevel + 2] || character.nextLevelExperience,
+            pendingLevelUp: !isEndOfQueue,
+            levelUpTarget: isEndOfQueue ? undefined : targetLevel,
             hp: { ...character.hp, max: newMaxHp, current: newCurrentHp },
             hitDice: updatedHitDice,
             skills: workingSkills,
@@ -375,7 +337,6 @@ export const LevelUpModal: React.FC<LevelUpModalProps> = ({ character, onUpdate,
             subclass: selectedSubclass || character.subclass,
             spellSlots: updatedSpellSlots,
             classResources: updatedResources,
-            pendingLevelUp: false,
             hpRolled: hpChoice === 'roll' ? finalHpGain : false
         };
 
@@ -410,7 +371,14 @@ export const LevelUpModal: React.FC<LevelUpModalProps> = ({ character, onUpdate,
 
         playSynthSound('crit');
         onUpdate(finalChar);
-        onClose();
+        if (isEndOfQueue) {
+            onClose();
+        } else {
+            setCurrentStepIdx(0);
+            setSelectedSpells([]);
+            setSelectedFeat(null);
+            setRolledHp(null);
+        }
     };
 
     const nextStep = () => {
@@ -435,6 +403,20 @@ export const LevelUpModal: React.FC<LevelUpModalProps> = ({ character, onUpdate,
                     <div className="lvl-header-title">
                         <span className="lvl-badge-level">Nível {newLevel}</span>
                         <h2>Evolução: {classData?.name}</h2>
+                        {character.levelUpTarget && character.levelUpTarget > 1 && (
+                            <span style={{
+                                background: 'rgba(255, 215, 0, 0.15)',
+                                border: '1px solid #ffd700',
+                                color: '#ffd700',
+                                padding: '2px 8px',
+                                borderRadius: '12px',
+                                fontSize: '0.75rem',
+                                fontWeight: 'bold',
+                                marginLeft: '6px'
+                            }}>
+                                Meta da Campanha: Nível {character.levelUpTarget}
+                            </span>
+                        )}
                     </div>
                     <button type="button" className="lvl-close-btn" onClick={onClose} title="Fechar">
                         <X size={18} />

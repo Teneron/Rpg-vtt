@@ -56,7 +56,7 @@ export interface MultiplayerContextState {
     connections: any[];
     hostConnection: any | null;
     connectToHost: (hostId: string, playerName: string) => void;
-    startHosting: (hostName: string, adventureId?: string, adventureName?: string, system?: string) => void;
+    startHosting: (hostName: string, adventureId?: string, adventureName?: string, system?: string, settings?: { startingLevel?: number }) => void;
     broadcast: (msg: PeerMessage) => void;
     username: string;
     isConnected: boolean;
@@ -66,6 +66,8 @@ export interface MultiplayerContextState {
     currentAdventureId: string | null;
     currentAdventureName: string | null;
     roomSystem: string;
+    roomSettings: { startingLevel: number };
+    updateRoomSettings: (settings: { startingLevel?: number }) => void;
     hostAdventureId: (id: string) => void;
     connectedPlayersData: Record<string, { name: string; character: Character; peerId: string; isOnline?: boolean; isHost?: boolean }>;
     broadcastCharacterUpdate: (character: Character) => void;
@@ -154,6 +156,7 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
         }
         return 'dnd55e';
     });
+    const [roomSettings, setRoomSettings] = useState<{ startingLevel: number }>({ startingLevel: 1 });
     const [serverUrl] = useState<string>(getDefaultServerUrl);
 
     const socketRef = useRef<Socket | null>(null);
@@ -171,6 +174,9 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
     const roomSystemRef = useRef<string>(roomSystem);
     useEffect(() => { roomSystemRef.current = roomSystem; }, [roomSystem]);
+
+    const roomSettingsRef = useRef<{ startingLevel: number }>(roomSettings);
+    useEffect(() => { roomSettingsRef.current = roomSettings; }, [roomSettings]);
 
     const pendingExplicitJoinRef = useRef(false);
     const isJoinedRoomRef = useRef(false);
@@ -343,6 +349,12 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
             setRoomSystem(state.system);
         }
 
+        if (state.settings) {
+            console.log('[Socket] Setting roomSettings from server state:', state.settings);
+            roomSettingsRef.current = state.settings;
+            setRoomSettings(state.settings);
+        }
+
         if (state.gameState) {
             applyGameState(state.gameState, forHost);
         }
@@ -377,7 +389,8 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
             hostToken: isHostRef.current ? (hostTokenRef.current || undefined) : undefined,
             character: myCharacterRef.current,
             userId: myId,
-            system: roomSystemRef.current || undefined
+            system: roomSystemRef.current || undefined,
+            settings: isHostRef.current ? (roomSettingsRef.current || undefined) : undefined
         }, (response: any) => {
             if (response?.success) {
                 isJoinedRoomRef.current = true;
@@ -390,6 +403,11 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
                 if (response.hostToken) {
                     persistHostToken(response.hostToken);
+                }
+
+                if (response.settings) {
+                    roomSettingsRef.current = response.settings;
+                    setRoomSettings(response.settings);
                 }
                 if (response.system) {
                     roomSystemRef.current = response.system;
@@ -653,6 +671,14 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
             window.location.reload();
         });
 
+        socket.on('room_settings_updated', (data: { roomId: string; settings: { startingLevel: number } }) => {
+            if (data?.settings) {
+                console.log('[Socket] Room settings updated in real-time:', data.settings);
+                roomSettingsRef.current = data.settings;
+                setRoomSettings(data.settings);
+            }
+        });
+
         socket.on('force_refresh', () => {
             alert('O Mestre solicitou recarregamento da versão do jogo.');
             window.location.reload();
@@ -842,7 +868,13 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
         }
     }, [myId, serverUrl, initSocket, handleRoomState, clearRejoinTimer, persistHostToken, scheduleHostReconnectedSync]);
 
-    const startHosting = async (hostName: string, _initialAdventureId = 'default', initialAdventureName = 'Aventura Padrão', system = 'dnd55e') => {
+    const startHosting = async (
+        hostName: string,
+        _initialAdventureId = 'default',
+        initialAdventureName = 'Aventura Padrão',
+        system = 'dnd55e',
+        settings?: { startingLevel?: number }
+    ) => {
         clearRejoinTimer();
         clearHostReconnectSyncTimer();
         rejoinRetryCountRef.current = 0;
@@ -853,6 +885,10 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
         setPeerError(null);
 
         const roomId = (_initialAdventureId && _initialAdventureId !== 'default') ? _initialAdventureId : myId;
+
+        const effectiveSettings = settings ? { startingLevel: settings.startingLevel || 1 } : roomSettingsRef.current;
+        roomSettingsRef.current = effectiveSettings;
+        setRoomSettings(effectiveSettings);
 
         usernameRef.current = hostName;
         isHostRef.current = true;
@@ -875,7 +911,8 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
                 hostToken: hostTokenRef.current || undefined,
                 character: null,
                 userId: myId,
-                system
+                system,
+                settings: effectiveSettings
             }, (response: any) => {
                 pendingExplicitJoinRef.current = false;
                 setIsConnecting(false);
@@ -886,6 +923,11 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
                     setPeerError(null);
                     setIsConnected(true);
                     setConnectionState('connected');
+
+                    if (response.settings) {
+                        roomSettingsRef.current = response.settings;
+                        setRoomSettings(response.settings);
+                    }
 
                     const finalHostToken = response.hostToken || hostTokenRef.current || null;
                     if (finalHostToken) {
@@ -1168,6 +1210,21 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
         window.dispatchEvent(new CustomEvent('rpg_room_closed', { detail: { reason: 'Você encerrou a mesa.' } }));
     }, [clearRejoinTimer, clearHostReconnectSyncTimer]);
 
+    const updateRoomSettings = useCallback((newSettings: { startingLevel?: number }) => {
+        const roomId = currentAdventureIdRef.current;
+        if (!socketRef.current || !roomId) return;
+        socketRef.current.emit('update_room_settings', {
+            roomId,
+            hostToken: hostTokenRef.current,
+            settings: newSettings
+        }, (res: any) => {
+            if (res?.success && res.settings) {
+                roomSettingsRef.current = res.settings;
+                setRoomSettings(res.settings);
+            }
+        });
+    }, []);
+
     const onMessage = useCallback((callback: (data: PeerMessage) => void) => {
         messageListenersRef.current.add(callback);
         return () => {
@@ -1192,6 +1249,8 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
             currentAdventureId,
             currentAdventureName,
             roomSystem,
+            roomSettings,
+            updateRoomSettings,
             hostAdventureId,
             connectedPlayersData,
             broadcastCharacterUpdate,

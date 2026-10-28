@@ -1,7 +1,7 @@
 import React from 'react';
 import { usePeer } from '../multiplayer/SocketContext';
 import { Soundboard } from '../audio/Soundboard';
-import { RefreshCw, Shield, Copy, Check, Link2, Trash2, FileText, Users, UserCheck, MapPin, TrendingUp, BookOpen, Download, ChevronDown, ChevronUp } from 'lucide-react';
+import { RefreshCw, Shield, Copy, Check, Link2, Trash2, FileText, Users, UserCheck, MapPin, TrendingUp, BookOpen, Download, ChevronDown, ChevronUp, Minus, Plus } from 'lucide-react';
 import { getMinXPForLevel, regenerateCharacterStats, type Character } from '../character/characterTypes';
 import { playSynthSound } from '../audio/audioSynth';
 
@@ -188,11 +188,26 @@ const CampaignJournalCard: React.FC<CampaignJournalCardProps> = ({
 };
 
 export const GMScreen: React.FC = () => {
-    const { connectedPlayersData, removePlayer, peerId, triggerForceRefresh, currentAdventureId, updateRemotePlayerCharacter } = usePeer();
-    const { currentAdventure, updateAdventureJournal, downloadCampaignBackup } = useAdventure();
+    const { connectedPlayersData, removePlayer, peerId, triggerForceRefresh, currentAdventureId, updateRemotePlayerCharacter, roomSettings, updateRoomSettings } = usePeer();
+    const { currentAdventure, updateAdventureJournal, downloadCampaignBackup, updateAdventurePatch } = useAdventure();
     const [editingPlayer, setEditingPlayer] = React.useState<{ peerId: string; name: string; character: any } | null>(null);
     const [copiedCode, setCopiedCode] = React.useState(false);
     const [copiedLink, setCopiedLink] = React.useState(false);
+
+    const currentStartingLevel = roomSettings?.startingLevel || currentAdventure?.settings?.startingLevel || 1;
+
+    const handleUpdateStartingLevel = async (newLevel: number) => {
+        const clamped = Math.max(1, Math.min(20, newLevel));
+        updateRoomSettings({ startingLevel: clamped });
+        if (currentAdventure) {
+            await updateAdventurePatch({
+                settings: {
+                    ...(currentAdventure.settings || {}),
+                    startingLevel: clamped
+                }
+            });
+        }
+    };
 
     const { addToken, updateToken, tokens } = useMap();
     const { combatState, updateCombatant } = useCombat();
@@ -461,6 +476,107 @@ export const GMScreen: React.FC = () => {
                         {copiedLink ? <Check size={13} /> : <Link2 size={13} />}
                         <span>{copiedLink ? 'Link Copiado!' : 'Copiar Link'}</span>
                     </button>
+                </div>
+            </div>
+
+            {/* CARD DE CONFIGURAÇÃO DE NÍVEL INICIAL */}
+            <div style={{
+                background: 'linear-gradient(135deg, rgba(20, 22, 30, 0.95) 0%, rgba(12, 14, 20, 0.95) 100%)',
+                border: '1px solid rgba(255, 215, 0, 0.3)',
+                borderRadius: '10px',
+                padding: '14px',
+                marginBottom: '16px',
+                boxShadow: '0 4px 16px rgba(0,0,0,0.4)'
+            }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <span style={{ fontSize: '0.82rem', color: '#ffd700', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <TrendingUp size={14} color="#ffd700" />
+                        <span>Nível Inicial da Campanha</span>
+                    </span>
+                    <span style={{
+                        fontSize: '0.82rem',
+                        fontWeight: 'bold',
+                        color: '#ffd700',
+                        background: 'rgba(255, 215, 0, 0.15)',
+                        border: '1px solid #ffd700',
+                        padding: '2px 10px',
+                        borderRadius: '12px'
+                    }}>
+                        Nível {currentStartingLevel}
+                    </span>
+                </div>
+
+                <p style={{ margin: '0 0 10px 0', fontSize: '0.78rem', color: '#94a3b8' }}>
+                    Ajuste o nível inicial para novos personagens criados nesta mesa. (Fichas já existentes mantêm seus níveis atuais).
+                </p>
+
+                {/* Stepper Controls */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+                    <button
+                        type="button"
+                        onClick={() => handleUpdateStartingLevel(currentStartingLevel - 1)}
+                        disabled={currentStartingLevel <= 1}
+                        style={{
+                            width: '36px', height: '36px', borderRadius: '6px',
+                            background: currentStartingLevel <= 1 ? '#222' : '#333344',
+                            border: '1px solid #555', color: currentStartingLevel <= 1 ? '#666' : '#fff',
+                            fontSize: '1.1rem', cursor: currentStartingLevel <= 1 ? 'not-allowed' : 'pointer',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center'
+                        }}
+                        title="Diminuir Nível Inicial"
+                    >
+                        <Minus size={14} />
+                    </button>
+
+                    <input
+                        type="range"
+                        min={1}
+                        max={20}
+                        value={currentStartingLevel}
+                        onChange={e => handleUpdateStartingLevel(parseInt(e.target.value) || 1)}
+                        style={{ flex: 1, accentColor: '#ffd700', cursor: 'pointer' }}
+                    />
+
+                    <button
+                        type="button"
+                        onClick={() => handleUpdateStartingLevel(currentStartingLevel + 1)}
+                        disabled={currentStartingLevel >= 20}
+                        style={{
+                            width: '36px', height: '36px', borderRadius: '6px',
+                            background: currentStartingLevel >= 20 ? '#222' : '#333344',
+                            border: '1px solid #555', color: currentStartingLevel >= 20 ? '#666' : '#fff',
+                            fontSize: '1.1rem', cursor: currentStartingLevel >= 20 ? 'not-allowed' : 'pointer',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center'
+                        }}
+                        title="Aumentar Nível Inicial"
+                    >
+                        <Plus size={14} />
+                    </button>
+                </div>
+
+                {/* Quick Select Chips */}
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                    {[1, 3, 5, 10, 15, 20].map(lvl => (
+                        <button
+                            key={lvl}
+                            type="button"
+                            onClick={() => handleUpdateStartingLevel(lvl)}
+                            style={{
+                                flex: '1 1 auto',
+                                padding: '4px 8px',
+                                fontSize: '0.72rem',
+                                fontWeight: currentStartingLevel === lvl ? 'bold' : 'normal',
+                                borderRadius: '4px',
+                                border: currentStartingLevel === lvl ? '1px solid #ffd700' : '1px solid rgba(255,255,255,0.15)',
+                                background: currentStartingLevel === lvl ? 'rgba(255, 215, 0, 0.2)' : 'rgba(255,255,255,0.05)',
+                                color: currentStartingLevel === lvl ? '#ffd700' : '#ddd',
+                                cursor: 'pointer',
+                                transition: 'all 0.15s ease'
+                            }}
+                        >
+                            {lvl === 1 ? 'Nv. 1' : lvl === 3 ? 'Nv. 3' : lvl === 5 ? 'Nv. 5' : `Nv. ${lvl}`}
+                        </button>
+                    ))}
                 </div>
             </div>
 

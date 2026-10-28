@@ -83,6 +83,19 @@ const rooms = new Map();
 
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
+/**
+ * Sanitiza configurações de sala (ex: nível inicial dos personagens 1 a 20).
+ */
+const sanitizeRoomSettings = (rawSettings) => {
+    if (!isPlainObject(rawSettings)) {
+        return { startingLevel: 1 };
+    }
+    let lvl = parseInt(rawSettings.startingLevel, 10);
+    if (isNaN(lvl) || lvl < 1) lvl = 1;
+    if (lvl > 20) lvl = 20;
+    return { startingLevel: lvl };
+};
+
 /** Texto curto sanitizado (remove caracteres de controle e limita o tamanho). */
 const cleanString = (v, max) => {
     if (typeof v !== 'string') return '';
@@ -376,6 +389,7 @@ io.on('connection', (socket) => {
             room = {
                 roomId: cleanedRoomId,
                 system: safeSystem || (cleanedRoomId.toUpperCase().startsWith('WTC') ? 'witcher' : 'dnd55e'),
+                settings: sanitizeRoomSettings(payload.settings),
                 hostToken: crypto.randomUUID(),
                 hostSocketId: socket.id,
                 hostUserId: safeUserId || null,
@@ -473,6 +487,7 @@ io.on('connection', (socket) => {
             room.hostUserId = safeUserId || room.hostUserId;
             room.hostName = safeName || room.hostName;
             if (safeSystem) room.system = safeSystem;
+            if (payload.settings) room.settings = sanitizeRoomSettings(payload.settings);
         }
 
         const memberData = {
@@ -498,6 +513,7 @@ io.on('connection', (socket) => {
             success: true,
             roomId: cleanedRoomId,
             system: room.system,
+            settings: room.settings || { startingLevel: 1 },
             isHost: isAuthenticatedHost,
             hostName: room.hostName,
             members: currentMembers,
@@ -765,7 +781,45 @@ io.on('connection', (socket) => {
         }
     });
 
-    // 7. DISCONNECT
+    // 7. ATUALIZAR CONFIGURAÇÕES DA SALA (Host Only, ex: startingLevel)
+    on('update_room_settings', (payload, reply) => {
+        const hasCallback = typeof reply === 'function';
+        if (!isPlainObject(payload)) {
+            if (hasCallback) reply({ success: false, error: 'Payload inválido.' });
+            return;
+        }
+
+        const cleanedRoomId = cleanRoomId(payload.roomId);
+        if (!cleanedRoomId) {
+            if (hasCallback) reply({ success: false, error: 'Código de sala inválido.' });
+            return;
+        }
+
+        const room = rooms.get(cleanedRoomId);
+        if (!room) {
+            if (hasCallback) reply({ success: false, error: 'Sala não encontrada.' });
+            return;
+        }
+
+        if (!tokensMatch(room.hostToken, payload.hostToken) && !isRoomHost(room, socket.id)) {
+            console.warn(`[Socket] Unauthorized update_room_settings attempt for room ${cleanedRoomId} by ${socket.id}`);
+            if (hasCallback) reply({ success: false, error: 'Apenas o Mestre pode alterar as configurações da sala.' });
+            return;
+        }
+
+        const sanitized = sanitizeRoomSettings(payload.settings);
+        room.settings = { ...(room.settings || {}), ...sanitized };
+        console.log(`[Room ${cleanedRoomId}] Settings updated:`, room.settings);
+
+        io.to(cleanedRoomId).emit('room_settings_updated', {
+            roomId: cleanedRoomId,
+            settings: room.settings
+        });
+
+        if (hasCallback) reply({ success: true, settings: room.settings });
+    });
+
+    // 8. DISCONNECT
     socket.on('disconnect', () => {
         console.log(`[Socket] Client disconnected: ${socket.id}`);
         for (const roomId of joinedRooms) {
