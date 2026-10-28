@@ -6,6 +6,10 @@ import type { Monster } from '../features/monsters/monsterTypes';
 
 // --- Interfaces ---
 
+export interface CampaignSettings {
+    startingLevel?: number;
+}
+
 export interface Campaign {
     id: string; // UUID or Room Code (e.g. DND-8K2P)
     name: string;
@@ -18,6 +22,7 @@ export interface Campaign {
     activeSceneId?: string | null; // Cena atualmente ativa nesta campanha
     combatState?: any; // Estado do combate ativo (isActive, combatants, activeTurnId, round, currentTargetId)
     chatHistory?: any[]; // Histórico recente de mensagens de chat persistido na campanha
+    settings?: CampaignSettings;
 }
 
 export interface MapData {

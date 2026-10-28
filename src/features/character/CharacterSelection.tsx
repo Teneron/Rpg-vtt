@@ -17,9 +17,11 @@ const normalizeSystemId = (sys?: string): 'witcher' | 'dnd55e' => {
 };
 
 export const CharacterSelection: React.FC<CharacterSelectionProps> = ({ onSelect }) => {
-    const { username, currentAdventureId, currentAdventureName, roomSystem } = usePeer();
+    const { username, currentAdventureId, currentAdventureName, roomSystem, roomSettings } = usePeer();
     const { currentAdventure } = useAdventure();
     const [characters, setCharacters] = useState<CharacterSummary[]>([]);
+
+    const startingLevel = roomSettings?.startingLevel || currentAdventure?.settings?.startingLevel || 1;
 
     // Detect active game system strictly (witcher if room begins with WTC- or adventure is witcher, otherwise dnd55e)
     const activeSystem: 'witcher' | 'dnd55e' = (
@@ -171,6 +173,19 @@ export const CharacterSelection: React.FC<CharacterSelectionProps> = ({ onSelect
                     }}>
                         {activeSystem === 'witcher' ? 'The Witcher' : 'D&D 5.5e'}
                     </span>
+                    {startingLevel > 1 && (
+                        <span className="info-level" style={{
+                            padding: '2px 8px',
+                            borderRadius: '4px',
+                            background: 'rgba(255, 215, 0, 0.15)',
+                            border: '1px solid #ffd700',
+                            color: '#ffd700',
+                            fontWeight: 'bold',
+                            fontSize: '0.85rem'
+                        }}>
+                            Nível Inicial: {startingLevel}
+                        </span>
+                    )}
                 </div>
             </div>
 
@@ -197,7 +212,7 @@ export const CharacterSelection: React.FC<CharacterSelectionProps> = ({ onSelect
                     }}
                 >
                     <Plus size={18} />
-                    <span>Criar Novo Personagem</span>
+                    <span>Criar Novo Personagem {startingLevel > 1 ? `(Nível ${startingLevel})` : ''}</span>
                 </button>
 
                 <button

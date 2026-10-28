@@ -176,6 +176,7 @@ export interface Character {
         };
     };
     pendingLevelUp?: boolean;
+    levelUpTarget?: number;
     lastModified?: number; // Timestamp for Conflict Resolution
     system?: string; // Optional game system identifier (e.g. "dnd5e", "witcher", "cyberpunk")
 }
@@ -641,7 +642,8 @@ export const regenerateCharacterStats = (char: Character): Character => {
         attacks: newAttacks,
         spellSaveDC: newSpellSaveDC,
         spellAttackBonus: newSpellAttackBonus,
-        pendingLevelUp: char.pendingLevelUp || false
+        pendingLevelUp: char.pendingLevelUp || false,
+        levelUpTarget: char.levelUpTarget
     };
 };
 
