@@ -1,5 +1,8 @@
 import type { RuleSection } from '../../RulebookViewer';
 import { ZoomableImage } from '../../../../components/ZoomableImage';
+import { DND55E_DMG_MAGIC_ITEMS_SECTIONS } from './dmgMagicItemsExpanded';
+import { DND55E_DMG_TREASURE_SECTIONS } from './dmgTreasureTables';
+import { DND55E_DMG_HAZARDS_SECTIONS } from './dmgHazardsTrapsRules';
 
 export const DND55E_GM_SECTIONS: RuleSection[] = [
     // =========================================================================
@@ -686,34 +689,12 @@ export const DND55E_GM_SECTIONS: RuleSection[] = [
         )
     },
 
-    // 19. CATÁLOGO DE ITENS MÁGICOS ICÔNICOS
-    {
-        id: 'dmg_magic_items_catalog',
-        title: 'Catálogo de Itens Mágicos Icônicos',
-        category: 'Tesouro & Itens Mágicos (Cap. 7)',
-        content: (
-            <div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '12px' }}>
-                    <div style={{ background: '#181b2a', padding: '12px', borderRadius: '6px', borderLeft: '3px solid #38bdf8' }}>
-                        <strong style={{ color: '#38bdf8' }}>Arma +1 / +2 / +3 (Incomum a Muito Raro):</strong> Bônus mágico nas jogadas de ataque e dano que supera resistências normais.
-                    </div>
-                    <div style={{ background: '#181b2a', padding: '12px', borderRadius: '6px', borderLeft: '3px solid #38bdf8' }}>
-                        <strong style={{ color: '#38bdf8' }}>Armadura de Adamante (Incomum):</strong> Converte qualquer Acerto Crítico sofrido pelo portador em um acerto normal!
-                    </div>
-                    <div style={{ background: '#181b2a', padding: '12px', borderRadius: '6px', borderLeft: '3px solid #38bdf8' }}>
-                        <strong style={{ color: '#38bdf8' }}>Botas Aladas (Winged Boots - Incomum):</strong> Concede Deslocamento de Voo igual à sua caminhada por até 4 horas acumuladas por dia.
-                    </div>
-                    <div style={{ background: '#181b2a', padding: '12px', borderRadius: '6px', borderLeft: '3px solid #38bdf8' }}>
-                        <strong style={{ color: '#38bdf8' }}>Bolsa de Carga (Bag of Holding - Incomum):</strong> Dimensão de bolso que suporta até 250 kg pesando apenas 7 kg externamente.
-                    </div>
-                    <div style={{ background: '#181b2a', padding: '12px', borderRadius: '6px', borderLeft: '3px solid #38bdf8' }}>
-                        <strong style={{ color: '#38bdf8' }}>Manto de Invisibilidade (Lendário):</strong> Permite puxar o capuz como ação para se tornar invisível por até 2 horas por dia.
-                    </div>
-                    <div style={{ background: '#181b2a', padding: '12px', borderRadius: '6px', borderLeft: '3px solid #38bdf8' }}>
-                        <strong style={{ color: '#38bdf8' }}>Varinha de Mísseis Mágicos (Incomum):</strong> 7 cargas recarregadas ao amanhecer para conjurar rajadas teleguiadas de força sem teste de ataque!
-                    </div>
-                </div>
-            </div>
-        )
-    }
+        // 19. TABELAS DE TESOUROS DO MESTRE (ND, PILHAS, GEMAS & TABELAS A-I)
+    ...DND55E_DMG_TREASURE_SECTIONS,
+
+    // 20. PERIGOS, ARMADILHAS, COBERTURA & DOENÇAS CANÔNICAS (DMG)
+    ...DND55E_DMG_HAZARDS_SECTIONS,
+
+    // 21. CATÁLOGO COMPLETO DE ITENS MÁGICOS, SINTONIZAÇÃO & RELÍQUIAS
+    ...DND55E_DMG_MAGIC_ITEMS_SECTIONS
 ];
