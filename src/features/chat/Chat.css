@@ -43,14 +43,11 @@
 /* Chat Window Container */
 .chat-window {
     position: fixed;
-    bottom: calc(var(--chat-toggle-h, 60px) + 30px);
+    bottom: 90px;
     /* Above the toggle button */
-    right: var(--gap-overlay, 16px);
-    width: var(--chat-w, min(350px, calc(100vw - 32px)));
-    /* Nunca ultrapassa o espaco entre o header e o botao de chat */
-    height: min(500px, calc(100vh - var(--header-h, 56px) - var(--chat-toggle-h, 60px) - 50px));
-    height: min(500px, calc(100dvh - var(--header-h, 56px) - var(--chat-toggle-h, 60px) - 50px));
-    max-height: calc(100dvh - var(--header-h, 56px) - 24px);
+    right: 20px;
+    width: 350px;
+    height: 500px;
     background: rgba(20, 20, 30, 0.95);
     border: 1px solid rgba(255, 215, 0, 0.3);
     border-radius: 12px;

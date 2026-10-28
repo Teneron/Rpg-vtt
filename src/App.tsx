@@ -441,7 +441,7 @@ function AppContent() {
   return (
     <div className="app-container">
       <header className="app-header">
-        <div className="header-left">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
           <div className="app-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Shield size={18} color="#c5a059" />
             <span>RPG Tabletop</span>
@@ -473,7 +473,7 @@ function AppContent() {
               }}
             >
               <Shield size={13} color="#ffd700" />
-              <span className="room-code-label" style={{ fontSize: '0.75rem', color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              <span style={{ fontSize: '0.75rem', color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                 {isHost ? 'Mesa:' : 'Sala:'}
               </span>
               <span style={{
@@ -535,10 +535,10 @@ function AppContent() {
         </div>
 
         {/* NAVEGAÇÃO PROFISSIONAL COM ÍCONES VETORIAIS */}
-        <nav className="nav-tabs header-nav-primary">
-          <button className={`nav-tab ${activeTab === 'character' ? 'active' : ''}`} onClick={() => handleTabSelect('character')} title="Ficha" aria-label="Ficha">
+        <nav className="nav-tabs header-nav-primary" style={{ margin: '0 20px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <button className={`nav-tab ${activeTab === 'character' ? 'active' : ''}`} onClick={() => handleTabSelect('character')}>
             <User size={15} />
-            <span className="nav-label">Ficha</span>
+            <span>Ficha</span>
             {!isHost && myCharacter?.pendingLevelUp && (
               <span style={{
                 background: '#ffd700',
@@ -557,42 +557,43 @@ function AppContent() {
               </span>
             )}
           </button>
-          <button className={`nav-tab ${activeTab === 'dice' ? 'active' : ''}`} onClick={() => handleTabSelect('dice')} title="Dados" aria-label="Dados">
+          <button className={`nav-tab ${activeTab === 'dice' ? 'active' : ''}`} onClick={() => handleTabSelect('dice')}>
             <Dices size={15} />
-            <span className="nav-label">Dados</span>
+            <span>Dados</span>
           </button>
-          <button className={`nav-tab ${activeTab === 'combat' ? 'active' : ''}`} onClick={() => handleTabSelect('combat')} title="Combate" aria-label="Combate">
+          <button className={`nav-tab ${activeTab === 'combat' ? 'active' : ''}`} onClick={() => handleTabSelect('combat')}>
             <Swords size={15} />
-            <span className="nav-label">Combate</span>
+            <span>Combate</span>
           </button>
           {isHost && (
-            <button className={`nav-tab ${activeTab === 'bestiary' ? 'active' : ''}`} onClick={() => handleTabSelect('bestiary')} title="Monstros" aria-label="Monstros">
+            <button className={`nav-tab ${activeTab === 'bestiary' ? 'active' : ''}`} onClick={() => handleTabSelect('bestiary')}>
               <Skull size={15} />
-              <span className="nav-label">Monstros</span>
+              <span>Monstros</span>
             </button>
           )}
           {isHost && (
-            <button className={`nav-tab ${activeTab === 'gm-screen' ? 'active' : ''}`} onClick={() => handleTabSelect('gm-screen')} title="Painel GM" aria-label="Painel GM">
+            <button className={`nav-tab ${activeTab === 'gm-screen' ? 'active' : ''}`} onClick={() => handleTabSelect('gm-screen')}>
               <Shield size={15} />
-              <span className="nav-label">Painel GM</span>
+              <span>Painel GM</span>
             </button>
           )}
         </nav>
-        <nav className="nav-tabs header-nav-rules">
-          <button className={`nav-tab ${activeTab === 'rules-player' ? 'active' : ''}`} onClick={() => handleTabSelect('rules-player')} title="Regras" aria-label="Regras">
+        <nav className="nav-tabs header-nav-rules" style={{ margin: '0 20px', borderLeft: '1px solid #333', paddingLeft: '20px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <button className={`nav-tab ${activeTab === 'rules-player' ? 'active' : ''}`} onClick={() => handleTabSelect('rules-player')}>
             <BookOpen size={15} />
-            <span className="nav-label">Regras</span>
+            <span>Regras</span>
           </button>
           {isHost && (
-            <button className={`nav-tab ${activeTab === 'rules-gm' ? 'active' : ''}`} onClick={() => handleTabSelect('rules-gm')} title="Mestre" aria-label="Mestre">
+            <button className={`nav-tab ${activeTab === 'rules-gm' ? 'active' : ''}`} onClick={() => handleTabSelect('rules-gm')}>
               <Scroll size={15} />
-              <span className="nav-label">Mestre</span>
+              <span>Mestre</span>
             </button>
           )}
         </nav>
 
         {/* Map Tools & Exit Controls (Right Side) */}
-        <div className="header-right">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+          <MapHeaderControls />
           <button
             className="glass-button small"
             onClick={toggleFullscreen}
@@ -620,7 +621,7 @@ function AppContent() {
               title="Encerrar mesa e fechar sala para todos"
             >
               <LogOut size={14} />
-              <span className="hdr-exit-label">Encerrar Mesa</span>
+              <span>Encerrar Mesa</span>
             </button>
           ) : (
             <button
@@ -642,7 +643,7 @@ function AppContent() {
               title="Sair da sala"
             >
               <LogOut size={14} />
-              <span className="hdr-exit-label">Sair da Sala</span>
+              <span>Sair da Sala</span>
             </button>
           )}
         </div>
@@ -654,8 +655,7 @@ function AppContent() {
           onClick={() => setActiveTab('character')}
           style={{
             position: 'fixed',
-            top: 'calc(var(--header-h) + 8px)',
-            maxWidth: 'calc(100vw - 32px)',
+            top: '56px',
             left: '50%',
             transform: 'translateX(-50%)',
             background: 'linear-gradient(135deg, rgba(255, 215, 0, 0.95) 0%, rgba(184, 134, 11, 0.95) 100%)',
@@ -742,7 +742,6 @@ function AppContent() {
           )}
 
           <ErrorBoundary name="BattleMap"><BattleMap /></ErrorBoundary>
-          <ErrorBoundary name="MapToolbar"><MapHeaderControls /></ErrorBoundary>
           <ErrorBoundary name="DiceOverlay">
             <Suspense fallback={null}>
               <DiceOverlay />
@@ -756,7 +755,7 @@ function AppContent() {
         {/* --- CENTRAL CHARACTER SHEET MODAL --- */}
         {activeTab === 'character' && selectedCharacterId && (
           <div className="modal-overlay" style={{
-            position: 'fixed', top: 'var(--header-h)', left: 0, right: 0, bottom: 0,
+            position: 'fixed', top: '50px', left: 0, width: '100vw', height: 'calc(100vh - 50px)',
             background: 'rgba(0,0,0,0.2)',
             display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000
           }}>
@@ -790,7 +789,7 @@ function AppContent() {
         {/* --- RULEBOOKS MODAL --- */}
         {(activeTab === 'rules-player' || activeTab === 'rules-gm') && (
           <div className="modal-overlay" style={{
-            position: 'fixed', top: 'var(--header-h)', left: 0, right: 0, bottom: 0,
+            position: 'fixed', top: '50px', left: 0, width: '100vw', height: 'calc(100vh - 50px)',
             background: 'rgba(0,0,0,0.8)',
             display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000
           }}>

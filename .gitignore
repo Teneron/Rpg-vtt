@@ -29,6 +29,3 @@ dist-ssr
 # Scratch extraction dumps
 extracted_*.json
 find_emojis.py
-scripts/layout-shots
-scripts/_*
-
