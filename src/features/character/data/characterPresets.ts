@@ -41,12 +41,12 @@ export const CHARACTER_PRESETS: CharacterPreset[] = [
         spellSaveDC: 13,
         spellAttackBonus: 0,
         attributes: {
-            str: { name: 'Força (+3)', value: 16, modifier: 3, saveProficiency: true },
-            dex: { name: 'Destreza (+1)', value: 12, modifier: 1, saveProficiency: false },
-            con: { name: 'Constituição (+3)', value: 16, modifier: 3, saveProficiency: true },
-            int: { name: 'Inteligência (+0)', value: 10, modifier: 0, saveProficiency: false },
-            wis: { name: 'Sabedoria (+1)', value: 13, modifier: 1, saveProficiency: false },
-            cha: { name: 'Carisma (-1)', value: 8, modifier: -1, saveProficiency: false }
+            str: { name: 'Força', value: 16, modifier: 3, saveProficiency: true },
+            dex: { name: 'Destreza', value: 12, modifier: 1, saveProficiency: false },
+            con: { name: 'Constituição', value: 16, modifier: 3, saveProficiency: true },
+            int: { name: 'Inteligência', value: 10, modifier: 0, saveProficiency: false },
+            wis: { name: 'Sabedoria', value: 13, modifier: 1, saveProficiency: false },
+            cha: { name: 'Carisma', value: 8, modifier: -1, saveProficiency: false }
         },
         skills: [
             { name: 'Atletismo', attribute: 'str', proficient: true, expertise: false, value: 5 },
@@ -116,12 +116,12 @@ export const CHARACTER_PRESETS: CharacterPreset[] = [
         spellSaveDC: 13, // 8 + 2 (PB) + 3 (INT)
         spellAttackBonus: 5, // 2 (PB) + 3 (INT)
         attributes: {
-            str: { name: 'Força (-1)', value: 8, modifier: -1, saveProficiency: false },
-            dex: { name: 'Destreza (+2)', value: 14, modifier: 2, saveProficiency: false },
-            con: { name: 'Constituição (+2)', value: 14, modifier: 2, saveProficiency: false },
-            int: { name: 'Inteligência (+3)', value: 16, modifier: 3, saveProficiency: true },
-            wis: { name: 'Sabedoria (+1)', value: 12, modifier: 1, saveProficiency: true },
-            cha: { name: 'Carisma (+0)', value: 10, modifier: 0, saveProficiency: false }
+            str: { name: 'Força', value: 8, modifier: -1, saveProficiency: false },
+            dex: { name: 'Destreza', value: 14, modifier: 2, saveProficiency: false },
+            con: { name: 'Constituição', value: 14, modifier: 2, saveProficiency: false },
+            int: { name: 'Inteligência', value: 16, modifier: 3, saveProficiency: true },
+            wis: { name: 'Sabedoria', value: 12, modifier: 1, saveProficiency: true },
+            cha: { name: 'Carisma', value: 10, modifier: 0, saveProficiency: false }
         },
         skills: [
             { name: 'Arcanismo', attribute: 'int', proficient: true, expertise: false, value: 5 },
@@ -194,12 +194,12 @@ export const CHARACTER_PRESETS: CharacterPreset[] = [
         spellSaveDC: 12,
         spellAttackBonus: 0,
         attributes: {
-            str: { name: 'Força (+0)', value: 10, modifier: 0, saveProficiency: false },
-            dex: { name: 'Destreza (+4)', value: 18, modifier: 4, saveProficiency: true },
-            con: { name: 'Constituição (+2)', value: 14, modifier: 2, saveProficiency: false },
-            int: { name: 'Inteligência (+1)', value: 12, modifier: 1, saveProficiency: true },
-            wis: { name: 'Sabedoria (+1)', value: 12, modifier: 1, saveProficiency: false },
-            cha: { name: 'Carisma (+0)', value: 10, modifier: 0, saveProficiency: false }
+            str: { name: 'Força', value: 10, modifier: 0, saveProficiency: false },
+            dex: { name: 'Destreza', value: 18, modifier: 4, saveProficiency: true },
+            con: { name: 'Constituição', value: 14, modifier: 2, saveProficiency: false },
+            int: { name: 'Inteligência', value: 12, modifier: 1, saveProficiency: true },
+            wis: { name: 'Sabedoria', value: 12, modifier: 1, saveProficiency: false },
+            cha: { name: 'Carisma', value: 10, modifier: 0, saveProficiency: false }
         },
         skills: [
             { name: 'Acrobacia', attribute: 'dex', proficient: true, expertise: false, value: 6 },

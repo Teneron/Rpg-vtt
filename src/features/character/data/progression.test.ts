@@ -182,4 +182,14 @@ describe('progression.ts - 1 to 20 rules engine', () => {
             }
         }
     });
+
+    it('ensures level 3 is strictly NOT an ASI level for any class (subclasses only, no stat boost)', () => {
+        const allClasses = ['barbarian', 'bard', 'cleric', 'druid', 'fighter', 'monk', 'paladin', 'ranger', 'rogue', 'sorcerer', 'warlock', 'wizard', 'witcher'];
+        for (const classId of allClasses) {
+            expect(isAsiLevel(classId, 3)).toBe(false);
+            expect(isAsiLevel(classId, 1)).toBe(false);
+            expect(isAsiLevel(classId, 2)).toBe(false);
+            expect(isAsiLevel(classId, 4)).toBe(true);
+        }
+    });
 });

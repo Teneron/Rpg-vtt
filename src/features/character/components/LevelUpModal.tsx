@@ -392,20 +392,22 @@ export const LevelUpModal: React.FC<LevelUpModalProps> = ({ character, onUpdate,
             nextChar.spells = [...(character.spells || []), ...newSpells];
         }
 
-        // 8. Add Feat / ASI if applicable
-        if (isAsiLevel) {
+        // 8. Add Feat / ASI if applicable (STRICT: Never applied at Level 3 or non-ASI levels)
+        if (isAsiLevel && newLevel !== 3) {
             if (progressionType === 'feat' && selectedFeat) {
                 nextChar.feats = [...(character.feats || []), selectedFeat];
             } else if (progressionType === 'asi') {
                 const newAttrs = JSON.parse(JSON.stringify(nextChar.attributes));
                 if (asiTargets.attr2 === null) {
-                    newAttrs[asiTargets.attr1].value += 2;
+                    newAttrs[asiTargets.attr1].value = Math.min(20, (newAttrs[asiTargets.attr1].value || 10) + 2);
                     newAttrs[asiTargets.attr1].modifier = calculateModifier(newAttrs[asiTargets.attr1].value);
                 } else {
-                    newAttrs[asiTargets.attr1].value += 1;
+                    newAttrs[asiTargets.attr1].value = Math.min(20, (newAttrs[asiTargets.attr1].value || 10) + 1);
                     newAttrs[asiTargets.attr1].modifier = calculateModifier(newAttrs[asiTargets.attr1].value);
-                    newAttrs[asiTargets.attr2].value += 1;
-                    newAttrs[asiTargets.attr2].modifier = calculateModifier(newAttrs[asiTargets.attr2].value);
+                    if (asiTargets.attr2) {
+                        newAttrs[asiTargets.attr2].value = Math.min(20, (newAttrs[asiTargets.attr2].value || 10) + 1);
+                        newAttrs[asiTargets.attr2].modifier = calculateModifier(newAttrs[asiTargets.attr2].value);
+                    }
                 }
                 nextChar.attributes = newAttrs;
             }

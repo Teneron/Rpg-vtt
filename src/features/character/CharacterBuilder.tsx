@@ -124,7 +124,19 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
     // =========================================================================
     // ATRIBUTOS DIRETOS (SEM POINT BUY, SEM 4d6)
     // =========================================================================
-    const [baseStats, setBaseStats] = useState<Record<string, number>>({ str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 });
+    const [baseStats, setBaseStats] = useState<Record<string, number>>(() => {
+        if (character?.attributes && character.name && character.name !== 'Novo Personagem') {
+            return {
+                str: character.attributes.str?.value ?? 10,
+                dex: character.attributes.dex?.value ?? 10,
+                con: character.attributes.con?.value ?? 10,
+                int: character.attributes.int?.value ?? 10,
+                wis: character.attributes.wis?.value ?? 10,
+                cha: character.attributes.cha?.value ?? 10
+            };
+        }
+        return { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 };
+    });
 
     // =========================================================================
     // ESCOLHAS INTERNAS DE TALENTOS DE ORIGEM
@@ -640,7 +652,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
         (Object.keys(nextChar.attributes) as Array<keyof Character['attributes']>).forEach(attrKey => {
             const base = baseStats[attrKey] || 10;
             const bonus = getAttributeBonus(attrKey);
-            const total = base + bonus;
+            const total = Math.min(20, Math.max(1, base + bonus));
             nextChar.attributes[attrKey].value = total;
             nextChar.attributes[attrKey].modifier = Math.floor((total - 10) / 2);
         });
@@ -1328,7 +1340,10 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                                     <div>
                                         <h3 style={{ margin: 0 }}>Atributos do Personagem</h3>
                                         <div style={{ fontSize: '0.85rem', color: '#aaa', marginTop: '3px' }}>
-                                            Ajuste os valores dos atributos diretamente ou utilize o Conjunto Padrão.
+                                            Ajuste os valores diretamente ou utilize o Conjunto Padrão (15, 14, 13, 12, 10, 8). Bônus de Antecedente (+2/+1 ou +1/+1/+1) são somados à base.
+                                        </div>
+                                        <div style={{ fontSize: '0.8rem', color: '#64748b', fontStyle: 'italic', marginTop: '2px' }}>
+                                            ℹ️ Aumentos de Atributo (ASI) ocorrem nos níveis 4, 8, 12, 16 e 19. O nível 3 desbloqueia a Subclasse.
                                         </div>
                                     </div>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>

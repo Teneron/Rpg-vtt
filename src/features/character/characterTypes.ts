@@ -466,10 +466,20 @@ export const regenerateCharacterStats = (char: Character): Character => {
         cha: { ...baseAttrs.cha, ...(rawAttrs.cha || {}) }
     }));
 
+    const CANONICAL_ATTR_NAMES: Record<keyof CharacterAttributes, string> = {
+        str: 'Força',
+        dex: 'Destreza',
+        con: 'Constituição',
+        int: 'Inteligência',
+        wis: 'Sabedoria',
+        cha: 'Carisma'
+    };
+
     (Object.keys(newAttrs) as Array<keyof CharacterAttributes>).forEach(key => {
         const val = typeof newAttrs[key].value === 'number' && Number.isFinite(newAttrs[key].value)
             ? newAttrs[key].value
             : 10;
+        newAttrs[key].name = CANONICAL_ATTR_NAMES[key] || (newAttrs[key].name ? newAttrs[key].name.replace(/\s*\([+-]?\d+\)/g, '') : 'Atributo');
         newAttrs[key].value = val;
         newAttrs[key].modifier = calculateModifier(val);
     });
