@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import ReactDOM from 'react-dom';
-import { CLASSES, type Subclass } from './data/classes';
+import { CLASSES } from './data/classes';
 import { RACES, type SubraceData } from './data/races';
 import { BACKGROUNDS } from './data/backgrounds';
 import { SPELLS } from './data/spells';
@@ -15,7 +15,7 @@ import {
 import { ITEMS } from './data/items';
 
 import { SkillDescriptionPreview } from './SkillDescriptionPreview';
-import { X, Dices, Sparkles, Shield, Wrench } from 'lucide-react';
+import { X, Sparkles, Wrench } from 'lucide-react';
 import {
     type Character,
     type CharacterAttributes,
@@ -85,7 +85,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
     const [hoveredSkill, setHoveredSkill] = useState<string | null>(null);
 
     // =========================================================================
-    // ITEM 1: SUBESPÉCIES / LINHAGENS (D&D 2024)
+    // SUBESPÉCIES / LINHAGENS
     // =========================================================================
     const [selectedSubraceId, setSelectedSubraceId] = useState<string>('');
     const [selectedCharacterSize, setSelectedCharacterSize] = useState<'Médio' | 'Pequeno'>('Médio');
@@ -93,28 +93,12 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
     const [selectedHumanBonusFeat, setSelectedHumanBonusFeat] = useState<string>('alert');
 
     // =========================================================================
-    // ITEM 4: SUBCLASSE (QUANDO NÍVEL INICIAL >= 3)
+    // ATRIBUTOS DIRETOS (SEM POINT BUY, SEM 4d6)
     // =========================================================================
-    const [selectedSubclassId, setSelectedSubclassId] = useState<string>('');
+    const [baseStats, setBaseStats] = useState<Record<string, number>>({ str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 });
 
     // =========================================================================
-    // ITEM 4: ROLADOR DE ATRIBUTOS 4d6 (DESCARTE O MENOR)
-    // =========================================================================
-    type StatMethod = 'point_buy' | 'standard_array' | 'rolled_4d6';
-    const [statMethod, setStatMethod] = useState<StatMethod>('point_buy');
-    interface RolledStatEntry {
-        id: number;
-        dice: number[];
-        dropped: number;
-        total: number;
-    }
-    const [rolled4d6List, setRolled4d6List] = useState<RolledStatEntry[]>([]);
-    const [statAssignments, setStatAssignments] = useState<Record<string, number | null>>({
-        str: null, dex: null, con: null, int: null, wis: null, cha: null
-    });
-
-    // =========================================================================
-    // ITEM 2: ESCOLHAS INTERNAS DE TALENTOS DE ORIGEM
+    // ESCOLHAS INTERNAS DE TALENTOS DE ORIGEM
     // =========================================================================
     // Iniciado em Magia (Magic Initiate)
     const [magicInitiateClass, setMagicInitiateClass] = useState<'cleric' | 'druid' | 'wizard'>('wizard');
@@ -132,11 +116,11 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
     const [crafterTools, setCrafterTools] = useState<string[]>([]);
 
     // =========================================================================
-    // ITEM 3: IDIOMAS COMUNS 2024 (PHB p. 43)
+    // IDIOMAS COMUNS (COMUM + 2 ADICIONAIS)
     // =========================================================================
     const [selectedCommonLanguages, setSelectedCommonLanguages] = useState<string[]>([]);
 
-    // D&D 2024 / 5.5e Background Ability Score Increases (+2/+1 or +1/+1/+1 among background's abilityOptions)
+    // Bônus de Atributos do Antecedente (+2/+1 ou +1/+1/+1)
     const [bgBonusMode, setBgBonusMode] = useState<'plus2_plus1' | 'plus1_all'>('plus2_plus1');
     const [bgPlusTwo, setBgPlusTwo] = useState<keyof CharacterAttributes>('str');
     const [bgPlusOne, setBgPlusOne] = useState<keyof CharacterAttributes>('con');
@@ -172,16 +156,6 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
         }
     }, [selectedRaceId]);
 
-    // Keep Subclass in sync with selected Class
-    React.useEffect(() => {
-        const cls = CLASSES.find(c => c.id === selectedClassId);
-        if (cls?.subclasses && cls.subclasses.length > 0) {
-            setSelectedSubclassId(cls.subclasses[0].id);
-        } else {
-            setSelectedSubclassId('');
-        }
-    }, [selectedClassId]);
-
     // Derived Race / Class / Background data
     const selectedClass = React.useMemo(() => CLASSES.find(c => c.id === selectedClassId), [selectedClassId]);
     const selectedRace = React.useMemo(() => RACES.find(r => r.id === selectedRaceId), [selectedRaceId]);
@@ -193,15 +167,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
         return selectedRace.subraces.find(s => s.id === selectedSubraceId) || selectedRace.subraces[0] || null;
     }, [selectedRace, selectedSubraceId]);
 
-    const selectedSubclass: Subclass | null = React.useMemo(() => {
-        if (!selectedClass?.subclasses) return null;
-        return selectedClass.subclasses.find(s => s.id === selectedSubclassId) || selectedClass.subclasses[0] || null;
-    }, [selectedClass, selectedSubclassId]);
-
-    // Base stats
-    const [baseStats, setBaseStats] = useState<Record<string, number>>({ str: 8, dex: 8, con: 8, int: 8, wis: 8, cha: 8 });
     const [viewingProgressionId, setViewingProgressionId] = useState<string | null>(null);
-    const POINTS_MAX = 27;
 
     // Selection State
     const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
@@ -267,7 +233,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
             const race = RACES.find(r => r.id === selectedRaceId);
             return race?.bonus ? ((race.bonus as any)[attrKey] || 0) : 0;
         }
-        // D&D 5.5e (2024) official rules: Bonuses come strictly from Background
+        // Bonuses come strictly from Background
         const bg = BACKGROUNDS.find(b => b.id === selectedBackgroundId);
         const options = bg?.abilityOptions || [];
         if (!options.includes(attrKey as any)) return 0;
@@ -277,7 +243,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
             if (attrKey === bgPlusOne) return 1;
             return 0;
         } else {
-            return 1; // +1 to all 3 eligible ability scores
+            return 1;
         }
     }, [activeSystem, selectedRaceId, selectedBackgroundId, bgBonusMode, bgPlusTwo, bgPlusOne]);
 
@@ -452,7 +418,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
         }
     }, [selectedLanguages, selectedRace]);
 
-    // D&D 2024 Common Languages toggle (2 choices)
+    // Common Languages toggle (2 choices)
     const toggleCommonLanguage = React.useCallback((lang: string) => {
         if (selectedCommonLanguages.includes(lang)) {
             setSelectedCommonLanguages(prev => prev.filter(l => l !== lang));
@@ -514,37 +480,16 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
         }
     }, [selectedFeats]);
 
-    const calculateCost = React.useCallback((score: number) => {
-        if (score <= 8) return 0;
-        if (score === 9) return 1;
-        if (score === 10) return 2;
-        if (score === 11) return 3;
-        if (score === 12) return 4;
-        if (score === 13) return 5;
-        if (score === 14) return 7;
-        if (score === 15) return 9;
-        return 99;
+    // Simple, direct stat modifier
+    const updateBaseStat = React.useCallback((attr: string, delta: number) => {
+        setBaseStats(prev => {
+            const current = prev[attr] ?? 10;
+            const next = Math.max(1, Math.min(20, current + delta));
+            return { ...prev, [attr]: next };
+        });
     }, []);
 
-    const usedPoints = React.useMemo(() =>
-        Object.values(baseStats).reduce((acc, val) => acc + calculateCost(val), 0)
-        , [baseStats, calculateCost]);
-
-    const remainingPoints = POINTS_MAX - usedPoints;
-
-    const updateBaseStat = React.useCallback((attr: string, delta: number) => {
-        const current = baseStats[attr];
-        const next = current + delta;
-        if (next < 8 || next > 15) return;
-
-        const costDiff = calculateCost(next) - calculateCost(current);
-        if (remainingPoints - costDiff < 0) return;
-
-        setBaseStats(prev => ({ ...prev, [attr]: next }));
-    }, [baseStats, remainingPoints, calculateCost]);
-
     const applyStandardArray = React.useCallback(() => {
-        setStatMethod('standard_array');
         const primary = selectedClass?.primaryAbility?.toLowerCase() || '';
         let newStats: Record<string, number>;
         if (/destreza|dex/i.test(primary) && /força|str/i.test(primary)) {
@@ -566,70 +511,8 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
     }, [selectedClass]);
 
     const resetStats = React.useCallback(() => {
-        setStatMethod('point_buy');
-        setBaseStats({ str: 8, dex: 8, con: 8, int: 8, wis: 8, cha: 8 });
+        setBaseStats({ str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 });
     }, []);
-
-    // 4d6 Roll Functionality
-    const roll4d6Stats = React.useCallback(() => {
-        const results: RolledStatEntry[] = [];
-        for (let i = 0; i < 6; i++) {
-            const dice = [
-                Math.floor(Math.random() * 6) + 1,
-                Math.floor(Math.random() * 6) + 1,
-                Math.floor(Math.random() * 6) + 1,
-                Math.floor(Math.random() * 6) + 1,
-            ];
-            const sorted = [...dice].sort((a, b) => a - b);
-            const dropped = sorted[0];
-            const total = sorted[1] + sorted[2] + sorted[3];
-            results.push({ id: i, dice, dropped, total });
-        }
-        setRolled4d6List(results);
-        setStatMethod('rolled_4d6');
-
-        // Priority assignment based on class primary attribute
-        const sortedRolls = [...results].sort((a, b) => b.total - a.total);
-        const primary = selectedClass?.primaryAbility?.toLowerCase() || '';
-        let priority: string[] = ['str', 'con', 'dex', 'wis', 'int', 'cha'];
-        if (/destreza|dex/i.test(primary)) priority = ['dex', 'con', 'wis', 'str', 'cha', 'int'];
-        else if (/força|str/i.test(primary)) priority = ['str', 'con', 'dex', 'wis', 'cha', 'int'];
-        else if (/inteligência|int/i.test(primary)) priority = ['int', 'con', 'dex', 'wis', 'cha', 'str'];
-        else if (/sabedoria|wis/i.test(primary)) priority = ['wis', 'con', 'dex', 'int', 'cha', 'str'];
-        else if (/carisma|cha/i.test(primary)) priority = ['cha', 'con', 'dex', 'wis', 'int', 'str'];
-
-        const newAssignments: Record<string, number | null> = {};
-        const newBaseStats: Record<string, number> = {};
-        priority.forEach((attr, idx) => {
-            newAssignments[attr] = sortedRolls[idx].id;
-            newBaseStats[attr] = sortedRolls[idx].total;
-        });
-        setStatAssignments(newAssignments);
-        setBaseStats(newBaseStats);
-    }, [selectedClass]);
-
-    const handleAssignStat = React.useCallback((attr: string, rollId: number) => {
-        const rollEntry = rolled4d6List.find(r => r.id === rollId);
-        if (!rollEntry) return;
-
-        const previousOwner = Object.keys(statAssignments).find(k => statAssignments[k] === rollId && k !== attr);
-        const currentRollId = statAssignments[attr];
-
-        setStatAssignments(prev => ({
-            ...prev,
-            [attr]: rollId,
-            ...(previousOwner ? { [previousOwner]: currentRollId } : {})
-        }));
-
-        setBaseStats(prev => {
-            const next = { ...prev, [attr]: rollEntry.total };
-            if (previousOwner && currentRollId !== null) {
-                const prevRoll = rolled4d6List.find(r => r.id === currentRollId);
-                if (prevRoll) next[previousOwner] = prevRoll.total;
-            }
-            return next;
-        });
-    }, [rolled4d6List, statAssignments]);
 
     // Navigation Steps
     const [currentStep, setCurrentStep] = useState(0);
@@ -655,13 +538,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
     ];
     const steps = rawSteps.map((s, i) => ({ id: i, label: s.label }));
 
-    // Validation checks for final apply
-    const isStatsValid = statMethod === 'point_buy'
-        ? remainingPoints === 0
-        : statMethod === 'rolled_4d6'
-            ? Object.values(statAssignments).every(v => v !== null)
-            : true;
-
+    // Validation checks for final apply (No point-buy restrictions)
     const isMagicInitiateValid = !hasMagicInitiate || (magicInitiateCantrips.length === 2 && !!magicInitiateSpell);
     const isSkilledValid = !hasSkilled || skilledChoices.length === 3;
     const isMusicianValid = !hasMusician || musicianInstruments.length === 3;
@@ -671,7 +548,6 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
     const isRaceCantripsValid = !effectiveRaceCantripChoices || selectedRaceCantrips.length >= effectiveRaceCantripChoices.count;
 
     const isFormValid = (
-        isStatsValid &&
         isSkillsValid &&
         (selectedClassId !== 'rogue' || selectedRogueExpertises.length === 2) &&
         (!selectedClass?.toolChoices || selectedTools.length >= selectedClass.toolChoices.count) &&
@@ -695,7 +571,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
             nextChar.background = selectedBackground.name;
         }
 
-        // 1. Race & Origin & Subrace (Item 1)
+        // 1. Race & Origin & Subrace
         nextChar.race = selectedRace.name;
         if (selectedSubrace) {
             nextChar.subrace = selectedSubrace.name;
@@ -725,16 +601,10 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
 
         nextChar.system = activeSystem;
 
-        // 2. Class & Subclass (Item 4)
+        // 2. Class - Subclasses are strictly chosen at Level 3
         nextChar.class = selectedClass.name;
         nextChar.hitDice.dieFace = selectedClass.hitDie;
-
-        const chosenSubclass = selectedClass.subclasses?.find(s => s.id === selectedSubclassId);
-        if (effectiveStartingLevel >= 3 && chosenSubclass) {
-            nextChar.subclass = chosenSubclass.name;
-        } else {
-            nextChar.subclass = undefined;
-        }
+        nextChar.subclass = undefined;
 
         // HP (Level 1 Max)
         if (nextChar.level === 1) {
@@ -760,9 +630,9 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
             nextChar.classResources = selectedClass.resources.map(r => ({ ...r }));
         }
 
-        // Features
+        // Features (Level 1 base)
         const classFeatures: ClassFeature[] = selectedClass.features
-            .filter(f => f.level <= (effectiveStartingLevel >= 3 ? effectiveStartingLevel : 1))
+            .filter(f => f.level === 1)
             .map(f => ({ ...f, type: f.type || 'passive' } as ClassFeature));
 
         const raceFeatures: ClassFeature[] = (selectedRace.traits || []).map(t => ({
@@ -779,13 +649,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
             type: 'passive'
         }));
 
-        const subclassFeatures: ClassFeature[] = (chosenSubclass && effectiveStartingLevel >= 3)
-            ? (chosenSubclass.features || [])
-                .filter(f => f.level <= effectiveStartingLevel)
-                .map(f => ({ ...f, type: f.type || 'passive' } as ClassFeature))
-            : [];
-
-        nextChar.features = [...raceFeatures, ...subraceFeatures, ...classFeatures, ...subclassFeatures];
+        nextChar.features = [...raceFeatures, ...subraceFeatures, ...classFeatures];
 
         // Skills (including Background + Class + Human Versatile + Skilled feat)
         const bgSkills: string[] = selectedBackground ? (selectedBackground.skillProficiencies as string[]) : [];
@@ -822,7 +686,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
         nextChar.proficiencies.push(...classTools, ...extraTools);
         nextChar.proficiencies = Array.from(new Set(nextChar.proficiencies));
 
-        // Languages (Item 3)
+        // Languages
         const raceLangs = selectedRace.languages || ['Comum'];
         nextChar.languages = Array.from(new Set([
             ...raceLangs,
@@ -982,7 +846,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
             });
         }
 
-        // Spells & Race Cantrips & Magic Initiate (Item 2)
+        // Spells & Race Cantrips & Magic Initiate
         const chosenCantrips = SPELLS.filter(s => selectedCantrips.includes(s.id));
         const chosenSpells = SPELLS.filter(s => selectedSpells.includes(s.id));
         const chosenRaceCantrips = SPELLS.filter(s => selectedRaceCantrips.includes(s.id));
@@ -1073,7 +937,6 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
         selectedClass,
         selectedRace,
         selectedSubrace,
-        selectedSubclassId,
         selectedCharacterSize,
         selectedDwarfTool,
         selectedHumanBonusFeat,
@@ -1111,7 +974,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
             <div className="builder-content">
                 <div className="builder-header">
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <h2>{activeSystem === 'witcher' ? 'Criação de Personagem — The Witcher' : 'Criação de Personagem — D&D 5.5e (2024)'}</h2>
+                        <h2>{activeSystem === 'witcher' ? 'Criação de Personagem — The Witcher' : 'Criação de Personagem'}</h2>
                         {effectiveStartingLevel > 1 && (
                             <span style={{
                                 background: 'rgba(255, 215, 0, 0.15)',
@@ -1168,12 +1031,12 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                                     />
                                 </div>
 
-                                <h3>{activeSystem === 'witcher' ? 'Raça' : 'Espécie'} & Alinhamento</h3>
+                                <h3>{activeSystem === 'witcher' ? 'Raça' : 'Espécie'}</h3>
                                 <select value={selectedRaceId} onChange={(e) => setSelectedRaceId(e.target.value)}>
                                     {availableRaces.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                                 </select>
 
-                                {/* ITEM 1: SUBESPÉCIES / LINHAGENS */}
+                                {/* SUBESPÉCIES / LINHAGENS */}
                                 {selectedRace?.subraces && selectedRace.subraces.length > 0 && (
                                     <div style={{ marginTop: '12px' }}>
                                         <label style={{ display: 'block', marginBottom: '4px', color: '#ffd700', fontWeight: 'bold', fontSize: '0.9rem' }}>
@@ -1199,11 +1062,11 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                                     </div>
                                 )}
 
-                                {/* ITEM 1: ESCOLHA DE TAMANHO (MÉDIO / PEQUENO) */}
+                                {/* ESCOLHA DE TAMANHO (MÉDIO / PEQUENO) */}
                                 {selectedRace?.allowSizeChoice && (
                                     <div style={{ marginTop: '12px', background: 'rgba(255,255,255,0.03)', padding: '8px 10px', borderRadius: '4px', border: '1px solid #444' }}>
                                         <label style={{ display: 'block', marginBottom: '6px', color: '#c5a059', fontWeight: 'bold', fontSize: '0.85rem' }}>
-                                            Tamanho da Espécie (PHB p. 44):
+                                            Tamanho:
                                         </label>
                                         <div style={{ display: 'flex', gap: '12px' }}>
                                             {(['Médio', 'Pequeno'] as const).map(sz => (
@@ -1221,7 +1084,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                                     </div>
                                 )}
 
-                                {/* ITEM 1: ANÃO - ESCOLHA DE FERRAMENTA ARTESANAL */}
+                                {/* ANÃO - ESCOLHA DE FERRAMENTA ARTESANAL */}
                                 {selectedRace?.toolChoices && (
                                     <div style={{ marginTop: '12px', background: 'rgba(255, 215, 0, 0.08)', padding: '8px 10px', borderRadius: '4px', border: '1px solid rgba(255, 215, 0, 0.3)' }}>
                                         <label style={{ display: 'block', marginBottom: '4px', color: '#ffd700', fontWeight: 'bold', fontSize: '0.85rem' }}>
@@ -1239,7 +1102,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                                     </div>
                                 )}
 
-                                {/* ITEM 1: HUMANO - TALENTO DE ORIGEM EXTRA */}
+                                {/* HUMANO - TALENTO DE ORIGEM EXTRA */}
                                 {selectedRace?.originFeatChoice && (
                                     <div style={{ marginTop: '12px', background: 'rgba(59, 130, 246, 0.1)', padding: '10px 12px', borderRadius: '6px', border: '1px solid rgba(59, 130, 246, 0.4)' }}>
                                         <label style={{ display: 'block', marginBottom: '4px', color: '#60a5fa', fontWeight: 'bold', fontSize: '0.9rem' }}>
@@ -1260,17 +1123,80 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                                     </div>
                                 )}
 
-                                <select
-                                    value={selectedAlignment}
-                                    onChange={(e) => setSelectedAlignment(e.target.value)}
-                                    style={{ marginTop: '10px' }}
-                                >
-                                    {ALIGNMENTS.map(a => <option key={a} value={a}>{a}</option>)}
-                                </select>
+                                {/* TRAÇOS RACIAIS E DETALHES COLOCADOS JUNTOS DA DESCRIÇÃO */}
+                                <div className="info-box" style={{ marginTop: '15px' }}>
+                                    {getSpeciesImage(selectedRaceId) && (
+                                        <div style={{ textAlign: 'center', marginBottom: '12px' }}>
+                                            <img
+                                                src={getSpeciesImage(selectedRaceId)!}
+                                                alt={selectedRace?.name}
+                                                style={{ maxWidth: '100%', maxHeight: '180px', objectFit: 'contain', borderRadius: '6px', border: '1px solid #c5a059', background: '#0a0a0f', boxShadow: '0 4px 12px rgba(0,0,0,0.5)' }}
+                                            />
+                                        </div>
+                                    )}
+                                    <div style={{ fontSize: '0.9rem', marginBottom: '10px', fontStyle: 'italic', color: '#e2e8f0', lineHeight: '1.4' }}>
+                                        {selectedRace?.description}
+                                    </div>
 
-                                <div style={{ marginTop: '15px' }}>
+                                    <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap', marginBottom: '10px', fontSize: '0.88rem' }}>
+                                        <div><strong>Deslocamento:</strong> {selectedSubrace?.speed || selectedRace?.speed}m</div>
+                                        <div><strong>Visão:</strong> {selectedSubrace?.visionRange ? `${selectedSubrace.visionRange}m no Escuro` : (selectedRace?.traits?.some(t => /visão no escuro|darkvision/i.test(t.name)) ? '18m no Escuro' : 'Normal')}</div>
+                                        {selectedSubrace?.damageResistance && (
+                                            <div style={{ color: '#4ade80' }}><strong>Resistência:</strong> {selectedSubrace.damageResistance}</div>
+                                        )}
+                                    </div>
+
+                                    {/* Subrace Specific Details Card */}
+                                    {selectedSubrace && (
+                                        <div style={{ marginBottom: '10px', padding: '8px 10px', background: 'rgba(255, 215, 0, 0.08)', borderRadius: '6px', border: '1px solid rgba(255, 215, 0, 0.25)' }}>
+                                            <div style={{ color: '#ffd700', fontWeight: 'bold', fontSize: '0.88rem' }}>
+                                                ✨ {selectedSubrace.name}
+                                            </div>
+                                            <div style={{ fontSize: '0.82rem', color: '#ddd', marginTop: '2px' }}>
+                                                {selectedSubrace.description}
+                                            </div>
+                                            {selectedSubrace.breathWeapon && (
+                                                <div style={{ marginTop: '3px', fontSize: '0.8rem', color: '#f87171' }}>
+                                                    🔥 Sopro: {selectedSubrace.breathWeapon.area} ({selectedSubrace.breathWeapon.damageType})
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {/* Traços Raciais com nome e descrição lado a lado */}
+                                    <h4 style={{ margin: '12px 0 8px 0', color: '#c5a059', fontSize: '0.95rem' }}>Traços Raciais:</h4>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '240px', overflowY: 'auto' }}>
+                                        {(selectedRace?.traits || []).map((t, i) => (
+                                            <div key={i} style={{ background: 'rgba(255,255,255,0.03)', padding: '8px 10px', borderRadius: '4px', borderLeft: '3px solid #c5a059' }}>
+                                                <strong style={{ color: '#ffd700', fontSize: '0.88rem' }}>{t.name}</strong>
+                                                <div style={{ fontSize: '0.82rem', color: '#ccc', marginTop: '2px', lineHeight: '1.35' }}>{t.description}</div>
+                                            </div>
+                                        ))}
+                                        {(selectedSubrace?.traits || []).map((st, i) => (
+                                            <div key={`sub-${i}`} style={{ background: 'rgba(96, 165, 250, 0.08)', padding: '8px 10px', borderRadius: '4px', borderLeft: '3px solid #60a5fa' }}>
+                                                <strong style={{ color: '#93c5fd', fontSize: '0.88rem' }}>{st.name} ({selectedSubrace?.name})</strong>
+                                                <div style={{ fontSize: '0.82rem', color: '#ddd', marginTop: '2px', lineHeight: '1.35' }}>{st.description}</div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div style={{ marginTop: '16px' }}>
                                     <label style={{ display: 'block', marginBottom: '4px', color: '#c5a059', fontWeight: 'bold' }}>
-                                        Antecedente (Background):
+                                        Alinhamento:
+                                    </label>
+                                    <select
+                                        value={selectedAlignment}
+                                        onChange={(e) => setSelectedAlignment(e.target.value)}
+                                        style={{ width: '100%', padding: '8px' }}
+                                    >
+                                        {ALIGNMENTS.map(a => <option key={a} value={a}>{a}</option>)}
+                                    </select>
+                                </div>
+
+                                <div style={{ marginTop: '16px' }}>
+                                    <label style={{ display: 'block', marginBottom: '4px', color: '#c5a059', fontWeight: 'bold' }}>
+                                        Antecedente:
                                     </label>
                                     <select
                                         value={selectedBackgroundId}
@@ -1282,8 +1208,8 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                                         ))}
                                     </select>
                                     {selectedBackground && (
-                                        <div style={{ fontSize: '0.85rem', color: '#bbb', marginTop: '6px', background: 'rgba(255,255,255,0.03)', padding: '6px 8px', borderRadius: '4px', borderLeft: '3px solid #c5a059' }}>
-                                            <div style={{ marginBottom: '4px' }}>{selectedBackground.description}</div>
+                                        <div style={{ fontSize: '0.85rem', color: '#bbb', marginTop: '6px', background: 'rgba(255,255,255,0.03)', padding: '8px 10px', borderRadius: '4px', borderLeft: '3px solid #c5a059' }}>
+                                            <div style={{ marginBottom: '4px', color: '#eee' }}>{selectedBackground.description}</div>
                                             <div style={{ color: '#e0c070' }}>
                                                 <strong>Perícias:</strong> {selectedBackground.skillProficiencies.join(', ')}
                                                 {selectedBackground.toolProficiencies && selectedBackground.toolProficiencies.length > 0 && (
@@ -1296,60 +1222,8 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                                         </div>
                                     )}
                                 </div>
-
-                                <div className="info-box" style={{ marginTop: '15px' }}>
-                                    {getSpeciesImage(selectedRaceId) && (
-                                        <div style={{ textAlign: 'center', marginBottom: '12px' }}>
-                                            <img
-                                                src={getSpeciesImage(selectedRaceId)!}
-                                                alt={selectedRace?.name}
-                                                style={{ maxWidth: '100%', maxHeight: '180px', objectFit: 'contain', borderRadius: '6px', border: '1px solid #c5a059', background: '#0a0a0f', boxShadow: '0 4px 12px rgba(0,0,0,0.5)' }}
-                                            />
-                                        </div>
-                                    )}
-                                    <div style={{ fontSize: '0.9rem', marginBottom: '10px', fontStyle: 'italic' }}>
-                                        {selectedRace?.description}
-                                    </div>
-                                    <p><strong>Deslocamento:</strong> {selectedSubrace?.speed || selectedRace?.speed}m</p>
-                                    {activeSystem === 'witcher' ? (
-                                        <p><strong>Bônus de Atributos:</strong> {Object.entries(selectedRace?.bonus || {}).map(([k, v]) => `${k.toUpperCase()} +${v}`).join(', ')}</p>
-                                    ) : (
-                                        <p style={{ color: '#4caf50' }}><strong>Bônus de Atributos:</strong> Concedidos pelo Antecedente ({selectedBackground?.name || 'Antecedente'})</p>
-                                    )}
-
-                                    {/* Subrace Specific Details Card */}
-                                    {selectedSubrace && (
-                                        <div style={{ marginTop: '10px', padding: '8px 10px', background: 'rgba(255, 215, 0, 0.08)', borderRadius: '6px', border: '1px solid rgba(255, 215, 0, 0.25)' }}>
-                                            <div style={{ color: '#ffd700', fontWeight: 'bold', fontSize: '0.9rem' }}>
-                                                ✨ {selectedSubrace.name}
-                                            </div>
-                                            <div style={{ fontSize: '0.82rem', color: '#ddd', marginTop: '3px' }}>
-                                                {selectedSubrace.description}
-                                            </div>
-                                            {selectedSubrace.damageResistance && (
-                                                <div style={{ marginTop: '4px', fontSize: '0.8rem', color: '#4ade80' }}>
-                                                    🛡️ Resistência a Dano: <strong>{selectedSubrace.damageResistance}</strong>
-                                                </div>
-                                            )}
-                                            {selectedSubrace.breathWeapon && (
-                                                <div style={{ marginTop: '2px', fontSize: '0.8rem', color: '#f87171' }}>
-                                                    🔥 Sopro: {selectedSubrace.breathWeapon.area} ({selectedSubrace.breathWeapon.damageType})
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
-
-                                    <h4 style={{ marginTop: '10px', color: '#c5a059' }}>Traços Raciais:</h4>
-                                    <ul style={{ paddingLeft: '20px', margin: 0, maxHeight: '200px', overflowY: 'auto' }}>
-                                        {(selectedRace?.traits || []).map((t, i) => (
-                                            <li key={i} title={t.description} style={{ marginBottom: '5px' }}>
-                                                <strong>{t.name}</strong>
-                                                <div style={{ fontSize: '0.85rem', color: '#aaa' }}>{t.description}</div>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                </div>
                             </div>
+
                             <div className="builder-col">
                                 <h3>Classe</h3>
                                 <select value={selectedClassId} onChange={(e) => setSelectedClassId(e.target.value)}>
@@ -1362,46 +1236,6 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                                 >
                                     Ver Tabela de Progressão
                                 </button>
-
-                                {/* ITEM 4: SUBCLASSE QUANDO NÍVEL INICIAL >= 3 */}
-                                {effectiveStartingLevel >= 3 && selectedClass?.subclasses && selectedClass.subclasses.length > 0 && (
-                                    <div style={{ marginTop: '14px', padding: '12px', background: 'rgba(255, 215, 0, 0.1)', border: '1px solid #ffd700', borderRadius: '6px' }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#ffd700', fontWeight: 'bold', fontSize: '0.95rem', marginBottom: '6px' }}>
-                                            <Shield size={16} /> Especialização de Subclasse (Nível {effectiveStartingLevel}):
-                                        </div>
-                                        <select
-                                            value={selectedSubclassId}
-                                            onChange={(e) => setSelectedSubclassId(e.target.value)}
-                                            style={{
-                                                width: '100%',
-                                                padding: '8px',
-                                                background: '#1a1811',
-                                                color: '#ffd700',
-                                                border: '1px solid #ffd700',
-                                                borderRadius: '4px',
-                                                fontWeight: 'bold',
-                                                fontSize: '0.95rem'
-                                            }}
-                                        >
-                                            {selectedClass.subclasses.map(sc => (
-                                                <option key={sc.id} value={sc.id}>{sc.name}</option>
-                                            ))}
-                                        </select>
-                                        {selectedSubclass && (
-                                            <div style={{ marginTop: '8px', fontSize: '0.82rem', color: '#eee', lineHeight: '1.4' }}>
-                                                <div style={{ fontStyle: 'italic', color: '#cbd5e1', marginBottom: '6px' }}>{selectedSubclass.description}</div>
-                                                <div style={{ color: '#ffd700', fontWeight: 'bold', marginTop: '4px' }}>Habilidades (Nv 3):</div>
-                                                <ul style={{ paddingLeft: '16px', margin: '4px 0 0 0' }}>
-                                                    {(selectedSubclass.features || []).filter(f => f.level <= effectiveStartingLevel).map(f => (
-                                                        <li key={f.name} style={{ marginBottom: '3px' }}>
-                                                            <strong>{f.name}</strong>: <span style={{ color: '#aaa' }}>{f.description}</span>
-                                                        </li>
-                                                    ))}
-                                                </ul>
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
 
                                 <div className="info-box" style={{ marginTop: '12px' }}>
                                     {getClassImage(selectedClassId) && (
@@ -1418,7 +1252,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                                     <div style={{ fontSize: '0.9rem', marginBottom: '10px', fontStyle: 'italic' }}>
                                         {selectedClass?.fullDescription}
                                     </div>
-                                    <h4 style={{ marginTop: '10px', color: '#c5a059' }}>Habilidades (Lv1):</h4>
+                                    <h4 style={{ marginTop: '10px', color: '#c5a059' }}>Habilidades (Nv 1):</h4>
                                     <ul style={{ paddingLeft: '20px', margin: 0 }}>
                                         {(selectedClass?.features || []).filter(f => f.level === 1).map(f => (
                                             <li key={f.name}>
@@ -1427,11 +1261,9 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                                             </li>
                                         ))}
                                     </ul>
-                                    {effectiveStartingLevel < 3 && (
-                                        <p style={{ fontSize: '0.8rem', color: '#94a3b8', fontStyle: 'italic', marginTop: '12px' }}>
-                                            🛡️ <em>As especializações de Subclasse são desbloqueadas e escolhidas no <strong>3º Nível</strong> durante a evolução do personagem.</em>
-                                        </p>
-                                    )}
+                                    <p style={{ fontSize: '0.85rem', color: '#94a3b8', fontStyle: 'italic', marginTop: '14px', padding: '8px 10px', background: 'rgba(255, 255, 255, 0.04)', borderRadius: '4px', borderLeft: '3px solid #ffd700' }}>
+                                        🛡️ <em>As especializações de Subclasse são desbloqueadas e escolhidas no <strong>3º Nível</strong> durante a evolução do personagem.</em>
+                                    </p>
                                 </div>
                             </div>
                         </div>
@@ -1443,70 +1275,34 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                             <div className="builder-section">
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '12px' }}>
                                     <div>
-                                        <h3 style={{ margin: 0 }}>Geração de Atributos</h3>
+                                        <h3 style={{ margin: 0 }}>Atributos do Personagem</h3>
                                         <div style={{ fontSize: '0.85rem', color: '#aaa', marginTop: '3px' }}>
-                                            Escolha o método oficial: Point Buy, Conjunto Padrão ou Rolar 4d6 (drop lowest).
+                                            Ajuste os valores dos atributos diretamente ou utilize o Conjunto Padrão.
                                         </div>
                                     </div>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                                         <button
                                             type="button"
-                                            onClick={() => setStatMethod('point_buy')}
-                                            style={{
-                                                padding: '6px 12px',
-                                                background: statMethod === 'point_buy' ? '#c5a059' : '#222',
-                                                border: '1px solid #c5a059',
-                                                borderRadius: '5px',
-                                                color: statMethod === 'point_buy' ? '#000' : '#ffd700',
-                                                fontSize: '0.85rem',
-                                                fontWeight: 'bold',
-                                                cursor: 'pointer'
-                                            }}
-                                        >
-                                            Point Buy (27 pts)
-                                        </button>
-                                        <button
-                                            type="button"
                                             onClick={applyStandardArray}
                                             style={{
-                                                padding: '6px 12px',
-                                                background: statMethod === 'standard_array' ? '#c5a059' : '#222',
+                                                padding: '6px 14px',
+                                                background: 'linear-gradient(135deg, rgba(197, 160, 89, 0.25), rgba(197, 160, 89, 0.1))',
                                                 border: '1px solid #c5a059',
                                                 borderRadius: '5px',
-                                                color: statMethod === 'standard_array' ? '#000' : '#ffd700',
+                                                color: '#ffd700',
                                                 fontSize: '0.85rem',
                                                 fontWeight: 'bold',
                                                 cursor: 'pointer'
                                             }}
                                             title="Distribui 15, 14, 13, 12, 10, 8 focado na sua classe"
                                         >
-                                            Conjunto Padrão (15-8)
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={roll4d6Stats}
-                                            style={{
-                                                padding: '6px 14px',
-                                                background: statMethod === 'rolled_4d6' ? '#8b5cf6' : 'linear-gradient(135deg, rgba(139, 92, 246, 0.3), rgba(139, 92, 246, 0.1))',
-                                                border: '1px solid #8b5cf6',
-                                                borderRadius: '5px',
-                                                color: '#fff',
-                                                fontSize: '0.85rem',
-                                                fontWeight: 'bold',
-                                                cursor: 'pointer',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                gap: '6px'
-                                            }}
-                                            title="Rola 4d6 descartando o menor para cada um dos 6 atributos"
-                                        >
-                                            <Dices size={16} /> Rolar 4d6 (Drop Lowest)
+                                            Conjunto Padrão (15, 14, 13, 12, 10, 8)
                                         </button>
                                         <button
                                             type="button"
                                             onClick={resetStats}
                                             style={{
-                                                padding: '6px 10px',
+                                                padding: '6px 12px',
                                                 background: '#222',
                                                 border: '1px solid #555',
                                                 borderRadius: '5px',
@@ -1515,53 +1311,12 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                                                 cursor: 'pointer'
                                             }}
                                         >
-                                            Resetar (8)
+                                            Resetar (10)
                                         </button>
-                                        {statMethod === 'point_buy' && (
-                                            <span className={remainingPoints === 0 ? 'success' : 'warn'} style={{ fontSize: '1rem', fontWeight: 'bold' }}>
-                                                {remainingPoints} pts restantes
-                                            </span>
-                                        )}
                                     </div>
                                 </div>
 
-                                {/* ITEM 4: PAINEL DE ROLAGEM 4d6 */}
-                                {statMethod === 'rolled_4d6' && rolled4d6List.length > 0 && (
-                                    <div style={{ background: 'rgba(139, 92, 246, 0.1)', border: '1px solid rgba(139, 92, 246, 0.4)', borderRadius: '8px', padding: '14px', marginBottom: '16px' }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                                            <div style={{ color: '#c4b5fd', fontWeight: 'bold', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                <Dices size={18} /> Resultados Rolados (4d6 descartando o menor):
-                                            </div>
-                                            <button
-                                                type="button"
-                                                onClick={roll4d6Stats}
-                                                style={{ padding: '4px 10px', background: '#8b5cf6', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '0.8rem', cursor: 'pointer', fontWeight: 'bold' }}
-                                            >
-                                                🎲 Rolar Novamente
-                                            </button>
-                                        </div>
-                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '8px' }}>
-                                            {rolled4d6List.map((entry, idx) => (
-                                                <div key={entry.id} style={{ background: 'rgba(0,0,0,0.4)', border: '1px solid #6d28d9', borderRadius: '6px', padding: '8px', textAlign: 'center' }}>
-                                                    <div style={{ fontSize: '0.75rem', color: '#a78bfa' }}>Rolagem #{idx + 1}</div>
-                                                    <div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#fff' }}>{entry.total}</div>
-                                                    <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
-                                                        [{entry.dice.map((d, dIdx) => (
-                                                            <span key={dIdx} style={{ textDecoration: d === entry.dropped ? 'line-through' : 'none', color: d === entry.dropped ? '#ef4444' : '#fff', marginRight: '3px' }}>
-                                                                {d}
-                                                            </span>
-                                                        ))}]
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                        <p style={{ margin: '8px 0 0 0', fontSize: '0.8rem', color: '#cbd5e1', fontStyle: 'italic' }}>
-                                            💡 Atribua os valores rolados diretamente para cada atributo na grade abaixo:
-                                        </p>
-                                    </div>
-                                )}
-
-                                {/* D&D 5.5e (2024) Background Attribute Selector */}
+                                {/* Background Attribute Selector */}
                                 {activeSystem === 'dnd55e' && selectedBackground && (
                                     <div style={{ background: 'rgba(225, 29, 72, 0.08)', border: '1px solid rgba(225, 29, 72, 0.4)', borderRadius: '6px', padding: '12px 16px', margin: '15px 0' }}>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
@@ -1663,41 +1418,47 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                                             <div key={key} className="stat-picker">
                                                 <label style={{ textTransform: 'uppercase', fontWeight: 'bold', color: '#888' }}>{key}</label>
                                                 
-                                                {statMethod === 'point_buy' ? (
-                                                    <div className="stat-controls" style={{ display: 'flex', alignItems: 'center', gap: '5px', justifyContent: 'center', margin: '5px 0' }}>
-                                                        <button onClick={() => updateBaseStat(key, -1)} disabled={value <= 8}>-</button>
-                                                        <span style={{ fontSize: '1.2rem', fontWeight: 'bold' }}>{value}</span>
-                                                        <button onClick={() => updateBaseStat(key, 1)} disabled={value >= 15 || remainingPoints < (calculateCost(value + 1) - calculateCost(value))}>+</button>
-                                                    </div>
-                                                ) : statMethod === 'rolled_4d6' && rolled4d6List.length > 0 ? (
-                                                    <div style={{ margin: '5px 0' }}>
-                                                        <select
-                                                            value={statAssignments[key] ?? ''}
-                                                            onChange={(e) => handleAssignStat(key, parseInt(e.target.value))}
-                                                            style={{
-                                                                width: '100%',
-                                                                padding: '6px',
-                                                                background: '#1a1a24',
-                                                                color: '#c4b5fd',
-                                                                border: '1px solid #8b5cf6',
-                                                                borderRadius: '4px',
-                                                                fontWeight: 'bold',
-                                                                fontSize: '1rem',
-                                                                textAlign: 'center'
-                                                            }}
-                                                        >
-                                                            {rolled4d6List.map((entry, idx) => (
-                                                                <option key={entry.id} value={entry.id}>
-                                                                    {entry.total} (Rolagem #{idx + 1})
-                                                                </option>
-                                                            ))}
-                                                        </select>
-                                                    </div>
-                                                ) : (
-                                                    <div style={{ margin: '6px 0', fontSize: '1.2rem', fontWeight: 'bold', color: '#ffd700' }}>
-                                                        {value}
-                                                    </div>
-                                                )}
+                                                <div className="stat-controls" style={{ display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'center', margin: '6px 0' }}>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => updateBaseStat(key, -1)}
+                                                        disabled={value <= 1}
+                                                        style={{ width: '28px', height: '28px', fontSize: '1rem', cursor: 'pointer' }}
+                                                    >
+                                                        -
+                                                    </button>
+                                                    <input
+                                                        type="number"
+                                                        min={1}
+                                                        max={20}
+                                                        value={value}
+                                                        onChange={(e) => {
+                                                            const v = parseInt(e.target.value);
+                                                            if (!isNaN(v)) {
+                                                                setBaseStats(prev => ({ ...prev, [key]: Math.max(1, Math.min(20, v)) }));
+                                                            }
+                                                        }}
+                                                        style={{
+                                                            width: '46px',
+                                                            textAlign: 'center',
+                                                            fontSize: '1.2rem',
+                                                            fontWeight: 'bold',
+                                                            background: '#151620',
+                                                            color: '#fff',
+                                                            border: '1px solid #444',
+                                                            borderRadius: '4px',
+                                                            padding: '2px 0'
+                                                        }}
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => updateBaseStat(key, 1)}
+                                                        disabled={value >= 20}
+                                                        style={{ width: '28px', height: '28px', fontSize: '1rem', cursor: 'pointer' }}
+                                                    >
+                                                        +
+                                                    </button>
+                                                </div>
 
                                                 <div style={{ fontSize: '0.8rem', color: '#aaa' }}>
                                                     Base: {value} <br />
@@ -1708,7 +1469,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                                                     )}
                                                 </div>
                                                 <div style={{ background: '#222', marginTop: '5px', padding: '5px', borderRadius: '4px', border: '1px solid #444' }}>
-                                                    <div style={{ fontSize: '1.2rem', color: '#fff' }}>{total}</div>
+                                                    <div style={{ fontSize: '1.2rem', color: '#fff', fontWeight: 'bold' }}>{total}</div>
                                                     <div style={{ fontSize: '0.9rem', color: '#c5a059' }}>{mod >= 0 ? '+' : ''}{mod}</div>
                                                 </div>
                                             </div>
@@ -1770,7 +1531,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                                         })}
                                     </div>
 
-                                    {/* ITEM 2: TALENTO HABILIDOSO (SKILLED) */}
+                                    {/* TALENTO HABILIDOSO (SKILLED) */}
                                     {hasSkilled && (
                                         <div style={{ marginTop: '18px', padding: '12px', background: 'rgba(168, 85, 247, 0.1)', border: '1px solid rgba(168, 85, 247, 0.4)', borderRadius: '6px' }}>
                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
@@ -1827,7 +1588,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                                         <div style={{ marginTop: '16px', padding: '12px', background: 'rgba(255, 215, 0, 0.06)', border: '1px solid rgba(255, 215, 0, 0.3)', borderRadius: '6px' }}>
                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
                                                 <span style={{ color: '#ffd700', fontWeight: 'bold', fontSize: '0.88rem' }}>
-                                                    ⭐ Especialização (Expertise — Ladino Nv 1):
+                                                    ⭐ Especialização (Ladino Nv 1):
                                                 </span>
                                                 <span style={{
                                                     fontSize: '0.78rem',
@@ -1887,12 +1648,12 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                     {steps[currentStep].label === 'Proficiências' && hasProficiencyChoice && (
                         <div className="animate-fade">
                             <div className="builder-section">
-                                {/* ITEM 3: IDIOMAS COMUNS (PHB p. 43) */}
+                                {/* IDIOMAS COMUNS */}
                                 {activeSystem === 'dnd55e' && (
                                     <div style={{ marginBottom: '24px', padding: '14px', background: 'rgba(197, 160, 89, 0.08)', border: '1px solid rgba(197, 160, 89, 0.3)', borderRadius: '8px' }}>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                                             <h3 style={{ margin: 0, color: '#ffd700', fontSize: '1.05rem' }}>
-                                                🗣️ Idiomas do Personagem (PHB 2024 p. 43)
+                                                🗣️ Idiomas do Personagem
                                             </h3>
                                             <span style={{
                                                 fontSize: '0.85rem',
@@ -1906,7 +1667,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                                             </span>
                                         </div>
                                         <p style={{ fontSize: '0.82rem', color: '#cbd5e1', margin: '0 0 10px 0' }}>
-                                            No D&D 2024, todo personagem sabe o <strong>Comum</strong> {(selectedRace?.languages || []).filter(l => l !== 'Comum').length > 0 ? `e ${(selectedRace?.languages || []).filter(l => l !== 'Comum').join(', ')} (Espécie)` : ''} + <strong>2 Idiomas Comuns adicionais</strong> à sua escolha:
+                                            Todo personagem sabe o <strong>Comum</strong> {(selectedRace?.languages || []).filter(l => l !== 'Comum').length > 0 ? `e ${(selectedRace?.languages || []).filter(l => l !== 'Comum').join(', ')} (Espécie)` : ''} + <strong>2 Idiomas Comuns adicionais</strong> à sua escolha:
                                         </p>
                                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                                             {DND_COMMON_LANGUAGES.filter(l => !(selectedRace?.languages || ['Comum']).includes(l)).map(lang => {
@@ -1946,7 +1707,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                                     </div>
                                 )}
 
-                                {/* ITEM 2: TALENTO ARTÍFICE (CRAFTER) */}
+                                {/* TALENTO ARTÍFICE (CRAFTER) */}
                                 {hasCrafter && (
                                     <div style={{ marginBottom: '20px', padding: '12px', background: 'rgba(249, 115, 22, 0.1)', border: '1px solid rgba(249, 115, 22, 0.35)', borderRadius: '6px' }}>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
@@ -1992,7 +1753,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                                     </div>
                                 )}
 
-                                {/* ITEM 2: TALENTO MÚSICO (MUSICIAN) */}
+                                {/* TALENTO MÚSICO (MUSICIAN) */}
                                 {hasMusician && (
                                     <div style={{ marginBottom: '20px', padding: '12px', background: 'rgba(236, 72, 153, 0.1)', border: '1px solid rgba(236, 72, 153, 0.35)', borderRadius: '6px' }}>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
@@ -2107,7 +1868,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                                     </div>
                                 </div>
 
-                                {/* ITEM 2: INICIADO EM MAGIA (MAGIC INITIATE) */}
+                                {/* INICIADO EM MAGIA (MAGIC INITIATE) */}
                                 {hasMagicInitiate && (
                                     <div style={{ marginBottom: '28px', padding: '16px', background: 'rgba(168, 85, 247, 0.1)', border: '1px solid #a855f7', borderRadius: '8px' }}>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', marginBottom: '10px' }}>
@@ -2471,21 +2232,19 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                                 cursor: !isFormValid ? 'not-allowed' : 'pointer'
                             }}
                             title={
-                                !isStatsValid
-                                    ? (statMethod === 'point_buy' ? `Distribua todos os 27 pontos (${remainingPoints} restantes)!` : 'Atribua todos os 6 atributos rolados!')
-                                    : !isSkillsValid
-                                        ? `Selecione ${baseSkillLimit} perícias!`
-                                        : !isLanguagesValid
-                                            ? 'Escolha seus 2 idiomas comuns!'
-                                            : !isMagicInitiateValid
-                                                ? 'Escolha 2 truques e 1 magia para Iniciado em Magia!'
-                                                : !isSkilledValid
-                                                    ? 'Escolha 3 perícias para o talento Habilidoso!'
-                                                    : !isMusicianValid
-                                                        ? 'Escolha 3 instrumentos para o talento Músico!'
-                                                        : !isCrafterValid
-                                                            ? 'Escolha 3 ferramentas para o talento Artífice!'
-                                                            : "Tudo pronto!"
+                                !isSkillsValid
+                                    ? `Selecione ${baseSkillLimit} perícias!`
+                                    : !isLanguagesValid
+                                        ? 'Escolha seus 2 idiomas comuns!'
+                                        : !isMagicInitiateValid
+                                            ? 'Escolha 2 truques e 1 magia para Iniciado em Magia!'
+                                            : !isSkilledValid
+                                                ? 'Escolha 3 perícias para o talento Habilidoso!'
+                                                : !isMusicianValid
+                                                    ? 'Escolha 3 instrumentos para o talento Músico!'
+                                                    : !isCrafterValid
+                                                        ? 'Escolha 3 ferramentas para o talento Artífice!'
+                                                        : "Tudo pronto!"
                             }
                         >
                             {effectiveStartingLevel > 1 ? `Concluir e Evoluir (Nível ${effectiveStartingLevel})` : 'Concluir Personagem'}
