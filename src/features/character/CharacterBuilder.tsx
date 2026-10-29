@@ -969,15 +969,35 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
         }
         nextChar.feats = [...chosenFeats];
 
-        // Apply Feat Bonuses (HP per Level, Speed)
+        // Apply Feat & Racial HP Bonuses for Level 1 (or Speed for all)
+        if (nextChar.level === 1) {
+            const isDwarf = selectedRace?.id === 'dwarf' || /anão|dwarf/i.test(selectedRace?.name || '');
+            if (isDwarf) {
+                nextChar.hp.max += 1;
+                nextChar.hp.current = nextChar.hp.max;
+            }
+
+            chosenFeats.forEach(feat => {
+                const canonicalFeat = FEATS.find(f => f.id === feat.id);
+                const effects = canonicalFeat?.effects || feat.effects;
+                if (effects) {
+                    effects.forEach((effect: any) => {
+                        if (effect.type === 'hp_per_level') {
+                            const bonusHP = effect.value * 1;
+                            nextChar.hp.max += bonusHP;
+                            nextChar.hp.current = nextChar.hp.max;
+                        }
+                    });
+                }
+            });
+        }
+
+        // Apply Speed from Feats
         chosenFeats.forEach(feat => {
-            if (feat.effects) {
-                feat.effects.forEach((effect: any) => {
-                    if (effect.type === 'hp_per_level') {
-                        const bonusHP = effect.value * nextChar.level;
-                        nextChar.hp.max += bonusHP;
-                        nextChar.hp.current = nextChar.hp.max;
-                    }
+            const canonicalFeat = FEATS.find(f => f.id === feat.id);
+            const effects = canonicalFeat?.effects || feat.effects;
+            if (effects) {
+                effects.forEach((effect: any) => {
                     if (effect.type === 'speed') {
                         nextChar.speed += effect.value;
                     }
@@ -2296,17 +2316,25 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                                             const hpEffect = f.effects?.find(e => e.type === 'hp_per_level');
                                             return acc + (hpEffect ? hpEffect.value : 0);
                                         }, 0);
-                                        const totalBonus = featHp;
+                                        const isDwarf = selectedRace?.id === 'dwarf' || /anão|dwarf/i.test(selectedRace?.name || '');
+                                        const racialHp = isDwarf ? 1 : 0;
+                                        const totalBonus = featHp + racialHp;
                                         const dieMax = parseInt(selectedClass?.hitDie.replace('d', '') || '10');
                                         const conMod = calculateModifier(baseStats.con + getAttributeBonus('con'));
-                                        const totalHp = Math.max(1, dieMax + conMod) + totalBonus;
+                                        const totalHp = Math.max(1, dieMax + conMod + totalBonus);
 
                                         return (
                                             <>
-                                                {totalBonus > 0 && (
+                                                {featHp > 0 && (
                                                     <p>
-                                                        Bônus de Talento: <strong style={{ color: '#4caf50' }}>+{totalBonus}</strong>
+                                                        Bônus de Talento: <strong style={{ color: '#4caf50' }}>+{featHp}</strong>
                                                         {bgFeat?.id === 'tough' && <span style={{ fontSize: '0.85rem', color: '#ffd700' }}> (Vigoroso do Antecedente)</span>}
+                                                    </p>
+                                                )}
+                                                {racialHp > 0 && (
+                                                    <p>
+                                                        Traço Racial: <strong style={{ color: '#4caf50' }}>+{racialHp}</strong>
+                                                        <span style={{ fontSize: '0.85rem', color: '#ffd700' }}> (Tenacidade Anã)</span>
                                                     </p>
                                                 )}
                                                 <div className="roll-result" style={{ marginTop: '20px' }}>

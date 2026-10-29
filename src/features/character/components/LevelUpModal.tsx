@@ -219,15 +219,20 @@ export const LevelUpModal: React.FC<LevelUpModalProps> = ({ character, onUpdate,
     // Derived Math
     const modCon = Math.floor((character.attributes.con.value - 10) / 2);
     const hitDieValue = parseInt(classData?.hitDie?.replace('d', '') || '8', 10) || 8;
+    const isDwarf = character.race?.toLowerCase().includes('anão') || character.race?.toLowerCase().includes('dwarf');
+    const racialHpBonusPerLevel = isDwarf ? 1 : 0;
     const featBonusPerLevel = (character.feats || []).reduce((acc, feat) => {
         const canonicalFeat = FEATS.find(f => f.id === feat.id);
         const effects = canonicalFeat?.effects || feat.effects;
         const hpEffect = effects?.find(e => e.type === 'hp_per_level');
         return acc + (hpEffect ? hpEffect.value : 0);
     }, 0);
-    const totalBonus = featBonusPerLevel;
+    const totalBonus = featBonusPerLevel + racialHpBonusPerLevel;
     const avgHp = Math.max(1, Math.floor(hitDieValue / 2) + 1 + modCon + totalBonus);
     const finalHpGain = hpChoice === 'avg' ? avgHp : (rolledHp !== null ? rolledHp : avgHp);
+
+    const isNewToughSelected = isAsiLevel && newLevel !== 3 && progressionType === 'feat' && selectedFeat?.id === 'tough' && !(character.feats || []).some(f => f.id === 'tough');
+    const retroactiveHpBonus = isNewToughSelected ? 2 * newLevel : 0;
 
     const profBonus = getProficiencyBonus(newLevel);
     const newFeatures = getFeaturesForLevel(classData?.id || character.class, newLevel);
@@ -278,9 +283,9 @@ export const LevelUpModal: React.FC<LevelUpModalProps> = ({ character, onUpdate,
 
     // Finish & Apply Progression
     const handleFinish = () => {
-        // 1. HP Updates
-        const newMaxHp = character.hp.max + finalHpGain;
-        const newCurrentHp = character.hp.current + finalHpGain;
+        // 1. HP Updates (including retroactive HP from new Tough feat if chosen at this level)
+        const newMaxHp = character.hp.max + finalHpGain + retroactiveHpBonus;
+        const newCurrentHp = character.hp.current + finalHpGain + retroactiveHpBonus;
 
         // 2. Hit Dice Updates
         const updatedHitDice = {
@@ -595,7 +600,8 @@ export const LevelUpModal: React.FC<LevelUpModalProps> = ({ character, onUpdate,
                                     <span className="lvl-hp-val">+{avgHp} PV</span>
                                     <small style={{ color: '#888' }}>
                                         Metade do dado ({Math.floor(hitDieValue / 2) + 1}) + Mod. Con ({modCon >= 0 ? `+${modCon}` : modCon})
-                                        {totalBonus > 0 && ` + Bônus (${totalBonus})`}
+                                        {featBonusPerLevel > 0 && ` + Vigoroso (+${featBonusPerLevel})`}
+                                        {racialHpBonusPerLevel > 0 && ` + Tenacidade Anã (+${racialHpBonusPerLevel})`}
                                     </small>
                                 </div>
 
@@ -623,6 +629,8 @@ export const LevelUpModal: React.FC<LevelUpModalProps> = ({ character, onUpdate,
                                     )}
                                     <small style={{ color: '#888' }}>
                                         Resultado do d{hitDieValue} + Mod. Con ({modCon >= 0 ? `+${modCon}` : modCon})
+                                        {featBonusPerLevel > 0 && ` + Vigoroso (+${featBonusPerLevel})`}
+                                        {racialHpBonusPerLevel > 0 && ` + Tenacidade Anã (+${racialHpBonusPerLevel})`}
                                     </small>
                                 </div>
                             </div>
@@ -1086,7 +1094,10 @@ export const LevelUpModal: React.FC<LevelUpModalProps> = ({ character, onUpdate,
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '14px' }}>
                                 <div className="lvl-stat-pill">
                                     <span className="label">Pontos de Vida (HP)</span>
-                                    <span className="val">{character.hp.max} → {character.hp.max + finalHpGain} (+{finalHpGain} PV)</span>
+                                    <span className="val">
+                                        {character.hp.max} → {character.hp.max + finalHpGain + retroactiveHpBonus} (+{finalHpGain + retroactiveHpBonus} PV
+                                        {retroactiveHpBonus > 0 ? ` [inclui +${retroactiveHpBonus} de Vigoroso retroativo]` : ''})
+                                    </span>
                                 </div>
                                 <div className="lvl-stat-pill">
                                     <span className="label">Dados de Vida</span>

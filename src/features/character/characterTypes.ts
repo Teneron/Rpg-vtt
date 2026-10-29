@@ -528,7 +528,14 @@ export const regenerateCharacterStats = (char: Character): Character => {
             if (effects) {
                 effects.forEach(effect => {
                     if (effect.type === 'speed') extraSpeed += effect.value;
-                    if (effect.type === 'initiative') extraInitiative += effect.value;
+                    if (effect.type === 'initiative') {
+                        // In D&D 2024, Alert grants +PB (Proficiency Bonus) to Initiative
+                        if (feat.id === 'alert' || canonicalFeat?.id === 'alert') {
+                            extraInitiative += profBonus;
+                        } else {
+                            extraInitiative += effect.value;
+                        }
+                    }
                 });
             }
         });

@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { CLASSES } from './classes';
+import { BACKGROUNDS } from './backgrounds';
+import { FEATS } from './feats';
+import { RACES } from './races';
+import { regenerateCharacterStats, initialCharacter, type Character } from '../characterTypes';
 import {
     normalizeClassId,
     getProficiencyBonus,
@@ -191,5 +195,50 @@ describe('progression.ts - 1 to 20 rules engine', () => {
             expect(isAsiLevel(classId, 2)).toBe(false);
             expect(isAsiLevel(classId, 4)).toBe(true);
         }
+    });
+
+    it('verifies Farmer background grants Tough feat with +2 HP per level', () => {
+        const farmer = BACKGROUNDS.find(b => b.id === 'farmer');
+        expect(farmer).toBeDefined();
+        expect(farmer?.featId).toBe('tough');
+        expect(farmer?.featName).toContain('Vigoroso');
+
+        const toughFeat = FEATS.find(f => f.id === 'tough');
+        expect(toughFeat).toBeDefined();
+        const hpEffect = toughFeat?.effects?.find(e => e.type === 'hp_per_level');
+        expect(hpEffect).toBeDefined();
+        expect(hpEffect?.value).toBe(2);
+    });
+
+    it('verifies Dwarf race grants Dwarven Toughness (+1 HP per level)', () => {
+        const dwarf = RACES.find(r => r.id === 'dwarf');
+        expect(dwarf).toBeDefined();
+        const toughnessTrait = dwarf?.traits.find(t => t.name.toLowerCase().includes('tenacidade'));
+        expect(toughnessTrait).toBeDefined();
+        expect(toughnessTrait?.description).toContain('+1 a cada nível');
+    });
+
+    it('verifies Alert feat dynamically scales Initiative by PB in regenerateCharacterStats', () => {
+        const baseChar: Character = {
+            ...initialCharacter,
+            level: 1,
+            attributes: {
+                ...initialCharacter.attributes,
+                dex: { ...initialCharacter.attributes.dex, value: 14, modifier: 2 }
+            },
+            feats: [{ id: 'alert', name: 'Alerta (Alert)', description: '' }]
+        };
+
+        // Level 1: Dex mod (+2) + PB (+2) = 4
+        const charLvl1 = regenerateCharacterStats(baseChar);
+        expect(charLvl1.initiative).toBe(4);
+
+        // Level 5: Dex mod (+2) + PB (+3) = 5
+        const charLvl5 = regenerateCharacterStats({ ...baseChar, level: 5 });
+        expect(charLvl5.initiative).toBe(5);
+
+        // Level 9: Dex mod (+2) + PB (+4) = 6
+        const charLvl9 = regenerateCharacterStats({ ...baseChar, level: 9 });
+        expect(charLvl9.initiative).toBe(6);
     });
 });
