@@ -8,9 +8,9 @@ Deixar o Criador de Ficha (`CharacterBuilder.tsx`) 100% fiel ao Livro do Jogador
 4. **Subclasse para Nível Inicial >= 3 e Rolagem 4d6**: Suporte à seleção de subclasse ao iniciar no nível 3+ e botão/modal de rolagem 4d6 (descarte do menor) para atributos.
 
 ## Tarefas
-- [ ] Task 1: Atualizar `src/features/character/data/races.ts` e `characterTypes.ts` com subraças/linhagens estruturadas.
-- [ ] Task 2: Atualizar `CharacterBuilder.tsx` para renderizar os seletores de linhagem, tamanho e ferramenta na etapa "Origem".
-- [ ] Task 3: Implementar escolhas interativas para Talentos de Origem (*Iniciado em Magia*, *Habilidoso*, *Músico*, *Artífice*).
-- [ ] Task 4: Atualizar etapa de Idiomas para conceder Comum + 2 idiomas comuns conforme PHB 2024 p. 43.
-- [ ] Task 5: Adicionar seleção de Subclasse quando `startingLevel >= 3` e modo de rolagem 4d6 na etapa de Atributos.
-- [ ] Task 6: Verificar compilação (`tsc -b`), testes e build.
+- [x] Task 1: Atualizar `src/features/character/data/races.ts` e `characterTypes.ts` com subraças/linhagens estruturadas.
+- [x] Task 2: Atualizar `CharacterBuilder.tsx` para renderizar os seletores de linhagem, tamanho e ferramenta na etapa "Origem".
+- [x] Task 3: Implementar escolhas interativas para Talentos de Origem (*Iniciado em Magia*, *Habilidoso*, *Músico*, *Artífice*).
+- [x] Task 4: Atualizar etapa de Idiomas para conceder Comum + 2 idiomas comuns conforme PHB 2024 p. 43.
+- [x] Task 5: Adicionar seleção de Subclasse quando `startingLevel >= 3` e modo de rolagem 4d6 na etapa de Atributos.
+- [x] Task 6: Verificar compilação (`tsc -b`), testes e build.
