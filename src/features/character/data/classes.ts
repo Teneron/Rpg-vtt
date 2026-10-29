@@ -819,7 +819,7 @@ export const CLASSES: ClassData[] = [
         spellcastingConfig: {
             ability: 'cha',
             cantripsKnown: 4,
-            spellsKnown: 4
+            spellsKnown: 2
         },
         resources: [
             { id: 'sorcery_points', name: 'Pontos de Feitiçaria', max: 2, current: 2, rechargesOn: 'long' },
@@ -1361,7 +1361,7 @@ export const CLASSES: ClassData[] = [
         primaryAbility: 'Inteligência',
         savingThrows: ['int', 'wis'],
         armorProficiency: ['Nenhuma'],
-        weaponProficiency: ['Adagas', 'Dardos', 'Fundas', 'Bordões', 'Bestas Leves'],
+        weaponProficiency: ['Simples'],
         skillChoices: {
             count: 2,
             options: ['Arcanismo', 'História', 'Intuição', 'Investigação', 'Medicina', 'Religião']
@@ -1498,7 +1498,7 @@ export const CLASSES: ClassData[] = [
         primaryAbility: 'Destreza e Sabedoria',
         savingThrows: ['str', 'dex'],
         armorProficiency: ['Nenhuma'],
-        weaponProficiency: ['Simples', 'Espadas Curtas'],
+        weaponProficiency: ['Simples', 'Marciais com propriedade Leve'],
         skillChoices: {
             count: 2,
             options: ['Acrobacia', 'Atletismo', 'História', 'Intuição', 'Religião', 'Furtividade']

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import {
     initialCharacter,
@@ -475,6 +475,17 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
         }
     }, [character.pendingLevelUp, isOwner]);
     const [activeTab, setActiveTab] = useState<'bio' | 'spells' | 'feats' | 'abilities'>('bio');
+    const isCasterClass = useMemo(() => {
+        const cls = CLASSES.find(c => c.name.toLowerCase() === (character.class || '').toLowerCase() || c.id === (character.class || '').toLowerCase());
+        return !!cls?.spellcastingConfig;
+    }, [character.class]);
+    const hasGrimorio = isCasterClass || (character.spells && character.spells.length > 0);
+
+    useEffect(() => {
+        if (activeTab === 'spells' && !hasGrimorio) {
+            setActiveTab('bio');
+        }
+    }, [activeTab, hasGrimorio]);
     const [showInventory, setShowInventory] = useState(false);
     const [showCompanions, setShowCompanions] = useState(false);
     const [showBestiary, setShowBestiary] = useState(false);
@@ -896,12 +907,14 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
                         >
                             Bio
                         </button>
-                        <button
-                            className={`tab-btn ${activeTab === 'spells' ? 'active' : ''}`}
-                            onClick={() => setActiveTab('spells')}
-                        >
-                            Grimório
-                        </button>
+                        {hasGrimorio && (
+                            <button
+                                className={`tab-btn ${activeTab === 'spells' ? 'active' : ''}`}
+                                onClick={() => setActiveTab('spells')}
+                            >
+                                Grimório
+                            </button>
+                        )}
                         <button
                             className={`tab-btn ${activeTab === 'abilities' ? 'active' : ''}`}
                             onClick={() => setActiveTab('abilities')}

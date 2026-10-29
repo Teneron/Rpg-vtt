@@ -730,13 +730,20 @@ export const regenerateCharacterStats = (char: Character): Character => {
         else if (/bardo|bard|bruxo|warlock|feiticeiro|sorcerer|paladino|paladin/i.test(className)) spellCastingAbility = 'cha';
     }
 
-    let newSpellSaveDC = char.spellSaveDC || (8 + profBonus);
-    let newSpellAttackBonus = char.spellAttackBonus || profBonus;
+    let newSpellSaveDC = 0;
+    let newSpellAttackBonus = 0;
 
     if (spellCastingAbility && newAttrs[spellCastingAbility]) {
         const spellMod = newAttrs[spellCastingAbility].modifier;
         newSpellSaveDC = 8 + profBonus + spellMod;
         newSpellAttackBonus = profBonus + spellMod;
+    } else if (Array.isArray(char.spells) && char.spells.length > 0) {
+        const intMod = newAttrs.int?.modifier || 0;
+        const wisMod = newAttrs.wis?.modifier || 0;
+        const chaMod = newAttrs.cha?.modifier || 0;
+        const bestMentalMod = Math.max(intMod, wisMod, chaMod);
+        newSpellSaveDC = 8 + profBonus + bestMentalMod;
+        newSpellAttackBonus = profBonus + bestMentalMod;
     }
 
     // --- Initiative ---

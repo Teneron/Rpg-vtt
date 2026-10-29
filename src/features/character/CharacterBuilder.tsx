@@ -4,7 +4,7 @@ import { CLASSES } from './data/classes';
 import { RACES, type SubraceData } from './data/races';
 import { BACKGROUNDS } from './data/backgrounds';
 import { SPELLS } from './data/spells';
-import { FEATS } from './data/feats';
+import { FEATS, type Feat } from './data/feats';
 import {
     DND_LANGUAGES,
     WITCHER_LANGUAGES,
@@ -70,10 +70,39 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
         return BACKGROUNDS.filter(b => b.system === 'dnd55e' || (!b.system && !b.id.startsWith('witcher_')));
     }, [activeSystem]);
 
+    const getDefaultBackgroundForClass = React.useCallback((clsId: string): string => {
+        switch (clsId) {
+            case 'barbarian':
+            case 'fighter':
+                return 'soldier';
+            case 'rogue':
+                return 'criminal';
+            case 'monk':
+                return 'artisan';
+            case 'paladin':
+                return 'noble';
+            case 'ranger':
+            case 'druid':
+                return 'guide';
+            case 'cleric':
+                return 'acolyte';
+            case 'wizard':
+                return 'sage';
+            case 'bard':
+                return 'entertainer';
+            case 'sorcerer':
+            case 'warlock':
+                return 'charlatan';
+            default:
+                return 'soldier';
+        }
+    }, []);
+
     // Initial safe selection within the active system
     const initialRaceId = availableRaces.find(r => r.name === character.race || r.id === character.race?.toLowerCase())?.id || availableRaces[0]?.id || (activeSystem === 'witcher' ? 'witcher' : 'human');
     const initialClassId = availableClasses.find(c => c.name === character.class || c.id === character.class?.toLowerCase())?.id || availableClasses[0]?.id || (activeSystem === 'witcher' ? 'witcher' : 'fighter');
-    const initialBackgroundId = availableBackgrounds.find(b => b.name === character.background || b.id === character.background?.toLowerCase())?.id || availableBackgrounds[0]?.id || (activeSystem === 'witcher' ? 'witcher_hunter' : 'soldier');
+    const initialBackgroundId = availableBackgrounds.find(b => b.name === character.background || b.id === character.background?.toLowerCase())?.id ||
+        (activeSystem === 'witcher' ? 'witcher_hunter' : getDefaultBackgroundForClass(initialClassId));
 
     const [charName, setCharName] = useState<string>(
         character.name && character.name !== 'Novo Personagem' ? character.name : ''
@@ -160,7 +189,12 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
     const selectedClass = React.useMemo(() => CLASSES.find(c => c.id === selectedClassId), [selectedClassId]);
     const selectedRace = React.useMemo(() => RACES.find(r => r.id === selectedRaceId), [selectedRaceId]);
     const selectedBackground = React.useMemo(() => BACKGROUNDS.find(b => b.id === selectedBackgroundId), [selectedBackgroundId]);
-    const isSpellCaster = React.useMemo(() => !!selectedClass?.spellcastingConfig, [selectedClass]);
+    const isSpellCaster = React.useMemo(() => {
+        return !!selectedClass?.spellcastingConfig && (
+            (selectedClass.spellcastingConfig.cantripsKnown || 0) > 0 ||
+            (selectedClass.spellcastingConfig.spellsKnown || 0) > 0
+        );
+    }, [selectedClass]);
 
     const selectedSubrace: SubraceData | null = React.useMemo(() => {
         if (!selectedRace?.subraces) return null;
@@ -187,16 +221,15 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
     const hasFeatActive = React.useCallback((featId: string) => {
         if (selectedBackground?.featId === featId) return true;
         if (selectedRace?.originFeatChoice && selectedHumanBonusFeat === featId) return true;
-        if (selectedFeats.includes(featId)) return true;
         return false;
-    }, [selectedBackground, selectedRace, selectedHumanBonusFeat, selectedFeats]);
+    }, [selectedBackground, selectedRace, selectedHumanBonusFeat]);
 
     const hasMagicInitiate = hasFeatActive('magic_initiate');
     const hasSkilled = hasFeatActive('skilled');
     const hasMusician = hasFeatActive('musician');
     const hasCrafter = hasFeatActive('crafter');
 
-    // Auto-configure Magic Initiate defaults when background changes
+    // Auto-configure or reset Magic Initiate defaults when background changes
     React.useEffect(() => {
         if (selectedBackgroundId === 'acolyte') {
             setMagicInitiateClass('cleric');
@@ -207,6 +240,12 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
         } else if (selectedBackgroundId === 'sage') {
             setMagicInitiateClass('wizard');
             setMagicInitiateAbility('int');
+        } else {
+            const bg = BACKGROUNDS.find(b => b.id === selectedBackgroundId);
+            if (bg?.featId !== 'magic_initiate') {
+                setMagicInitiateCantrips([]);
+                setMagicInitiateSpell('');
+            }
         }
     }, [selectedBackgroundId]);
 
@@ -223,10 +262,16 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
             setSelectedRogueExpertises([]);
             setSpellSearch('');
             setSpellSchoolFilter('all');
+
+            if (!character.background) {
+                const targetBg = getDefaultBackgroundForClass(selectedClassId);
+                setSelectedBackgroundId(targetBg);
+            }
+
             onUpdate({ ...character, hpRolled: undefined });
             prevClassId.current = selectedClassId;
         }
-    }, [selectedClassId, character, onUpdate]);
+    }, [selectedClassId, character, onUpdate, getDefaultBackgroundForClass]);
 
     const getAttributeBonus = React.useCallback((attrKey: string): number => {
         if (activeSystem === 'witcher') {
@@ -470,16 +515,6 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
         }
     }, [crafterTools]);
 
-    const toggleFeat = React.useCallback((featId: string) => {
-        if (selectedFeats.includes(featId)) {
-            setSelectedFeats(prev => prev.filter(f => f !== featId));
-        } else {
-            if (selectedFeats.length < 1) {
-                setSelectedFeats(prev => [...prev, featId]);
-            }
-        }
-    }, [selectedFeats]);
-
     // Simple, direct stat modifier
     const updateBaseStat = React.useCallback((attr: string, delta: number) => {
         setBaseStats(prev => {
@@ -524,19 +559,26 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
         hasMusician ||
         hasCrafter
     );
-    const hasSpells = isSpellCaster || !!effectiveRaceCantripChoices || hasMagicInitiate;
+    const hasOriginSpells = !!effectiveRaceCantripChoices || hasMagicInitiate;
+    const hasSpells = isSpellCaster || hasOriginSpells;
 
     const rawSteps = [
-        { label: 'Origem' },
-        { label: 'Atributos' },
-        { label: 'Perícias' },
-        ...(hasProficiencyChoice ? [{ label: 'Proficiências' }] : []),
-        ...(hasSpells ? [{ label: 'Magias' }] : []),
-        { label: 'Talentos' },
-        { label: 'Equipamentos' },
-        { label: 'Vida' }
+        { stepKey: 'origin', label: 'Origem' },
+        { stepKey: 'attributes', label: 'Atributos' },
+        { stepKey: 'skills', label: 'Perícias' },
+        ...(hasProficiencyChoice ? [{ stepKey: 'proficiencies', label: 'Proficiências' }] : []),
+        ...(hasSpells ? [{ stepKey: 'spells', label: isSpellCaster ? 'Magias' : 'Magias de Origem' }] : []),
+        { stepKey: 'feats', label: 'Talentos' },
+        { stepKey: 'equipment', label: 'Equipamentos' },
+        { stepKey: 'hp', label: 'Vida' }
     ];
-    const steps = rawSteps.map((s, i) => ({ id: i, label: s.label }));
+    const steps = rawSteps.map((s, i) => ({ id: i, stepKey: s.stepKey, label: s.label }));
+
+    React.useEffect(() => {
+        if (currentStep >= steps.length) {
+            setCurrentStep(Math.max(0, steps.length - 1));
+        }
+    }, [steps.length, currentStep]);
 
     // Validation checks for final apply (No point-buy restrictions)
     const isMagicInitiateValid = !hasMagicInitiate || (magicInitiateCantrips.length === 2 && !!magicInitiateSpell);
@@ -546,12 +588,16 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
     const isLanguagesValid = activeSystem !== 'dnd55e' || selectedCommonLanguages.length === 2;
     const isSkillsValid = selectedSkills.length >= baseSkillLimit;
     const isRaceCantripsValid = !effectiveRaceCantripChoices || selectedRaceCantrips.length >= effectiveRaceCantripChoices.count;
+    const isClassCantripsValid = !isSpellCaster || (selectedClass?.spellcastingConfig?.cantripsKnown || 0) === 0 || selectedCantrips.length >= (selectedClass?.spellcastingConfig?.cantripsKnown || 0);
+    const isClassSpellsValid = !isSpellCaster || (selectedClass?.spellcastingConfig?.spellsKnown || 0) === 0 || selectedSpells.length >= (selectedClass?.spellcastingConfig?.spellsKnown || 0);
 
     const isFormValid = (
         isSkillsValid &&
         (selectedClassId !== 'rogue' || selectedRogueExpertises.length === 2) &&
         (!selectedClass?.toolChoices || selectedTools.length >= selectedClass.toolChoices.count) &&
         isRaceCantripsValid &&
+        isClassCantripsValid &&
+        isClassSpellsValid &&
         isMagicInitiateValid &&
         isSkilledValid &&
         isMusicianValid &&
@@ -847,12 +893,12 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
         }
 
         // Spells & Race Cantrips & Magic Initiate
-        const chosenCantrips = SPELLS.filter(s => selectedCantrips.includes(s.id));
-        const chosenSpells = SPELLS.filter(s => selectedSpells.includes(s.id));
-        const chosenRaceCantrips = SPELLS.filter(s => selectedRaceCantrips.includes(s.id));
+        const chosenCantrips = isSpellCaster ? SPELLS.filter(s => selectedCantrips.includes(s.id)) : [];
+        const chosenSpells = isSpellCaster ? SPELLS.filter(s => selectedSpells.includes(s.id)) : [];
+        const chosenRaceCantrips = effectiveRaceCantripChoices ? SPELLS.filter(s => selectedRaceCantrips.includes(s.id)) : [];
 
-        const miCantrips = SPELLS.filter(s => magicInitiateCantrips.includes(s.id));
-        const miSpell = SPELLS.filter(s => s.id === magicInitiateSpell);
+        const miCantrips = hasMagicInitiate ? SPELLS.filter(s => magicInitiateCantrips.includes(s.id)) : [];
+        const miSpell = hasMagicInitiate ? SPELLS.filter(s => s.id === magicInitiateSpell) : [];
 
         nextChar.spells = [
             ...chosenCantrips,
@@ -862,8 +908,8 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
             ...miSpell
         ];
 
-        // Feats (Background feat + Human bonus feat + Custom chosen feat)
-        const chosenFeats = FEATS.filter(f => selectedFeats.includes(f.id));
+        // Feats (Background feat + Human bonus feat)
+        const chosenFeats: Feat[] = [];
         if (selectedBackground?.featId) {
             const originFeat = FEATS.find(f => f.id === selectedBackground.featId);
             if (originFeat && !chosenFeats.some(f => f.id === originFeat.id)) {
@@ -881,7 +927,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
         // Apply Feat Bonuses (HP per Level, Speed)
         chosenFeats.forEach(feat => {
             if (feat.effects) {
-                feat.effects.forEach(effect => {
+                feat.effects.forEach((effect: any) => {
                     if (effect.type === 'hp_per_level') {
                         const bonusHP = effect.value * nextChar.level;
                         nextChar.hp.max += bonusHP;
@@ -895,7 +941,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
         });
 
         // Initialize Spell Slots for Casters at Level 1
-        if (isSpellCaster || selectedClass?.spellcastingConfig) {
+        if (isSpellCaster) {
             nextChar.spellSlots = getSpellSlotsForLevel(selectedClass.id, 1);
         } else {
             nextChar.spellSlots = {
@@ -909,6 +955,11 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                 8: { max: 0, used: 0 },
                 9: { max: 0, used: 0 },
             };
+        }
+
+        if (!isSpellCaster && (!nextChar.spells || nextChar.spells.length === 0)) {
+            nextChar.spellSaveDC = 0;
+            nextChar.spellAttackBonus = 0;
         }
 
         // Initialize Class Resources
@@ -1006,7 +1057,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
 
                 <div className="step-content">
                     {/* STEP 0: Origin */}
-                    {currentStep === 0 && (
+                    {steps[currentStep]?.stepKey === 'origin' && (
                         <div className="builder-row animate-fade">
                             <div className="builder-col">
                                 <div style={{ marginBottom: '16px' }}>
@@ -1270,7 +1321,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                     )}
 
                     {/* STEP 1: Attributes */}
-                    {steps[currentStep].label === 'Atributos' && (
+                    {steps[currentStep]?.stepKey === 'attributes' && (
                         <div className="animate-fade">
                             <div className="builder-section">
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '12px' }}>
@@ -1481,7 +1532,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                     )}
 
                     {/* STEP 2: Skills */}
-                    {steps[currentStep].label === 'Perícias' && (
+                    {steps[currentStep]?.stepKey === 'skills' && (
                         <div className="animate-fade">
                             <div className="builder-row">
                                 <div className="builder-col">
@@ -1645,7 +1696,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                     )}
 
                     {/* STEP 3: Proficiencies */}
-                    {steps[currentStep].label === 'Proficiências' && hasProficiencyChoice && (
+                    {steps[currentStep]?.stepKey === 'proficiencies' && hasProficiencyChoice && (
                         <div className="animate-fade">
                             <div className="builder-section">
                                 {/* IDIOMAS COMUNS */}
@@ -1832,9 +1883,15 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                     )}
 
                     {/* STEP: Spells */}
-                    {steps[currentStep].label === 'Magias' && (
+                    {steps[currentStep]?.stepKey === 'spells' && (
                         <div className="animate-fade">
                             <div className="builder-section">
+                                {!isSpellCaster && hasOriginSpells && (
+                                    <div style={{ marginBottom: '16px', padding: '12px 16px', background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.4)', borderRadius: '6px', color: '#93c5fd', fontSize: '0.9rem' }}>
+                                        ℹ️ Sua classe (<strong>{selectedClass?.name}</strong>) é não-conjuradora e não possui magias ou truques de classe. As opções abaixo são concedidas exclusivamente pelos seus traços de espécie/linhagem ou pelo seu talento de antecedente de 1º nível.
+                                    </div>
+                                )}
+
                                 {isSpellCaster && (
                                     <div className="info-box" style={{ marginBottom: '16px' }}>
                                         Atributo de Conjuração: <strong>{selectedClass?.spellcastingConfig?.ability.toUpperCase()}</strong> |
@@ -1846,27 +1903,29 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                                 )}
 
                                 {/* Filter and Search Bar */}
-                                <div className="spell-filter-bar">
-                                    <input
-                                        type="text"
-                                        className="spell-search-input"
-                                        placeholder="Pesquisar magia por nome, efeito ou escola..."
-                                        value={spellSearch}
-                                        onChange={(e) => setSpellSearch(e.target.value)}
-                                    />
-                                    <div className="spell-school-filter-chips">
-                                        {SPELL_SCHOOLS.map(sc => (
-                                            <button
-                                                key={sc.id}
-                                                type="button"
-                                                className={`school-chip-btn ${spellSchoolFilter === sc.id ? 'active' : ''}`}
-                                                onClick={() => setSpellSchoolFilter(sc.id)}
-                                            >
-                                                {sc.name}
-                                            </button>
-                                        ))}
+                                {(isSpellCaster || hasMagicInitiate) && (
+                                    <div className="spell-filter-bar">
+                                        <input
+                                            type="text"
+                                            className="spell-search-input"
+                                            placeholder="Pesquisar magia por nome, efeito ou escola..."
+                                            value={spellSearch}
+                                            onChange={(e) => setSpellSearch(e.target.value)}
+                                        />
+                                        <div className="spell-school-filter-chips">
+                                            {SPELL_SCHOOLS.map(sc => (
+                                                <button
+                                                    key={sc.id}
+                                                    type="button"
+                                                    className={`school-chip-btn ${spellSchoolFilter === sc.id ? 'active' : ''}`}
+                                                    onClick={() => setSpellSchoolFilter(sc.id)}
+                                                >
+                                                    {sc.name}
+                                                </button>
+                                            ))}
+                                        </div>
                                     </div>
-                                </div>
+                                )}
 
                                 {/* INICIADO EM MAGIA (MAGIC INITIATE) */}
                                 {hasMagicInitiate && (
@@ -2061,56 +2120,50 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                     )}
 
                     {/* STEP: Feats */}
-                    {steps[currentStep].label === 'Talentos' && (
+                    {steps[currentStep]?.stepKey === 'feats' && (
                         <div className="animate-fade">
                             <div className="builder-section">
+                                <h3 style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '8px', marginBottom: '16px' }}>
+                                    Talentos de 1º Nível (Origem)
+                                </h3>
+
                                 {selectedBackground && selectedBackground.featId && (
-                                    <div style={{ marginBottom: '16px', padding: '12px 14px', background: 'rgba(197, 160, 89, 0.12)', border: '1px solid rgba(197, 160, 89, 0.4)', borderRadius: '6px' }}>
+                                    <div style={{ marginBottom: '16px', padding: '14px 16px', background: 'rgba(197, 160, 89, 0.12)', border: '1px solid rgba(197, 160, 89, 0.4)', borderRadius: '6px' }}>
                                         <div style={{ color: '#ffd700', fontWeight: 'bold', fontSize: '0.95rem' }}>
                                             Talento de Origem do Antecedente ({selectedBackground.name}):
                                         </div>
-                                        <div style={{ color: '#fff', fontSize: '1.05rem', marginTop: '4px', fontWeight: 'bold' }}>
+                                        <div style={{ color: '#fff', fontSize: '1.1rem', marginTop: '4px', fontWeight: 'bold' }}>
                                             {selectedBackground.featName || FEATS.find(f => f.id === selectedBackground.featId)?.name}
                                         </div>
-                                        <div style={{ color: '#ccc', fontSize: '0.85rem', marginTop: '2px' }}>
-                                            {FEATS.find(f => f.id === selectedBackground.featId)?.description}
+                                        <div style={{ color: '#ccc', fontSize: '0.88rem', marginTop: '4px', lineHeight: 1.5 }}>
+                                            {FEATS.find(f => f.id === selectedBackground.featId)?.descriptionFull || FEATS.find(f => f.id === selectedBackground.featId)?.description}
                                         </div>
                                     </div>
                                 )}
 
                                 {selectedRace?.originFeatChoice && selectedHumanBonusFeat && (
-                                    <div style={{ marginBottom: '16px', padding: '12px 14px', background: 'rgba(59, 130, 246, 0.12)', border: '1px solid rgba(59, 130, 246, 0.4)', borderRadius: '6px' }}>
+                                    <div style={{ marginBottom: '16px', padding: '14px 16px', background: 'rgba(59, 130, 246, 0.12)', border: '1px solid rgba(59, 130, 246, 0.4)', borderRadius: '6px' }}>
                                         <div style={{ color: '#60a5fa', fontWeight: 'bold', fontSize: '0.95rem' }}>
-                                            Talento de Origem Extra — Versátil (Humano):
+                                            Talento de Origem Extra — Traço Versátil (Humano):
                                         </div>
-                                        <div style={{ color: '#fff', fontSize: '1.05rem', marginTop: '4px', fontWeight: 'bold' }}>
+                                        <div style={{ color: '#fff', fontSize: '1.1rem', marginTop: '4px', fontWeight: 'bold' }}>
                                             {FEATS.find(f => f.id === selectedHumanBonusFeat)?.name}
                                         </div>
-                                        <div style={{ color: '#ccc', fontSize: '0.85rem', marginTop: '2px' }}>
-                                            {FEATS.find(f => f.id === selectedHumanBonusFeat)?.description}
+                                        <div style={{ color: '#ccc', fontSize: '0.88rem', marginTop: '4px', lineHeight: 1.5 }}>
+                                            {FEATS.find(f => f.id === selectedHumanBonusFeat)?.descriptionFull || FEATS.find(f => f.id === selectedHumanBonusFeat)?.description}
                                         </div>
                                     </div>
                                 )}
 
-                                <h3>Talento Adicional / Bônus ({selectedFeats.length}/1)</h3>
-                                <div className="spells-grid">
-                                    {FEATS.filter(f => f.category === 'Origem' && f.id !== selectedBackground?.featId && f.id !== selectedHumanBonusFeat).map(feat => (
-                                        <div
-                                            key={feat.id}
-                                            className={`spell-card ${selectedFeats.includes(feat.id) ? 'selected' : ''}`}
-                                            onClick={() => toggleFeat(feat.id)}
-                                        >
-                                            <strong>{feat.name}</strong>
-                                            <div className="spell-desc">{feat.description}</div>
-                                        </div>
-                                    ))}
+                                <div style={{ fontSize: '0.85rem', color: '#94a3b8', fontStyle: 'italic', marginTop: '16px', padding: '10px 14px', background: 'rgba(255, 255, 255, 0.03)', borderRadius: '6px' }}>
+                                    ✨ <em>De acordo com as regras oficiais de D&D 5.5e (2024), personagens de 1º nível recebem exatamente um Talento de Origem concedido pelo seu Antecedente (e um talento extra caso pertençam à espécie Humana pelo traço Versátil). Novos talentos são obtidos nos níveis 4, 8, 12, 16 e 19.</em>
                                 </div>
                             </div>
                         </div>
                     )}
 
                     {/* STEP: Equipment */}
-                    {steps[currentStep].label === 'Equipamentos' && (
+                    {steps[currentStep]?.stepKey === 'equipment' && (
                         <div className="animate-fade">
                             <div className="builder-section">
                                 <div className="builder-row">
@@ -2173,7 +2226,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                     )}
 
                     {/* STEP: Life */}
-                    {steps[currentStep].label === 'Vida' && (
+                    {steps[currentStep]?.stepKey === 'hp' && (
                         <div className="builder-row animate-fade">
                             <div className="builder-col" style={{ width: '100%', textAlign: 'center' }}>
                                 <h3>Pontos de Vida (Nível 1)</h3>
@@ -2187,7 +2240,8 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                                     <p>Modificador de Constituição: <strong>{calculateModifier(baseStats.con + getAttributeBonus('con')) >= 0 ? '+' : ''}{calculateModifier(baseStats.con + getAttributeBonus('con'))}</strong></p>
                                     {(() => {
                                         const bgFeat = selectedBackground?.featId ? FEATS.find(f => f.id === selectedBackground.featId) : null;
-                                        const allFeatsForHp = [...FEATS.filter(f => selectedFeats.includes(f.id)), ...(bgFeat ? [bgFeat] : [])];
+                                        const humanFeat = (selectedRace?.originFeatChoice && selectedHumanBonusFeat) ? FEATS.find(f => f.id === selectedHumanBonusFeat) : null;
+                                        const allFeatsForHp = [...(bgFeat ? [bgFeat] : []), ...(humanFeat ? [humanFeat] : [])];
                                         const featHp = allFeatsForHp.reduce((acc, f) => {
                                             const hpEffect = f.effects?.find(e => e.type === 'hp_per_level');
                                             return acc + (hpEffect ? hpEffect.value : 0);
@@ -2236,15 +2290,21 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                                     ? `Selecione ${baseSkillLimit} perícias!`
                                     : !isLanguagesValid
                                         ? 'Escolha seus 2 idiomas comuns!'
-                                        : !isMagicInitiateValid
-                                            ? 'Escolha 2 truques e 1 magia para Iniciado em Magia!'
-                                            : !isSkilledValid
-                                                ? 'Escolha 3 perícias para o talento Habilidoso!'
-                                                : !isMusicianValid
-                                                    ? 'Escolha 3 instrumentos para o talento Músico!'
-                                                    : !isCrafterValid
-                                                        ? 'Escolha 3 ferramentas para o talento Artífice!'
-                                                        : "Tudo pronto!"
+                                        : !isClassCantripsValid
+                                            ? `Escolha todos os seus truques de classe (${selectedCantrips.length}/${selectedClass?.spellcastingConfig?.cantripsKnown})!`
+                                            : !isClassSpellsValid
+                                                ? `Escolha todas as suas magias de 1º nível de classe (${selectedSpells.length}/${selectedClass?.spellcastingConfig?.spellsKnown})!`
+                                                : !isRaceCantripsValid
+                                                    ? 'Escolha seu truque racial!'
+                                                    : !isMagicInitiateValid
+                                                        ? 'Escolha 2 truques e 1 magia para Iniciado em Magia!'
+                                                        : !isSkilledValid
+                                                            ? 'Escolha 3 perícias para o talento Habilidoso!'
+                                                            : !isMusicianValid
+                                                                ? 'Escolha 3 instrumentos para o talento Músico!'
+                                                                : !isCrafterValid
+                                                                    ? 'Escolha 3 ferramentas para o talento Artífice!'
+                                                                    : "Tudo pronto!"
                             }
                         >
                             {effectiveStartingLevel > 1 ? `Concluir e Evoluir (Nível ${effectiveStartingLevel})` : 'Concluir Personagem'}
