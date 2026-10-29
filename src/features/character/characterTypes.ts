@@ -148,11 +148,13 @@ export interface Character {
     adventureId?: string; // Scope by Campaign/Adventure
     name: string;
     race: string;
+    subrace?: string; // Sub-espécie / Linhagem / Ancestralidade (Elfo, Draconato, Golias, Tiefling, Gnomo)
     class: string;
     subclass?: string;
     level: number;
     background: string;
     alignment: string;
+    size?: 'Médio' | 'Pequeno'; // Tamanho do personagem
     imageUrl?: string; // Avatar URL
     experience: number;
     nextLevelExperience: number; // XP needed for next level

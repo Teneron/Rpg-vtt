@@ -5,6 +5,34 @@ export interface RaceTrait {
     description: string;
 }
 
+export interface SubraceData {
+    id: string;
+    name: string;
+    description: string;
+    speed?: number; // e.g. Elfo da Floresta 10.5m
+    visionRange?: number; // e.g. Drow 36m
+    traits?: RaceTrait[];
+    bonus?: Partial<Record<keyof CharacterAttributes, number>>;
+    cantripChoices?: {
+        count: number;
+        classList?: string;
+        options?: string[];
+        ability: string;
+    };
+    spellsGranted?: {
+        level: number;
+        spellId: string;
+        name: string;
+    }[];
+    damageResistance?: string; // e.g. "Fogo", "Ácido", "Veneno"
+    breathWeapon?: {
+        damageType: string;
+        shape: 'cone' | 'line';
+        area: string;
+        save: 'dex' | 'con';
+    };
+}
+
 export interface RaceData {
     id: string;
     name: string;
@@ -23,6 +51,12 @@ export interface RaceData {
         options?: string[]; // Specific cantrip IDs
         ability: string;
     };
+    subraces?: SubraceData[];
+    subraceLabel?: string;
+    allowSizeChoice?: boolean;
+    toolChoices?: { count: number; options: string[] };
+    originFeatChoice?: boolean;
+    skillChoices?: { count: number };
     system?: 'dnd55e' | 'witcher';
 }
 
@@ -34,21 +68,24 @@ export const RACES: RaceData[] = [
         id: 'human',
         name: 'Humano',
         system: 'dnd55e',
-        description: "Os humanos são versáteis, ambiciosos e cheios de determinação. Destacam-se pela capacidade incomparável de adaptação cultural, recebendo inspiração contínua e talentos de origem extras que ampliam suas capacidades desde o início da jornada.",
+        description: "Os humanos são versáteis, ambiciosos e cheios de determinação. Destacam-se pela capacidade incomparável de adaptação cultural, recebendo inspiração heroica contínua a cada descanso longo, proficiência em uma perícia extra e um talento de origem adicional de 1º nível.",
         age: "Humanos chegam à maturidade no final da adolescência e vivem menos de um século.",
         size: "Médio",
+        allowSizeChoice: true, // Escolha entre Médio ou Pequeno
         speed: 9,
         alignment: "Humanos não possuem tendência inata, abrangendo todos os espectros morais.",
         bonus: { str: 1, dex: 1, con: 1, int: 1, wis: 1, cha: 1 },
         languages: ['Comum'],
-        languageChoices: { count: 1 },
+        languageChoices: { count: 2 },
+        originFeatChoice: true, // Ganha 1 Talento de Origem extra
+        skillChoices: { count: 1 }, // 1 perícia extra à escolha
         traits: [
             {
                 name: "Inspiração Heroica Recorrente",
                 description: "Sua determinação inabalável lhe dá ânimo renovado. Sempre que terminar um Descanso Longo, você adquire Inspiração Heroica se ainda não a possuir."
             },
             {
-                name: "Versátil (Talento de Origem Extra)",
+                name: "Versátil (Talento de Origem & Perícia Extras)",
                 description: "Você ganha proficiência em uma perícia à sua escolha e recebe um Talento de Origem adicional de 1º nível à sua escolha."
             }
         ]
@@ -99,6 +136,79 @@ export const RACES: RaceData[] = [
         alignment: "Tendem aos extremos: guerreiros leais e honrados da justiça ou tiranos implacáveis.",
         bonus: { str: 2, cha: 1 },
         languages: ['Comum', 'Dracônico'],
+        subraceLabel: 'Ancestralidade Dracônica',
+        subraces: [
+            {
+                id: 'black',
+                name: 'Dragão Preto',
+                description: 'Ácido. Sopro em Linha de 9m × 1,5m (Salva DES). Resistência a Ácido.',
+                damageResistance: 'Ácido',
+                breathWeapon: { damageType: 'Ácido', shape: 'line', area: 'Linha de 9m × 1,5m', save: 'dex' }
+            },
+            {
+                id: 'copper',
+                name: 'Dragão de Cobre',
+                description: 'Ácido. Sopro em Linha de 9m × 1,5m (Salva DES). Resistência a Ácido.',
+                damageResistance: 'Ácido',
+                breathWeapon: { damageType: 'Ácido', shape: 'line', area: 'Linha de 9m × 1,5m', save: 'dex' }
+            },
+            {
+                id: 'blue',
+                name: 'Dragão Azul',
+                description: 'Eletricidade. Sopro em Linha de 9m × 1,5m (Salva DES). Resistência a Eletricidade.',
+                damageResistance: 'Eletricidade',
+                breathWeapon: { damageType: 'Eletricidade', shape: 'line', area: 'Linha de 9m × 1,5m', save: 'dex' }
+            },
+            {
+                id: 'bronze',
+                name: 'Dragão de Bronze',
+                description: 'Eletricidade. Sopro em Linha de 9m × 1,5m (Salva DES). Resistência a Eletricidade.',
+                damageResistance: 'Eletricidade',
+                breathWeapon: { damageType: 'Eletricidade', shape: 'line', area: 'Linha de 9m × 1,5m', save: 'dex' }
+            },
+            {
+                id: 'brass',
+                name: 'Dragão de Latão',
+                description: 'Fogo. Sopro em Linha de 9m × 1,5m (Salva DES). Resistência a Fogo.',
+                damageResistance: 'Fogo',
+                breathWeapon: { damageType: 'Fogo', shape: 'line', area: 'Linha de 9m × 1,5m', save: 'dex' }
+            },
+            {
+                id: 'gold',
+                name: 'Dragão de Ouro',
+                description: 'Fogo. Sopro em Cone de 4,5m (Salva DES). Resistência a Fogo.',
+                damageResistance: 'Fogo',
+                breathWeapon: { damageType: 'Fogo', shape: 'cone', area: 'Cone de 4,5m', save: 'dex' }
+            },
+            {
+                id: 'red',
+                name: 'Dragão Vermelho',
+                description: 'Fogo. Sopro em Cone de 4,5m (Salva DES). Resistência a Fogo.',
+                damageResistance: 'Fogo',
+                breathWeapon: { damageType: 'Fogo', shape: 'cone', area: 'Cone de 4,5m', save: 'dex' }
+            },
+            {
+                id: 'green',
+                name: 'Dragão Verde',
+                description: 'Veneno. Sopro em Cone de 4,5m (Salva CON). Resistência a Veneno.',
+                damageResistance: 'Veneno',
+                breathWeapon: { damageType: 'Veneno', shape: 'cone', area: 'Cone de 4,5m', save: 'con' }
+            },
+            {
+                id: 'silver',
+                name: 'Dragão de Prata',
+                description: 'Frio. Sopro em Cone de 4,5m (Salva CON). Resistência a Frio.',
+                damageResistance: 'Frio',
+                breathWeapon: { damageType: 'Frio', shape: 'cone', area: 'Cone de 4,5m', save: 'con' }
+            },
+            {
+                id: 'white',
+                name: 'Dragão Branco',
+                description: 'Frio. Sopro em Cone de 4,5m (Salva CON). Resistência a Frio.',
+                damageResistance: 'Frio',
+                breathWeapon: { damageType: 'Frio', shape: 'cone', area: 'Cone de 4,5m', save: 'con' }
+            }
+        ],
         traits: [
             {
                 name: "Visão no Escuro (18m)",
@@ -106,11 +216,11 @@ export const RACES: RaceData[] = [
             },
             {
                 name: "Ancestralidade Dracônica & Resistência",
-                description: "Escolha sua linhagem (Negro/Cobre: Ácido; Azul/Bronze: Eletricidade; Latão/Ouro/Vermelho: Fogo; Verde: Veneno; Prata/Branco: Frio). Você possui Resistência a este tipo de dano."
+                description: "Você possui Resistência ao tipo de dano associado à sua Ancestralidade Dracônica."
             },
             {
                 name: "Arma de Sopro",
-                description: "Quando executa a ação Atacar, você pode substituir um ataque por uma baforada (cone de 4,5m ou linha de 9m × 1,5m). Inimigos sofrem 1d10 de dano do seu elemento (2d10 no 5º nv, 3d10 no 11º nv, 4d10 no 17º nv) ou metade se passarem na salvaguarda de DES ou CON (CD 8 + mod. CON + PB). Usos iguais ao Bônus de Proficiência por Descanso Longo."
+                description: "Quando executa a ação Atacar, você pode substituir um ataque por uma baforada (cone de 4,5m ou linha de 9m × 1,5m conforme seu dragão). Alvos sofrem 1d10 de dano elemental (2d10 no 5º nv, 3d10 no 11º nv, 4d10 no 17º nv) ou metade com salvaguarda bem-sucedida (CD 8 + mod. CON + PB). Usos iguais ao Bônus de Proficiência por Descanso Longo."
             },
             {
                 name: "Voo Dracônico (Nível 5+)",
@@ -122,13 +232,17 @@ export const RACES: RaceData[] = [
         id: 'dwarf',
         name: 'Anão',
         system: 'dnd55e',
-        description: "Mestres da pedra, forja e clãs subterrâneos. Possuem velocidade completa de 9 metros, Visão no Escuro superior de 36m, Sentido Sísmico através de rocha e pontos de vida adicionais a cada nível.",
+        description: "Mestres da pedra, forja e clãs subterrâneos. Possuem velocidade completa de 9 metros, Visão no Escuro superior de 36m, Sentido Sísmico através de rocha, pontos de vida adicionais a cada nível e proficiência com ferramentas artesanais.",
         age: "Tornam-se adultos por volta dos 50 anos e vivem até cerca de 350 anos.",
         size: "Médio",
         speed: 9,
         alignment: "A maioria é leal e voltada para a ordem de seus clãs e a honra de suas tradições.",
         bonus: { con: 2, str: 1 },
         languages: ['Comum', 'Anão'],
+        toolChoices: {
+            count: 1,
+            options: ['Ferramentas de Ferreiro', 'Suprimentos de Cervejeiro', 'Ferramentas de Pedreiro']
+        },
         traits: [
             {
                 name: "Visão no Escuro Superior (36m / 120ft)",
@@ -159,7 +273,58 @@ export const RACES: RaceData[] = [
         alignment: "Valorizam a liberdade, arte e expressão, inclinando-se para o Caótico e Bondoso.",
         bonus: { dex: 2, int: 1 },
         languages: ['Comum', 'Élfico'],
-        cantripChoices: { count: 1, classList: 'wizard', ability: 'int' },
+        subraceLabel: 'Linhagem Élfica',
+        subraces: [
+            {
+                id: 'high_elf',
+                name: 'Alto Elfo',
+                description: 'Ligado à magia acadêmica e planar. Conhece um truque de Mago à escolha, Detectar Magia no 3º nível e Passo Nebuloso no 5º nível.',
+                cantripChoices: { count: 1, classList: 'wizard', ability: 'int' },
+                spellsGranted: [
+                    { level: 3, spellId: 'detect_magic', name: 'Detectar Magia' },
+                    { level: 5, spellId: 'misty_step', name: 'Passo Nebuloso' }
+                ],
+                traits: [
+                    {
+                        name: 'Magia de Alto Elfo',
+                        description: 'Você conhece 1 truque à sua escolha da lista de Mago (Inteligência, Sabedoria ou Carisma). No 3º nível, pode conjurar Detectar Magia sem gastar espaço (1/Descanso Longo). No 5º nível, pode conjurar Passo Nebuloso sem gastar espaço (1/Descanso Longo).'
+                    }
+                ]
+            },
+            {
+                id: 'wood_elf',
+                name: 'Elfo da Floresta',
+                description: 'Em perfeita harmonia com matas primitivas. Deslocamento base aumentado para 10,5m, truque Druidismo e Passos Sem Pegadas no 5º nível.',
+                speed: 10.5,
+                cantripChoices: { count: 1, options: ['druidcraft'], ability: 'wis' },
+                spellsGranted: [
+                    { level: 5, spellId: 'pass_without_trace', name: 'Passos Sem Pegadas' }
+                ],
+                traits: [
+                    {
+                        name: 'Passo Rápido & Druidismo',
+                        description: 'Seu deslocamento base aumenta para 10,5 metros. Você conhece o truque Druidismo. No 5º nível, pode conjurar Passos Sem Pegadas sem gastar espaço (1/Descanso Longo).'
+                    }
+                ]
+            },
+            {
+                id: 'drow',
+                name: 'Drow (Elfo Negro)',
+                description: 'Adaptado à escuridão da Umbraeterna. Visão no Escuro Superior de 36m, truque Globos de Luz, Fogo das Fadas no 3º nível e Escuridão no 5º nível.',
+                visionRange: 36,
+                cantripChoices: { count: 1, options: ['dancing_lights'], ability: 'cha' },
+                spellsGranted: [
+                    { level: 3, spellId: 'faerie_fire', name: 'Fogo das Fadas' },
+                    { level: 5, spellId: 'darkness', name: 'Escuridão' }
+                ],
+                traits: [
+                    {
+                        name: 'Magia Drow & Visão Superior',
+                        description: 'Sua Visão no Escuro tem alcance de 36 metros. Você conhece o truque Globos de Luz. No 3º nível, pode conjurar Fogo das Fadas sem gastar espaço (1/Descanso Longo). No 5º nível, pode conjurar Escuridão sem gastar espaço (1/Descanso Longo).'
+                    }
+                ]
+            }
+        ],
         traits: [
             {
                 name: "Visão no Escuro (18m)",
@@ -176,10 +341,6 @@ export const RACES: RaceData[] = [
             {
                 name: "Transe",
                 description: "Você não precisa dormir. Medita semiconsciente durante 4 horas para receber todos os benefícios de um Descanso Longo."
-            },
-            {
-                name: "Linhagem Élfica (Alto Elfo, Floresta ou Drow)",
-                description: "Alto Elfo: Truque de Mago à escolha + Detecção de Magia (nv 3) e Passo Nebuloso (nv 5). Elfo da Floresta: Deslocamento 10,5m + Artimanha + Passos Sem Pegadas (nv 5). Drow: Visão no Escuro 36m + Globos de Luz + Fogo das Fadas (nv 3) e Escuridão (nv 5)."
             }
         ]
     },
@@ -194,7 +355,36 @@ export const RACES: RaceData[] = [
         alignment: "Curiosos, benevolentes e brincalhões, pendendo para Neutro e Bom.",
         bonus: { int: 2, dex: 1 },
         languages: ['Comum', 'Gnômico'],
-        cantripChoices: { count: 1, classList: 'wizard', ability: 'int' },
+        subraceLabel: 'Linhagem Gnômica',
+        subraces: [
+            {
+                id: 'forest_gnome',
+                name: 'Gnomo da Floresta',
+                description: 'Amigo dos animais e ilusionista natural. Conhece o truque Ilusão Menor e pode conjurar Falar com Animais PB vezes por Descanso Longo.',
+                cantripChoices: { count: 1, options: ['minor_illusion'], ability: 'int' },
+                spellsGranted: [
+                    { level: 1, spellId: 'speak_with_animals', name: 'Falar com Animais' }
+                ],
+                traits: [
+                    {
+                        name: 'Ilusionista Natural & Falar com Animais',
+                        description: 'Você conhece o truque Ilusão Menor. Além disso, pode conjurar Falar com Animais sem gastar espaço de magia um número de vezes igual ao seu Bônus de Proficiência (recupera em Descanso Longo).'
+                    }
+                ]
+            },
+            {
+                id: 'rock_gnome',
+                name: 'Gnomo das Rochas',
+                description: 'Mestre da mecânica e da tecnologia arcana. Conhece Conserto e Prestidigitação, e cria pequenos inventos mecânicos.',
+                cantripChoices: { count: 2, options: ['mending', 'prestidigitation'], ability: 'int' },
+                traits: [
+                    {
+                        name: 'Engenho Gnômico',
+                        description: 'Você conhece os truques Conserto e Prestidigitação. Com 10 minutos e 10 PO de material, você pode fabricar um Pequeno Dispositivo Mecânico (Relógio, Caixa de Música ou Isqueiro/Pederneira mágica).'
+                    }
+                ]
+            }
+        ],
         traits: [
             {
                 name: "Visão no Escuro (18m)",
@@ -202,11 +392,7 @@ export const RACES: RaceData[] = [
             },
             {
                 name: "Astúcia Gnômica",
-                description: "Você possui Vantagem em todas as salvaguardas de Inteligência, Sabedoria e Carisma contra efeitos mágicos."
-            },
-            {
-                name: "Linhagem Gnômica (Floresta ou Rocha)",
-                description: "Gnomo da Floresta: Truque Ilusão Menor e conjuração de Falar com Animais PB vezes por Descanso Longo. Gnomo das Rochas: Truques Consertar e Prestidigitação, e capacidade de construir pequenos inventos mecânicos em 10 minutos."
+                description: "Você possui Vantagem em todas as salvaguardas de Inteligência, Sabedoria e Carisma contra magias e efeitos mágicos."
             }
         ]
     },
@@ -221,11 +407,76 @@ export const RACES: RaceData[] = [
         alignment: "Fortemente independentes e competitivos, prezam mérito e justiça leal.",
         bonus: { str: 2, con: 1 },
         languages: ['Comum', 'Gigante'],
-        traits: [
+        subraceLabel: 'Ancestralidade Gigante',
+        subraces: [
             {
-                name: "Ancestralidade Gigante",
-                description: "Escolha uma herança (usos = Bônus de Proficiência por Descanso Longo): Gigante das Nuvens (teleporte de 9m como ação bônus); Gigante do Fogo (+1d10 dano ígneo); Gigante do Gelo (+1d6 frio e -3m deslocamento inimigo); Gigante das Colinas (derruba criatura Enorme ou menor Caída ao acertar ataque); Gigante de Pedra (reação reduz dano em 1d12 + CON); Gigante da Tempestade (reação causa 1d8 elétrico a quem te atacou)."
+                id: 'cloud',
+                name: 'Gigante das Nuvens',
+                description: 'Salto da Nuvem: Teleporte de 9m como Ação Bônus (PB usos por Descanso Longo).',
+                traits: [
+                    {
+                        name: 'Salto da Nuvem',
+                        description: 'Como uma Ação Bônus, você pode se teleportar magicamente até 9 metros para um espaço desocupado visível. Você pode usar este traço um número de vezes igual ao seu Bônus de Proficiência por Descanso Longo.'
+                    }
+                ]
             },
+            {
+                id: 'fire',
+                name: 'Gigante do Fogo',
+                description: 'Golpe Ígneo: +1d10 dano de Fogo adicional ao acertar um ataque (PB usos por Descanso Longo).',
+                traits: [
+                    {
+                        name: 'Golpe Ígneo',
+                        description: 'Ao atingir um alvo com uma jogada de ataque, você pode causar 1d10 de dano de Fogo adicional. Você pode usar este traço um número de vezes igual ao seu Bônus de Proficiência por Descanso Longo.'
+                    }
+                ]
+            },
+            {
+                id: 'frost',
+                name: 'Gigante do Gelo',
+                description: 'Frio Cortante: +1d6 dano de Frio e reduz 3m de movimento do alvo até o próximo turno (PB usos por Descanso Longo).',
+                traits: [
+                    {
+                        name: 'Frio Cortante',
+                        description: 'Ao atingir um alvo com uma jogada de ataque, você pode causar 1d6 de dano de Frio adicional e reduzir o deslocamento do alvo em 3 metros até o início do seu próximo turno. Usos = PB por Descanso Longo.'
+                    }
+                ]
+            },
+            {
+                id: 'hill',
+                name: 'Gigante das Colinas',
+                description: 'Queda do Titã: Ao acertar uma criatura Grande ou menor, derrube-a Caída sem salvaguarda (PB usos por Descanso Longo).',
+                traits: [
+                    {
+                        name: 'Queda do Titã',
+                        description: 'Ao atingir uma criatura Grande ou menor com uma jogada de ataque, você pode deixá-la com a condição Caído. Usos = PB por Descanso Longo.'
+                    }
+                ]
+            },
+            {
+                id: 'stone',
+                name: 'Gigante de Pedra',
+                description: 'Resistência da Pedra: Como Reação ao sofrer dano, reduza o dano em 1d12 + mod. CON (PB usos por Descanso Longo).',
+                traits: [
+                    {
+                        name: 'Resistência da Pedra',
+                        description: 'Como uma Reação imediatamente após sofrer dano, você joga 1d12 e adiciona seu modificador de Constituição, reduzindo o dano sofrido por esse total. Usos = PB por Descanso Longo.'
+                    }
+                ]
+            },
+            {
+                id: 'storm',
+                name: 'Gigante da Tempestade',
+                description: 'Trovão da Tempestade: Como Reação ao sofrer dano, cause 1d8 de dano Elétrico ao atacante a até 18m (PB usos por Descanso Longo).',
+                traits: [
+                    {
+                        name: 'Trovão da Tempestade',
+                        description: 'Como uma Reação após sofrer dano de uma criatura a até 18 metros de você, você inflige 1d8 de dano Elétrico a esse atacante. Usos = PB por Descanso Longo.'
+                    }
+                ]
+            }
+        ],
+        traits: [
             {
                 name: "Forma Agigantada (Nível 5+)",
                 description: "Com Ação Bônus, torne-se Grande por 10 minutos. Causa +1d6 dano uma vez por turno, ganha +3m de deslocamento e Vantagem em testes de Força (1/Descanso Longo)."
@@ -296,26 +547,76 @@ export const RACES: RaceData[] = [
         id: 'tiefling',
         name: 'Tiefling',
         system: 'dnd55e',
-        description: "Mortais marcados pela essência dos Planos Inferiores. Podem pertencer a três legados místicos distintos (Infernal, Abissal ou Ctoniano), cada um conferindo resistência elemental e magias arcanas próprias.",
+        description: "Mortais marcados pela essência dos Planos Inferiores. Podem pertencer a três legados místicos distintos (Infernal, Abissal ou Ctônico), cada um conferindo resistência elemental e magias arcanas próprias.",
         age: "Amadurecem no mesmo ritmo dos humanos e vivem cerca de um século.",
         size: "Médio",
+        allowSizeChoice: true, // Pode ser Médio ou Pequeno
         speed: 9,
         alignment: "Tendência caótica e independente, desconfiados de autoritarismos rígidos.",
         bonus: { cha: 2, int: 1 },
         languages: ['Comum', 'Infernal'],
-        cantripChoices: { count: 1, options: ['thaumaturgy', 'poison_spray', 'chill_touch'], ability: 'cha' },
+        subraceLabel: 'Legado Ínfero',
+        subraces: [
+            {
+                id: 'infernal',
+                name: 'Legado Infernal',
+                description: 'Fogo. Resistência a Fogo, truque Taumaturgia, Repreensão Infernal no 3º nível e Escuridão no 5º nível.',
+                damageResistance: 'Fogo',
+                cantripChoices: { count: 1, options: ['thaumaturgy'], ability: 'cha' },
+                spellsGranted: [
+                    { level: 3, spellId: 'hellish_rebuke', name: 'Repreensão Infernal' },
+                    { level: 5, spellId: 'darkness', name: 'Escuridão' }
+                ],
+                traits: [
+                    {
+                        name: 'Magia Infernal & Resistência ao Fogo',
+                        description: 'Você possui Resistência a dano de Fogo. Conhece o truque Taumaturgia. No 3º nível, pode conjurar Repreensão Infernal sem gastar espaço (1/Descanso Longo). No 5º nível, pode conjurar Escuridão sem gastar espaço (1/Descanso Longo).'
+                    }
+                ]
+            },
+            {
+                id: 'abyssal',
+                name: 'Legado Abissal',
+                description: 'Veneno. Resistência a Veneno, truque Rajada de Veneno, Raio de Doença no 3º nível e Imobilizar Pessoa no 5º nível.',
+                damageResistance: 'Veneno',
+                cantripChoices: { count: 1, options: ['poison_spray'], ability: 'cha' },
+                spellsGranted: [
+                    { level: 3, spellId: 'ray_of_sickness', name: 'Raio de Doença' },
+                    { level: 5, spellId: 'hold_person', name: 'Imobilizar Pessoa' }
+                ],
+                traits: [
+                    {
+                        name: 'Magia Abissal & Resistência a Veneno',
+                        description: 'Você possui Resistência a dano de Veneno. Conhece o truque Rajada de Veneno. No 3º nível, pode conjurar Raio de Doença sem gastar espaço (1/Descanso Longo). No 5º nível, pode conjurar Imobilizar Pessoa sem gastar espaço (1/Descanso Longo).'
+                    }
+                ]
+            },
+            {
+                id: 'chthonic',
+                name: 'Legado Ctônico',
+                description: 'Necrótico. Resistência a Necrótico, truque Toque Arrepiante, Vitalidade Falsa no 3º nível e Raio do Enfraquecimento no 5º nível.',
+                damageResistance: 'Necrótico',
+                cantripChoices: { count: 1, options: ['chill_touch'], ability: 'cha' },
+                spellsGranted: [
+                    { level: 3, spellId: 'false_life', name: 'Vitalidade Falsa' },
+                    { level: 5, spellId: 'ray_of_enfeeblement', name: 'Raio do Enfraquecimento' }
+                ],
+                traits: [
+                    {
+                        name: 'Magia Ctônica & Resistência Necrótica',
+                        description: 'Você possui Resistência a dano Necrótico. Conhece o truque Toque Arrepiante. No 3º nível, pode conjurar Vitalidade Falsa sem gastar espaço (1/Descanso Longo). No 5º nível, pode conjurar Raio do Enfraquecimento sem gastar espaço (1/Descanso Longo).'
+                    }
+                ]
+            }
+        ],
         traits: [
             {
                 name: "Visão no Escuro (18m)",
                 description: "Enxerga na escuridão a até 18 metros."
             },
             {
-                name: "Legado Sobrenatural (Infernal, Abissal ou Ctoniano)",
-                description: "Infernal: Resistência a Fogo, truque Taumaturgia, Repreensão Infernal (nv 3), Escuridão (nv 5). Abissal: Resistência a Veneno, Rajada de Veneno, Raio de Doença (nv 3), Imobilizar Pessoa (nv 5). Ctoniano: Resistência a Necrótico, Toque Arrepiante, Vitalidade Falsa (nv 3), Raio do Enfraquecimento (nv 5)."
-            },
-            {
                 name: "Conjuração de Herança",
-                description: "Carisma é o seu atributo de conjuração para as magias concedidas pelo seu legado."
+                description: "Carisma, Inteligência ou Sabedoria é o seu atributo de conjuração para as magias concedidas pelo seu legado ínfero."
             }
         ]
     },

@@ -154,22 +154,68 @@ export const TOOLS_LIST = [
     "Ferramentas de Ladrão"
 ];
 
-export const DND_LANGUAGES = [
-    "Comum",
+export const DND_COMMON_LANGUAGES = [
+    "Língua de Sinais Comum",
+    "Dracônico",
     "Anão",
     "Élfico",
     "Gigante",
-    "Gnomo",
+    "Gnômico",
     "Goblin",
-    "Halfling",
-    "Órquico",
-    "Subcomum",
-    "Dracônico",
-    "Celestial",
+    "Pequenino",
+    "Orc"
+];
+
+export const DND_RARE_LANGUAGES = [
     "Abissal",
+    "Celestial",
+    "Dialeto Obscuro",
+    "Druídico",
+    "Gíria dos Ladrões",
     "Infernal",
     "Primordial",
-    "Silvestre"
+    "Silvestre",
+    "Subcomum"
+];
+
+export const MUSICAL_INSTRUMENTS = [
+    "Alaúde",
+    "Flauta",
+    "Flauta de Pã",
+    "Gaita de Foles",
+    "Lira",
+    "Trombeta",
+    "Tambor",
+    "Violino",
+    "Viola",
+    "Dulcímer"
+];
+
+export const ARTISAN_TOOLS = [
+    "Ferramentas de Alquimista",
+    "Suprimentos de Cervejeiro",
+    "Suprimentos de Caligrafia",
+    "Ferramentas de Carpinteiro",
+    "Ferramentas de Cartógrafo",
+    "Ferramentas de Sapateiro",
+    "Utensílios de Cozinheiro",
+    "Ferramentas de Vidreiro",
+    "Ferramentas de Joalheiro",
+    "Ferramentas de Couraria",
+    "Ferramentas de Pedreiro",
+    "Ferramentas de Pintor",
+    "Ferramentas de Oleiro",
+    "Ferramentas de Ferreiro",
+    "Ferramentas de Latoeiro",
+    "Ferramentas de Costureiro",
+    "Ferramentas de Tecelão",
+    "Ferramentas de Entalhador"
+];
+
+export const DND_LANGUAGES = [
+    "Comum",
+    ...DND_COMMON_LANGUAGES,
+    ...DND_RARE_LANGUAGES
 ];
 
 export const WITCHER_LANGUAGES = [

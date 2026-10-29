@@ -1,15 +1,21 @@
 import React, { useState } from 'react';
 import ReactDOM from 'react-dom';
-import { CLASSES } from './data/classes';
-import { RACES } from './data/races';
+import { CLASSES, type Subclass } from './data/classes';
+import { RACES, type SubraceData } from './data/races';
 import { BACKGROUNDS } from './data/backgrounds';
 import { SPELLS } from './data/spells';
 import { FEATS } from './data/feats';
-import { DND_LANGUAGES, WITCHER_LANGUAGES } from './data/rules';
+import {
+    DND_LANGUAGES,
+    WITCHER_LANGUAGES,
+    DND_COMMON_LANGUAGES,
+    MUSICAL_INSTRUMENTS,
+    ARTISAN_TOOLS
+} from './data/rules';
 import { ITEMS } from './data/items';
 
 import { SkillDescriptionPreview } from './SkillDescriptionPreview';
-import { X } from 'lucide-react';
+import { X, Dices, Sparkles, Shield, Wrench } from 'lucide-react';
 import {
     type Character,
     type CharacterAttributes,
@@ -78,9 +84,57 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
     const [selectedBackgroundId, setSelectedBackgroundId] = useState<string>(initialBackgroundId);
     const [hoveredSkill, setHoveredSkill] = useState<string | null>(null);
 
-    const availableLanguages = React.useMemo(() => {
-        return activeSystem === 'witcher' ? WITCHER_LANGUAGES : DND_LANGUAGES;
-    }, [activeSystem]);
+    // =========================================================================
+    // ITEM 1: SUBESPÉCIES / LINHAGENS (D&D 2024)
+    // =========================================================================
+    const [selectedSubraceId, setSelectedSubraceId] = useState<string>('');
+    const [selectedCharacterSize, setSelectedCharacterSize] = useState<'Médio' | 'Pequeno'>('Médio');
+    const [selectedDwarfTool, setSelectedDwarfTool] = useState<string>('Ferramentas de Ferreiro');
+    const [selectedHumanBonusFeat, setSelectedHumanBonusFeat] = useState<string>('alert');
+
+    // =========================================================================
+    // ITEM 4: SUBCLASSE (QUANDO NÍVEL INICIAL >= 3)
+    // =========================================================================
+    const [selectedSubclassId, setSelectedSubclassId] = useState<string>('');
+
+    // =========================================================================
+    // ITEM 4: ROLADOR DE ATRIBUTOS 4d6 (DESCARTE O MENOR)
+    // =========================================================================
+    type StatMethod = 'point_buy' | 'standard_array' | 'rolled_4d6';
+    const [statMethod, setStatMethod] = useState<StatMethod>('point_buy');
+    interface RolledStatEntry {
+        id: number;
+        dice: number[];
+        dropped: number;
+        total: number;
+    }
+    const [rolled4d6List, setRolled4d6List] = useState<RolledStatEntry[]>([]);
+    const [statAssignments, setStatAssignments] = useState<Record<string, number | null>>({
+        str: null, dex: null, con: null, int: null, wis: null, cha: null
+    });
+
+    // =========================================================================
+    // ITEM 2: ESCOLHAS INTERNAS DE TALENTOS DE ORIGEM
+    // =========================================================================
+    // Iniciado em Magia (Magic Initiate)
+    const [magicInitiateClass, setMagicInitiateClass] = useState<'cleric' | 'druid' | 'wizard'>('wizard');
+    const [magicInitiateAbility, setMagicInitiateAbility] = useState<'int' | 'wis' | 'cha'>('int');
+    const [magicInitiateCantrips, setMagicInitiateCantrips] = useState<string[]>([]);
+    const [magicInitiateSpell, setMagicInitiateSpell] = useState<string>('');
+
+    // Habilidoso (Skilled)
+    const [skilledChoices, setSkilledChoices] = useState<string[]>([]);
+
+    // Músico (Musician)
+    const [musicianInstruments, setMusicianInstruments] = useState<string[]>([]);
+
+    // Artífice (Crafter)
+    const [crafterTools, setCrafterTools] = useState<string[]>([]);
+
+    // =========================================================================
+    // ITEM 3: IDIOMAS COMUNS 2024 (PHB p. 43)
+    // =========================================================================
+    const [selectedCommonLanguages, setSelectedCommonLanguages] = useState<string[]>([]);
 
     // D&D 2024 / 5.5e Background Ability Score Increases (+2/+1 or +1/+1/+1 among background's abilityOptions)
     const [bgBonusMode, setBgBonusMode] = useState<'plus2_plus1' | 'plus1_all'>('plus2_plus1');
@@ -99,6 +153,114 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
             setBgPlusOne(remaining[0] || options[1] || 'con');
         }
     }, [selectedBackgroundId, bgPlusTwo, bgPlusOne]);
+
+    // Keep Subrace in sync with selected Race
+    React.useEffect(() => {
+        const race = RACES.find(r => r.id === selectedRaceId);
+        if (race?.subraces && race.subraces.length > 0) {
+            setSelectedSubraceId(race.subraces[0].id);
+        } else {
+            setSelectedSubraceId('');
+        }
+        if (race?.allowSizeChoice) {
+            setSelectedCharacterSize(race.size || 'Médio');
+        } else if (race?.size) {
+            setSelectedCharacterSize(race.size);
+        }
+        if (race?.toolChoices && race.toolChoices.options.length > 0) {
+            setSelectedDwarfTool(race.toolChoices.options[0]);
+        }
+    }, [selectedRaceId]);
+
+    // Keep Subclass in sync with selected Class
+    React.useEffect(() => {
+        const cls = CLASSES.find(c => c.id === selectedClassId);
+        if (cls?.subclasses && cls.subclasses.length > 0) {
+            setSelectedSubclassId(cls.subclasses[0].id);
+        } else {
+            setSelectedSubclassId('');
+        }
+    }, [selectedClassId]);
+
+    // Derived Race / Class / Background data
+    const selectedClass = React.useMemo(() => CLASSES.find(c => c.id === selectedClassId), [selectedClassId]);
+    const selectedRace = React.useMemo(() => RACES.find(r => r.id === selectedRaceId), [selectedRaceId]);
+    const selectedBackground = React.useMemo(() => BACKGROUNDS.find(b => b.id === selectedBackgroundId), [selectedBackgroundId]);
+    const isSpellCaster = React.useMemo(() => !!selectedClass?.spellcastingConfig, [selectedClass]);
+
+    const selectedSubrace: SubraceData | null = React.useMemo(() => {
+        if (!selectedRace?.subraces) return null;
+        return selectedRace.subraces.find(s => s.id === selectedSubraceId) || selectedRace.subraces[0] || null;
+    }, [selectedRace, selectedSubraceId]);
+
+    const selectedSubclass: Subclass | null = React.useMemo(() => {
+        if (!selectedClass?.subclasses) return null;
+        return selectedClass.subclasses.find(s => s.id === selectedSubclassId) || selectedClass.subclasses[0] || null;
+    }, [selectedClass, selectedSubclassId]);
+
+    // Base stats
+    const [baseStats, setBaseStats] = useState<Record<string, number>>({ str: 8, dex: 8, con: 8, int: 8, wis: 8, cha: 8 });
+    const [viewingProgressionId, setViewingProgressionId] = useState<string | null>(null);
+    const POINTS_MAX = 27;
+
+    // Selection State
+    const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
+    const [selectedTools, setSelectedTools] = useState<string[]>([]);
+    const [selectedLanguages, setSelectedLanguages] = useState<string[]>([]);
+    const [selectedSpells, setSelectedSpells] = useState<string[]>([]);
+    const [selectedCantrips, setSelectedCantrips] = useState<string[]>([]);
+    const [selectedRaceCantrips, setSelectedRaceCantrips] = useState<string[]>([]);
+    const [selectedFeats, setSelectedFeats] = useState<string[]>([]);
+    const [selectedEquipmentChoices, setSelectedEquipmentChoices] = useState<Record<number, number>>({});
+    const [selectedRogueExpertises, setSelectedRogueExpertises] = useState<string[]>([]);
+
+    const [spellSearch, setSpellSearch] = useState('');
+    const [spellSchoolFilter, setSpellSchoolFilter] = useState('all');
+
+    // Feat detection helper
+    const hasFeatActive = React.useCallback((featId: string) => {
+        if (selectedBackground?.featId === featId) return true;
+        if (selectedRace?.originFeatChoice && selectedHumanBonusFeat === featId) return true;
+        if (selectedFeats.includes(featId)) return true;
+        return false;
+    }, [selectedBackground, selectedRace, selectedHumanBonusFeat, selectedFeats]);
+
+    const hasMagicInitiate = hasFeatActive('magic_initiate');
+    const hasSkilled = hasFeatActive('skilled');
+    const hasMusician = hasFeatActive('musician');
+    const hasCrafter = hasFeatActive('crafter');
+
+    // Auto-configure Magic Initiate defaults when background changes
+    React.useEffect(() => {
+        if (selectedBackgroundId === 'acolyte') {
+            setMagicInitiateClass('cleric');
+            setMagicInitiateAbility('wis');
+        } else if (selectedBackgroundId === 'guide') {
+            setMagicInitiateClass('druid');
+            setMagicInitiateAbility('wis');
+        } else if (selectedBackgroundId === 'sage') {
+            setMagicInitiateClass('wizard');
+            setMagicInitiateAbility('int');
+        }
+    }, [selectedBackgroundId]);
+
+    // Track previous class to reset selection if class changes
+    const prevClassId = React.useRef(initialClassId);
+
+    React.useEffect(() => {
+        if (prevClassId.current !== selectedClassId) {
+            setSelectedSkills([]);
+            setSelectedSpells([]);
+            setSelectedCantrips([]);
+            setSelectedFeats([]);
+            setSelectedEquipmentChoices({});
+            setSelectedRogueExpertises([]);
+            setSpellSearch('');
+            setSpellSchoolFilter('all');
+            onUpdate({ ...character, hpRolled: undefined });
+            prevClassId.current = selectedClassId;
+        }
+    }, [selectedClassId, character, onUpdate]);
 
     const getAttributeBonus = React.useCallback((attrKey: string): number => {
         if (activeSystem === 'witcher') {
@@ -137,58 +299,21 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
         { id: 'Transmutação', name: 'Transmutação' }
     ];
 
-    const [baseStats, setBaseStats] = useState<Record<string, number>>({ str: 8, dex: 8, con: 8, int: 8, wis: 8, cha: 8 });
-    const [viewingProgressionId, setViewingProgressionId] = useState<string | null>(null);
-    const POINTS_MAX = 27;
+    // Combine race and subrace cantrip requirements
+    const effectiveRaceCantripChoices = React.useMemo(() => {
+        if (selectedSubrace?.cantripChoices) return selectedSubrace.cantripChoices;
+        if (selectedRace?.cantripChoices) return selectedRace.cantripChoices;
+        return null;
+    }, [selectedRace, selectedSubrace]);
 
-    // Selection State
-    const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
-    const [selectedTools, setSelectedTools] = useState<string[]>([]);
-    const [selectedLanguages, setSelectedLanguages] = useState<string[]>([]);
-
-    const [selectedSpells, setSelectedSpells] = useState<string[]>([]);
-    const [selectedCantrips, setSelectedCantrips] = useState<string[]>([]);
-    const [selectedRaceCantrips, setSelectedRaceCantrips] = useState<string[]>([]); // New state
-    const [selectedFeats, setSelectedFeats] = useState<string[]>([]);
-    const [selectedEquipmentChoices, setSelectedEquipmentChoices] = useState<Record<number, number>>({});
-    const [selectedRogueExpertises, setSelectedRogueExpertises] = useState<string[]>([]);
-
-    const [spellSearch, setSpellSearch] = useState('');
-    const [spellSchoolFilter, setSpellSchoolFilter] = useState('all');
-
-    // Track previous class to reset selection if class changes
-    const prevClassId = React.useRef(initialClassId);
-
+    // Auto-select race/subrace cantrip if options are fixed
     React.useEffect(() => {
-        if (prevClassId.current !== selectedClassId) {
-            console.log(`[CharacterBuilder] Class Changed from ${prevClassId.current} to ${selectedClassId}. Resetting equipment choices.`);
-            setSelectedSkills([]);
-            setSelectedSpells([]);
-            setSelectedCantrips([]);
-            setSelectedFeats([]);
-            setSelectedEquipmentChoices({}); // Reset equipment choices
-            setSelectedRogueExpertises([]);
-            setSpellSearch('');
-            setSpellSchoolFilter('all');
-            onUpdate({ ...character, hpRolled: undefined });
-            prevClassId.current = selectedClassId;
-        }
-    }, [selectedClassId, character, onUpdate]);
-
-    // Memoized derived data
-    const selectedClass = React.useMemo(() => CLASSES.find(c => c.id === selectedClassId), [selectedClassId]);
-    const selectedRace = React.useMemo(() => RACES.find(r => r.id === selectedRaceId), [selectedRaceId]);
-    const selectedBackground = React.useMemo(() => BACKGROUNDS.find(b => b.id === selectedBackgroundId), [selectedBackgroundId]);
-    const isSpellCaster = React.useMemo(() => !!selectedClass?.spellcastingConfig, [selectedClass]);
-
-    // Auto-select race cantrip if there is only 1 fixed option (e.g. Aasimar Light)
-    React.useEffect(() => {
-        if (selectedRace?.cantripChoices?.options && selectedRace.cantripChoices.options.length === 1) {
-            setSelectedRaceCantrips(selectedRace.cantripChoices.options);
+        if (effectiveRaceCantripChoices?.options && effectiveRaceCantripChoices.options.length > 0) {
+            setSelectedRaceCantrips(effectiveRaceCantripChoices.options);
         } else {
             setSelectedRaceCantrips([]);
         }
-    }, [selectedRaceId, selectedRace]);
+    }, [selectedRaceId, selectedSubraceId, effectiveRaceCantripChoices]);
 
     // Optimize Spell Filtering
     const availableCantrips = React.useMemo(() =>
@@ -196,19 +321,28 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
         , [isSpellCaster, selectedClassId]);
 
     const availableRaceCantrips = React.useMemo(() => {
-        if (!selectedRace?.cantripChoices) return [];
-        if (selectedRace.cantripChoices.options && selectedRace.cantripChoices.options.length > 0) {
-            return SPELLS.filter(s => s.level === 0 && selectedRace.cantripChoices!.options!.includes(s.id));
+        if (!effectiveRaceCantripChoices) return [];
+        if (effectiveRaceCantripChoices.options && effectiveRaceCantripChoices.options.length > 0) {
+            return SPELLS.filter(s => s.level === 0 && effectiveRaceCantripChoices.options!.includes(s.id));
         }
-        if (selectedRace.cantripChoices.classList) {
-            return SPELLS.filter(s => s.level === 0 && s.classes.includes(selectedRace.cantripChoices!.classList!));
+        if (effectiveRaceCantripChoices.classList) {
+            return SPELLS.filter(s => s.level === 0 && s.classes.includes(effectiveRaceCantripChoices.classList!));
         }
         return [];
-    }, [selectedRace]);
+    }, [effectiveRaceCantripChoices]);
 
     const availableSpellsL1 = React.useMemo(() =>
         isSpellCaster ? SPELLS.filter(s => s.level === 1 && s.classes.includes(selectedClassId)) : []
         , [isSpellCaster, selectedClassId]);
+
+    // Magic Initiate Spells (Cleric, Druid or Wizard)
+    const availableMagicInitiateCantrips = React.useMemo(() => {
+        return SPELLS.filter(s => s.level === 0 && s.classes.includes(magicInitiateClass));
+    }, [magicInitiateClass]);
+
+    const availableMagicInitiateSpellsL1 = React.useMemo(() => {
+        return SPELLS.filter(s => s.level === 1 && s.classes.includes(magicInitiateClass));
+    }, [magicInitiateClass]);
 
     const filterSpells = React.useCallback((spellList: typeof SPELLS) => {
         return spellList.filter(s => {
@@ -241,18 +375,29 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
         return null;
     }, []);
 
-    // Handlers
+    // Total Skill Limit (Class + Human Versatile)
+    const baseSkillLimit = (selectedClass?.skillChoices.count || 2) + (selectedRace?.skillChoices?.count || 0);
+
     const toggleSkill = React.useCallback((skill: string) => {
         if (selectedSkills.includes(skill)) {
             setSelectedSkills(prev => prev.filter(s => s !== skill));
             setSelectedRogueExpertises(prev => prev.filter(s => s !== skill));
         } else {
-            const limit = selectedClass?.skillChoices.count || 2;
-            if (selectedSkills.length < limit) {
+            if (selectedSkills.length < baseSkillLimit) {
                 setSelectedSkills(prev => [...prev, skill]);
             }
         }
-    }, [selectedSkills, selectedClass]);
+    }, [selectedSkills, baseSkillLimit]);
+
+    const toggleSkilledChoice = React.useCallback((skill: string) => {
+        if (skilledChoices.includes(skill)) {
+            setSkilledChoices(prev => prev.filter(s => s !== skill));
+        } else {
+            if (skilledChoices.length < 3) {
+                setSkilledChoices(prev => [...prev, skill]);
+            }
+        }
+    }, [skilledChoices]);
 
     const toggleRogueExpertise = React.useCallback((skill: string) => {
         setSelectedRogueExpertises(prev => {
@@ -270,10 +415,6 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
         const config = selectedClass?.spellcastingConfig;
         if (!config) return;
 
-
-        // Accessing state setter via closure is risky if list is stale, but we use list in condition
-        // Better to use functional updates fully or dependency
-        // Re-implementing for safety:
         if (isCantrip) {
             setSelectedCantrips(prev => {
                 if (prev.includes(spellId)) return prev.filter(id => id !== spellId);
@@ -287,7 +428,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                 return prev;
             });
         }
-    }, [selectedClass, selectedCantrips, selectedSpells]); // Refs for lists would be better but this is fine with deps
+    }, [selectedClass]);
 
     const toggleTool = React.useCallback((tool: string) => {
         const limit = selectedClass?.toolChoices?.count || 0;
@@ -311,8 +452,19 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
         }
     }, [selectedLanguages, selectedRace]);
 
+    // D&D 2024 Common Languages toggle (2 choices)
+    const toggleCommonLanguage = React.useCallback((lang: string) => {
+        if (selectedCommonLanguages.includes(lang)) {
+            setSelectedCommonLanguages(prev => prev.filter(l => l !== lang));
+        } else {
+            if (selectedCommonLanguages.length < 2) {
+                setSelectedCommonLanguages(prev => [...prev, lang]);
+            }
+        }
+    }, [selectedCommonLanguages]);
+
     const toggleRaceCantrip = React.useCallback((spellId: string) => {
-        const limit = selectedRace?.cantripChoices?.count || 0;
+        const limit = effectiveRaceCantripChoices?.count || 0;
         if (selectedRaceCantrips.includes(spellId)) {
             setSelectedRaceCantrips(prev => prev.filter(id => id !== spellId));
         } else {
@@ -320,12 +472,39 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                 setSelectedRaceCantrips(prev => [...prev, spellId]);
             }
         }
-    }, [selectedRaceCantrips, selectedRace]);
+    }, [selectedRaceCantrips, effectiveRaceCantripChoices]);
+
+    const toggleMagicInitiateCantrip = React.useCallback((spellId: string) => {
+        if (magicInitiateCantrips.includes(spellId)) {
+            setMagicInitiateCantrips(prev => prev.filter(id => id !== spellId));
+        } else {
+            if (magicInitiateCantrips.length < 2) {
+                setMagicInitiateCantrips(prev => [...prev, spellId]);
+            }
+        }
+    }, [magicInitiateCantrips]);
+
+    const toggleMusicianInstrument = React.useCallback((instrument: string) => {
+        if (musicianInstruments.includes(instrument)) {
+            setMusicianInstruments(prev => prev.filter(i => i !== instrument));
+        } else {
+            if (musicianInstruments.length < 3) {
+                setMusicianInstruments(prev => [...prev, instrument]);
+            }
+        }
+    }, [musicianInstruments]);
+
+    const toggleCrafterTool = React.useCallback((tool: string) => {
+        if (crafterTools.includes(tool)) {
+            setCrafterTools(prev => prev.filter(t => t !== tool));
+        } else {
+            if (crafterTools.length < 3) {
+                setCrafterTools(prev => [...prev, tool]);
+            }
+        }
+    }, [crafterTools]);
 
     const toggleFeat = React.useCallback((featId: string) => {
-        // Typically only 1 feat (e.g. from Custom Lineage or Level 4), but let's allow 1 for now or check rules?
-        // Let's assume Human Variant logic or generic "Pick a Feat".
-        // Limit to 1 for this MVP builder step unless we want more.
         if (selectedFeats.includes(featId)) {
             setSelectedFeats(prev => prev.filter(f => f !== featId));
         } else {
@@ -358,16 +537,6 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
         const next = current + delta;
         if (next < 8 || next > 15) return;
 
-        // Check cost with fresh calculation
-        // We need to know cost difference. 
-        // calculateCost is pure, so it's safe.
-        // But we need 'remainingPoints'. Since we are in callback, we should calculate derived state inside too or rely on dep.
-        // To avoid dep cycle, we recalc usedPoints here or use functional update with check?
-        // Simplest: use variable, but we need current 'baseStats' for other stats? 
-        // Actually we only need current attr val.
-
-        // Let's rely on 'usedPoints' being correct from render scope (captured in closure)
-        // This requires 'usedPoints' in dependency array.
         const costDiff = calculateCost(next) - calculateCost(current);
         if (remainingPoints - costDiff < 0) return;
 
@@ -375,6 +544,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
     }, [baseStats, remainingPoints, calculateCost]);
 
     const applyStandardArray = React.useCallback(() => {
+        setStatMethod('standard_array');
         const primary = selectedClass?.primaryAbility?.toLowerCase() || '';
         let newStats: Record<string, number>;
         if (/destreza|dex/i.test(primary) && /força|str/i.test(primary)) {
@@ -396,14 +566,82 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
     }, [selectedClass]);
 
     const resetStats = React.useCallback(() => {
+        setStatMethod('point_buy');
         setBaseStats({ str: 8, dex: 8, con: 8, int: 8, wis: 8, cha: 8 });
     }, []);
 
-    // Navigation
+    // 4d6 Roll Functionality
+    const roll4d6Stats = React.useCallback(() => {
+        const results: RolledStatEntry[] = [];
+        for (let i = 0; i < 6; i++) {
+            const dice = [
+                Math.floor(Math.random() * 6) + 1,
+                Math.floor(Math.random() * 6) + 1,
+                Math.floor(Math.random() * 6) + 1,
+                Math.floor(Math.random() * 6) + 1,
+            ];
+            const sorted = [...dice].sort((a, b) => a - b);
+            const dropped = sorted[0];
+            const total = sorted[1] + sorted[2] + sorted[3];
+            results.push({ id: i, dice, dropped, total });
+        }
+        setRolled4d6List(results);
+        setStatMethod('rolled_4d6');
+
+        // Priority assignment based on class primary attribute
+        const sortedRolls = [...results].sort((a, b) => b.total - a.total);
+        const primary = selectedClass?.primaryAbility?.toLowerCase() || '';
+        let priority: string[] = ['str', 'con', 'dex', 'wis', 'int', 'cha'];
+        if (/destreza|dex/i.test(primary)) priority = ['dex', 'con', 'wis', 'str', 'cha', 'int'];
+        else if (/força|str/i.test(primary)) priority = ['str', 'con', 'dex', 'wis', 'cha', 'int'];
+        else if (/inteligência|int/i.test(primary)) priority = ['int', 'con', 'dex', 'wis', 'cha', 'str'];
+        else if (/sabedoria|wis/i.test(primary)) priority = ['wis', 'con', 'dex', 'int', 'cha', 'str'];
+        else if (/carisma|cha/i.test(primary)) priority = ['cha', 'con', 'dex', 'wis', 'int', 'str'];
+
+        const newAssignments: Record<string, number | null> = {};
+        const newBaseStats: Record<string, number> = {};
+        priority.forEach((attr, idx) => {
+            newAssignments[attr] = sortedRolls[idx].id;
+            newBaseStats[attr] = sortedRolls[idx].total;
+        });
+        setStatAssignments(newAssignments);
+        setBaseStats(newBaseStats);
+    }, [selectedClass]);
+
+    const handleAssignStat = React.useCallback((attr: string, rollId: number) => {
+        const rollEntry = rolled4d6List.find(r => r.id === rollId);
+        if (!rollEntry) return;
+
+        const previousOwner = Object.keys(statAssignments).find(k => statAssignments[k] === rollId && k !== attr);
+        const currentRollId = statAssignments[attr];
+
+        setStatAssignments(prev => ({
+            ...prev,
+            [attr]: rollId,
+            ...(previousOwner ? { [previousOwner]: currentRollId } : {})
+        }));
+
+        setBaseStats(prev => {
+            const next = { ...prev, [attr]: rollEntry.total };
+            if (previousOwner && currentRollId !== null) {
+                const prevRoll = rolled4d6List.find(r => r.id === currentRollId);
+                if (prevRoll) next[previousOwner] = prevRoll.total;
+            }
+            return next;
+        });
+    }, [rolled4d6List, statAssignments]);
+
+    // Navigation Steps
     const [currentStep, setCurrentStep] = useState(0);
 
-    const hasProficiencyChoice = (selectedClass?.toolChoices || selectedRace?.languageChoices);
-    const hasSpells = isSpellCaster || !!selectedRace?.cantripChoices;
+    const hasProficiencyChoice = (
+        activeSystem === 'dnd55e' ||
+        !!selectedClass?.toolChoices ||
+        !!selectedRace?.languageChoices ||
+        hasMusician ||
+        hasCrafter
+    );
+    const hasSpells = isSpellCaster || !!effectiveRaceCantripChoices || hasMagicInitiate;
 
     const rawSteps = [
         { label: 'Origem' },
@@ -417,42 +655,86 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
     ];
     const steps = rawSteps.map((s, i) => ({ id: i, label: s.label }));
 
-    // Finalize
+    // Validation checks for final apply
+    const isStatsValid = statMethod === 'point_buy'
+        ? remainingPoints === 0
+        : statMethod === 'rolled_4d6'
+            ? Object.values(statAssignments).every(v => v !== null)
+            : true;
+
+    const isMagicInitiateValid = !hasMagicInitiate || (magicInitiateCantrips.length === 2 && !!magicInitiateSpell);
+    const isSkilledValid = !hasSkilled || skilledChoices.length === 3;
+    const isMusicianValid = !hasMusician || musicianInstruments.length === 3;
+    const isCrafterValid = !hasCrafter || crafterTools.length === 3;
+    const isLanguagesValid = activeSystem !== 'dnd55e' || selectedCommonLanguages.length === 2;
+    const isSkillsValid = selectedSkills.length >= baseSkillLimit;
+    const isRaceCantripsValid = !effectiveRaceCantripChoices || selectedRaceCantrips.length >= effectiveRaceCantripChoices.count;
+
+    const isFormValid = (
+        isStatsValid &&
+        isSkillsValid &&
+        (selectedClassId !== 'rogue' || selectedRogueExpertises.length === 2) &&
+        (!selectedClass?.toolChoices || selectedTools.length >= selectedClass.toolChoices.count) &&
+        isRaceCantripsValid &&
+        isMagicInitiateValid &&
+        isSkilledValid &&
+        isMusicianValid &&
+        isCrafterValid &&
+        isLanguagesValid
+    );
+
+    // Finalize Character
     const handleApply = React.useCallback(async () => {
         if (!selectedRace || !selectedClass) return;
 
         let nextChar = { ...character };
 
-        // 0. Character Name
+        // 0. Character Name & Background
         nextChar.name = charName.trim() || character.name || 'Novo Personagem';
-
-        // 0.5 Background
         if (selectedBackground) {
             nextChar.background = selectedBackground.name;
         }
 
-        // 1. Race & Origin
+        // 1. Race & Origin & Subrace (Item 1)
         nextChar.race = selectedRace.name;
-        nextChar.speed = selectedRace.speed;
-        nextChar.alignment = selectedAlignment;
+        if (selectedSubrace) {
+            nextChar.subrace = selectedSubrace.name;
+            nextChar.speed = selectedSubrace.speed || selectedRace.speed;
+        } else {
+            nextChar.subrace = undefined;
+            nextChar.speed = selectedRace.speed;
+        }
 
-        // Auto-detect Darkvision
-        const hasDarkvision = selectedRace.traits?.some(t => /visão no escuro|darkvision/i.test(t.name) || /visão no escuro|darkvision/i.test(t.description));
-        nextChar.visionRange = hasDarkvision ? 18 : 0;
+        // Size
+        nextChar.size = selectedCharacterSize || selectedRace.size || 'Médio';
+
+        // Darkvision check
+        const hasDarkvision = selectedRace.traits?.some(t => /visão no escuro|darkvision/i.test(t.name) || /visão no escuro|darkvision/i.test(t.description)) || !!selectedSubrace?.visionRange;
+        nextChar.visionRange = selectedSubrace?.visionRange || (hasDarkvision ? 18 : 0);
+
+        nextChar.alignment = selectedAlignment;
 
         // Attributes
         (Object.keys(nextChar.attributes) as Array<keyof Character['attributes']>).forEach(attrKey => {
-            const base = baseStats[attrKey];
+            const base = baseStats[attrKey] || 10;
             const bonus = getAttributeBonus(attrKey);
             const total = base + bonus;
             nextChar.attributes[attrKey].value = total;
             nextChar.attributes[attrKey].modifier = Math.floor((total - 10) / 2);
         });
+
         nextChar.system = activeSystem;
 
-        // 2. Class
+        // 2. Class & Subclass (Item 4)
         nextChar.class = selectedClass.name;
         nextChar.hitDice.dieFace = selectedClass.hitDie;
+
+        const chosenSubclass = selectedClass.subclasses?.find(s => s.id === selectedSubclassId);
+        if (effectiveStartingLevel >= 3 && chosenSubclass) {
+            nextChar.subclass = chosenSubclass.name;
+        } else {
+            nextChar.subclass = undefined;
+        }
 
         // HP (Level 1 Max)
         if (nextChar.level === 1) {
@@ -465,10 +747,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
             nextChar.hitDice.current = nextChar.level;
         }
 
-        // Subclasses are chosen at Level 3 per official D&D 5.5e (2024) rules
-        nextChar.subclass = undefined;
-
-        // Saves
+        // Saving throws
         (Object.values(nextChar.attributes) as any[]).forEach(attr => attr.saveProficiency = false);
         selectedClass.savingThrows.forEach(saveAttr => {
             if (nextChar.attributes[saveAttr as keyof typeof nextChar.attributes]) {
@@ -483,7 +762,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
 
         // Features
         const classFeatures: ClassFeature[] = selectedClass.features
-            .filter(f => f.level <= nextChar.level)
+            .filter(f => f.level <= (effectiveStartingLevel >= 3 ? effectiveStartingLevel : 1))
             .map(f => ({ ...f, type: f.type || 'passive' } as ClassFeature));
 
         const raceFeatures: ClassFeature[] = (selectedRace.traits || []).map(t => ({
@@ -493,57 +772,65 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
             type: 'passive'
         }));
 
-        nextChar.features = [...raceFeatures, ...classFeatures];
-
-        // Skills
-        // Merge Class Selection + Background Fixed Skills
-        const bgSkills: string[] = selectedBackground ? (selectedBackground.skillProficiencies as string[]) : [];
-        const finalSkillNames = Array.from(new Set([...selectedSkills, ...bgSkills]));
-
-        // Generate base skill objects
-        // We reuse the logic from characterTypes but we need to set 'proficient' to true for selected ones
-        // Since we don't have access to createDefaultSkills directly here easily without importing it or duplicating
-        // We will assume nextChar.skills is empty as per initial state
-        // Actually, we can just iterate the SKILL_ATTRIBUTE_MAP keys.
-
-        // Let's rely on regenerateCharacterStats helper to build the structure?
-        // No, that helper expects existing structure or builds clean one.
-        // We need to build the initial structure with proficiencies marked.
-
-        nextChar.skills = []; // clear to force rebuild in next step? 
-        // No, we should build it here to set 'proficient': true
-
-        // This is a bit hacky: we'll let regenerateCharacterStats build the default list,
-        // then we toggle the booleans.
-        // But regenerateCharacterStats uses current attributes.
-
-        // First, apply attributes to nextChar (done above)
-        // Now call regenerate to get basic skills list
-        nextChar = regenerateCharacterStats(nextChar); // This builds default skills based on attrs
-
-        // Now update the skills with our selection
-        nextChar.skills = nextChar.skills.map(s => ({
-            ...s,
-            proficient: finalSkillNames.includes(s.name)
+        const subraceFeatures: ClassFeature[] = (selectedSubrace?.traits || []).map(t => ({
+            name: t.name,
+            description: t.description,
+            level: 1,
+            type: 'passive'
         }));
 
-        // Re-calculate values now that proficiency is set
+        const subclassFeatures: ClassFeature[] = (chosenSubclass && effectiveStartingLevel >= 3)
+            ? (chosenSubclass.features || [])
+                .filter(f => f.level <= effectiveStartingLevel)
+                .map(f => ({ ...f, type: f.type || 'passive' } as ClassFeature))
+            : [];
+
+        nextChar.features = [...raceFeatures, ...subraceFeatures, ...classFeatures, ...subclassFeatures];
+
+        // Skills (including Background + Class + Human Versatile + Skilled feat)
+        const bgSkills: string[] = selectedBackground ? (selectedBackground.skillProficiencies as string[]) : [];
+        const finalSkillNames = Array.from(new Set([...selectedSkills, ...bgSkills, ...skilledChoices]));
+
+        nextChar = regenerateCharacterStats(nextChar);
+        nextChar.skills = nextChar.skills.map(s => ({
+            ...s,
+            proficient: finalSkillNames.includes(s.name),
+            expertise: selectedClassId === 'rogue' && selectedRogueExpertises.includes(s.name)
+        }));
         nextChar = regenerateCharacterStats(nextChar);
 
-        // Tool Proficiencies
+        // Tool Proficiencies (including Class + Background + Dwarf tool + Crafter + Musician)
         const classTools = selectedTools;
         const bgTools: string[] = selectedBackground?.toolProficiencies || [];
-        nextChar.proficiencies = Array.from(new Set([...classTools, ...bgTools]));
+        const extraTools: string[] = [];
 
-        // Languages
+        if (selectedRace?.toolChoices && selectedDwarfTool) {
+            extraTools.push(selectedDwarfTool);
+        }
+        if (hasCrafter && crafterTools.length > 0) {
+            extraTools.push(...crafterTools);
+        }
+        if (hasMusician && musicianInstruments.length > 0) {
+            extraTools.push(...musicianInstruments);
+        }
+
+        nextChar.proficiencies = [];
+        if (selectedClass.armorProficiency) nextChar.proficiencies.push(...selectedClass.armorProficiency.map(p => `Armadura (${p})`));
+        if (selectedClass.weaponProficiency) nextChar.proficiencies.push(...selectedClass.weaponProficiency.map(p => `Armas (${p})`));
+        if (selectedClass.toolProficiencies) nextChar.proficiencies.push(...selectedClass.toolProficiencies);
+        if (bgTools.length > 0) nextChar.proficiencies.push(...bgTools);
+        nextChar.proficiencies.push(...classTools, ...extraTools);
+        nextChar.proficiencies = Array.from(new Set(nextChar.proficiencies));
+
+        // Languages (Item 3)
         const raceLangs = selectedRace.languages || ['Comum'];
-        const chosenLangs = selectedLanguages;
+        nextChar.languages = Array.from(new Set([
+            ...raceLangs,
+            ...selectedCommonLanguages,
+            ...selectedLanguages
+        ]));
 
-        // Background languages not implemented in UI yet, ignoring count
-
-        nextChar.languages = Array.from(new Set([...raceLangs, ...chosenLangs]));
-
-        // Background starting gold extraction and equipment parsing
+        // Background starting gold & equipment
         let startingGold = activeSystem === 'witcher' ? 25 : 50;
         const bgEquip: any[] = [];
 
@@ -600,7 +887,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
             gp: (nextChar.currency?.gp || 0) + startingGold
         };
 
-        // Class Equipment parsing & intelligent auto-equipping
+        // Class Equipment parsing
         const classEquip: any[] = [];
         const combinedEquipment = [
             ...(selectedClass.startingEquipment || [])
@@ -685,7 +972,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
 
         nextChar.inventory = [...bgEquip, ...classEquip];
 
-        // Add Feature from Background
+        // Background feature
         if (selectedBackground?.feature) {
             nextChar.features.push({
                 name: selectedBackground.feature.name,
@@ -695,43 +982,34 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
             });
         }
 
-        nextChar.skills = nextChar.skills.map(s => ({ ...s, proficient: false, expertise: false }));
-        finalSkillNames.forEach(skillName => {
-            const sk = nextChar.skills.find(s => s.name === skillName);
-            if (sk) {
-                sk.proficient = true;
-                if (selectedClassId === 'rogue' && selectedRogueExpertises.includes(skillName)) {
-                    sk.expertise = true;
-                }
-            }
-        });
-
-        // Proficiencies (Tools & Languages)
-        nextChar.proficiencies = []; // Reset first
-        if (selectedClass.armorProficiency) nextChar.proficiencies.push(...selectedClass.armorProficiency.map(p => `Armadura (${p})`));
-        if (selectedClass.weaponProficiency) nextChar.proficiencies.push(...selectedClass.weaponProficiency.map(p => `Armas (${p})`));
-        if (selectedClass.toolProficiencies) nextChar.proficiencies.push(...selectedClass.toolProficiencies);
-        if (selectedBackground?.toolProficiencies) nextChar.proficiencies.push(...selectedBackground.toolProficiencies);
-
-        nextChar.proficiencies.push(...selectedTools); // Add chosen tools
-        nextChar.proficiencies = Array.from(new Set(nextChar.proficiencies));
-
-        nextChar.languages = [...(selectedRace.languages || [])]; // Fixed
-        nextChar.languages.push(...selectedLanguages); // Chosen
-
-        // Spells
+        // Spells & Race Cantrips & Magic Initiate (Item 2)
         const chosenCantrips = SPELLS.filter(s => selectedCantrips.includes(s.id));
         const chosenSpells = SPELLS.filter(s => selectedSpells.includes(s.id));
         const chosenRaceCantrips = SPELLS.filter(s => selectedRaceCantrips.includes(s.id));
 
-        nextChar.spells = [...chosenCantrips, ...chosenSpells, ...chosenRaceCantrips];
+        const miCantrips = SPELLS.filter(s => magicInitiateCantrips.includes(s.id));
+        const miSpell = SPELLS.filter(s => s.id === magicInitiateSpell);
 
-        // Feats (including Origin Feat from Background)
+        nextChar.spells = [
+            ...chosenCantrips,
+            ...chosenSpells,
+            ...chosenRaceCantrips,
+            ...miCantrips,
+            ...miSpell
+        ];
+
+        // Feats (Background feat + Human bonus feat + Custom chosen feat)
         const chosenFeats = FEATS.filter(f => selectedFeats.includes(f.id));
         if (selectedBackground?.featId) {
             const originFeat = FEATS.find(f => f.id === selectedBackground.featId);
             if (originFeat && !chosenFeats.some(f => f.id === originFeat.id)) {
                 chosenFeats.unshift(originFeat);
+            }
+        }
+        if (selectedRace?.originFeatChoice && selectedHumanBonusFeat) {
+            const humanFeat = FEATS.find(f => f.id === selectedHumanBonusFeat);
+            if (humanFeat && !chosenFeats.some(f => f.id === humanFeat.id)) {
+                chosenFeats.push(humanFeat);
             }
         }
         nextChar.feats = [...chosenFeats];
@@ -743,7 +1021,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                     if (effect.type === 'hp_per_level') {
                         const bonusHP = effect.value * nextChar.level;
                         nextChar.hp.max += bonusHP;
-                        nextChar.hp.current = nextChar.hp.max; // Heal to full on create/edit
+                        nextChar.hp.current = nextChar.hp.max;
                     }
                     if (effect.type === 'speed') {
                         nextChar.speed += effect.value;
@@ -769,7 +1047,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
             };
         }
 
-        // Initialize Class Resources for Level 1
+        // Initialize Class Resources
         nextChar.classResources = getClassResourcesForLevel(selectedClass.id, 1);
 
         // Multi-level Queue Setup: If starting level > 1, configure target queue for LevelUpModal
@@ -789,7 +1067,43 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
 
         onUpdate(regenerateCharacterStats(nextChar));
         onClose();
-    }, [character, charName, selectedClass, selectedRace, selectedBackground, baseStats, selectedSkills, selectedRogueExpertises, isSpellCaster, selectedCantrips, selectedSpells, selectedAlignment, selectedTools, selectedLanguages, selectedFeats, selectedEquipmentChoices, getAttributeBonus, activeSystem, effectiveStartingLevel, onUpdate, onClose]);
+    }, [
+        character,
+        charName,
+        selectedClass,
+        selectedRace,
+        selectedSubrace,
+        selectedSubclassId,
+        selectedCharacterSize,
+        selectedDwarfTool,
+        selectedHumanBonusFeat,
+        selectedBackground,
+        baseStats,
+        selectedSkills,
+        skilledChoices,
+        selectedRogueExpertises,
+        isSpellCaster,
+        selectedCantrips,
+        selectedSpells,
+        selectedRaceCantrips,
+        magicInitiateCantrips,
+        magicInitiateSpell,
+        hasCrafter,
+        crafterTools,
+        hasMusician,
+        musicianInstruments,
+        selectedAlignment,
+        selectedTools,
+        selectedLanguages,
+        selectedCommonLanguages,
+        selectedFeats,
+        selectedEquipmentChoices,
+        getAttributeBonus,
+        activeSystem,
+        effectiveStartingLevel,
+        onUpdate,
+        onClose
+    ]);
 
     // Render using Portal
     return ReactDOM.createPortal(
@@ -859,6 +1173,93 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                                     {availableRaces.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                                 </select>
 
+                                {/* ITEM 1: SUBESPÉCIES / LINHAGENS */}
+                                {selectedRace?.subraces && selectedRace.subraces.length > 0 && (
+                                    <div style={{ marginTop: '12px' }}>
+                                        <label style={{ display: 'block', marginBottom: '4px', color: '#ffd700', fontWeight: 'bold', fontSize: '0.9rem' }}>
+                                            {selectedRace.subraceLabel || 'Linhagem / Sub-espécie'}:
+                                        </label>
+                                        <select
+                                            value={selectedSubraceId}
+                                            onChange={(e) => setSelectedSubraceId(e.target.value)}
+                                            style={{
+                                                width: '100%',
+                                                padding: '8px',
+                                                background: '#1c1c28',
+                                                color: '#fff',
+                                                border: '1px solid #ffd700',
+                                                borderRadius: '4px',
+                                                fontWeight: '600'
+                                            }}
+                                        >
+                                            {selectedRace.subraces.map(sub => (
+                                                <option key={sub.id} value={sub.id}>{sub.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                )}
+
+                                {/* ITEM 1: ESCOLHA DE TAMANHO (MÉDIO / PEQUENO) */}
+                                {selectedRace?.allowSizeChoice && (
+                                    <div style={{ marginTop: '12px', background: 'rgba(255,255,255,0.03)', padding: '8px 10px', borderRadius: '4px', border: '1px solid #444' }}>
+                                        <label style={{ display: 'block', marginBottom: '6px', color: '#c5a059', fontWeight: 'bold', fontSize: '0.85rem' }}>
+                                            Tamanho da Espécie (PHB p. 44):
+                                        </label>
+                                        <div style={{ display: 'flex', gap: '12px' }}>
+                                            {(['Médio', 'Pequeno'] as const).map(sz => (
+                                                <label key={sz} style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#ddd', cursor: 'pointer', fontSize: '0.88rem' }}>
+                                                    <input
+                                                        type="radio"
+                                                        name="charSizeChoice"
+                                                        checked={selectedCharacterSize === sz}
+                                                        onChange={() => setSelectedCharacterSize(sz)}
+                                                    />
+                                                    {sz}
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* ITEM 1: ANÃO - ESCOLHA DE FERRAMENTA ARTESANAL */}
+                                {selectedRace?.toolChoices && (
+                                    <div style={{ marginTop: '12px', background: 'rgba(255, 215, 0, 0.08)', padding: '8px 10px', borderRadius: '4px', border: '1px solid rgba(255, 215, 0, 0.3)' }}>
+                                        <label style={{ display: 'block', marginBottom: '4px', color: '#ffd700', fontWeight: 'bold', fontSize: '0.85rem' }}>
+                                            Ofício Anão (1 Ferramenta de Artesão):
+                                        </label>
+                                        <select
+                                            value={selectedDwarfTool}
+                                            onChange={(e) => setSelectedDwarfTool(e.target.value)}
+                                            style={{ width: '100%', padding: '6px', background: '#1c1c24', color: '#fff', border: '1px solid #666', borderRadius: '4px' }}
+                                        >
+                                            {selectedRace.toolChoices.options.map(tool => (
+                                                <option key={tool} value={tool}>{tool}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                )}
+
+                                {/* ITEM 1: HUMANO - TALENTO DE ORIGEM EXTRA */}
+                                {selectedRace?.originFeatChoice && (
+                                    <div style={{ marginTop: '12px', background: 'rgba(59, 130, 246, 0.1)', padding: '10px 12px', borderRadius: '6px', border: '1px solid rgba(59, 130, 246, 0.4)' }}>
+                                        <label style={{ display: 'block', marginBottom: '4px', color: '#60a5fa', fontWeight: 'bold', fontSize: '0.9rem' }}>
+                                            ⭐ Traço Versátil — Talento de Origem Extra (Humano):
+                                        </label>
+                                        <select
+                                            value={selectedHumanBonusFeat}
+                                            onChange={(e) => setSelectedHumanBonusFeat(e.target.value)}
+                                            style={{ width: '100%', padding: '6px 8px', background: '#131e33', color: '#93c5fd', border: '1px solid #3b82f6', borderRadius: '4px', fontWeight: '600' }}
+                                        >
+                                            {FEATS.filter(f => f.category === 'Origem' && f.id !== selectedBackground?.featId).map(feat => (
+                                                <option key={feat.id} value={feat.id}>{feat.name}</option>
+                                            ))}
+                                        </select>
+                                        <div style={{ fontSize: '0.78rem', color: '#93c5fd', marginTop: '4px' }}>
+                                            {FEATS.find(f => f.id === selectedHumanBonusFeat)?.description}
+                                        </div>
+                                    </div>
+                                )}
+
                                 <select
                                     value={selectedAlignment}
                                     onChange={(e) => setSelectedAlignment(e.target.value)}
@@ -909,12 +1310,35 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                                     <div style={{ fontSize: '0.9rem', marginBottom: '10px', fontStyle: 'italic' }}>
                                         {selectedRace?.description}
                                     </div>
-                                    <p><strong>Deslocamento:</strong> {selectedRace?.speed}m</p>
+                                    <p><strong>Deslocamento:</strong> {selectedSubrace?.speed || selectedRace?.speed}m</p>
                                     {activeSystem === 'witcher' ? (
                                         <p><strong>Bônus de Atributos:</strong> {Object.entries(selectedRace?.bonus || {}).map(([k, v]) => `${k.toUpperCase()} +${v}`).join(', ')}</p>
                                     ) : (
                                         <p style={{ color: '#4caf50' }}><strong>Bônus de Atributos:</strong> Concedidos pelo Antecedente ({selectedBackground?.name || 'Antecedente'})</p>
                                     )}
+
+                                    {/* Subrace Specific Details Card */}
+                                    {selectedSubrace && (
+                                        <div style={{ marginTop: '10px', padding: '8px 10px', background: 'rgba(255, 215, 0, 0.08)', borderRadius: '6px', border: '1px solid rgba(255, 215, 0, 0.25)' }}>
+                                            <div style={{ color: '#ffd700', fontWeight: 'bold', fontSize: '0.9rem' }}>
+                                                ✨ {selectedSubrace.name}
+                                            </div>
+                                            <div style={{ fontSize: '0.82rem', color: '#ddd', marginTop: '3px' }}>
+                                                {selectedSubrace.description}
+                                            </div>
+                                            {selectedSubrace.damageResistance && (
+                                                <div style={{ marginTop: '4px', fontSize: '0.8rem', color: '#4ade80' }}>
+                                                    🛡️ Resistência a Dano: <strong>{selectedSubrace.damageResistance}</strong>
+                                                </div>
+                                            )}
+                                            {selectedSubrace.breathWeapon && (
+                                                <div style={{ marginTop: '2px', fontSize: '0.8rem', color: '#f87171' }}>
+                                                    🔥 Sopro: {selectedSubrace.breathWeapon.area} ({selectedSubrace.breathWeapon.damageType})
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
                                     <h4 style={{ marginTop: '10px', color: '#c5a059' }}>Traços Raciais:</h4>
                                     <ul style={{ paddingLeft: '20px', margin: 0, maxHeight: '200px', overflowY: 'auto' }}>
                                         {(selectedRace?.traits || []).map((t, i) => (
@@ -938,7 +1362,48 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                                 >
                                     Ver Tabela de Progressão
                                 </button>
-                                <div className="info-box">
+
+                                {/* ITEM 4: SUBCLASSE QUANDO NÍVEL INICIAL >= 3 */}
+                                {effectiveStartingLevel >= 3 && selectedClass?.subclasses && selectedClass.subclasses.length > 0 && (
+                                    <div style={{ marginTop: '14px', padding: '12px', background: 'rgba(255, 215, 0, 0.1)', border: '1px solid #ffd700', borderRadius: '6px' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#ffd700', fontWeight: 'bold', fontSize: '0.95rem', marginBottom: '6px' }}>
+                                            <Shield size={16} /> Especialização de Subclasse (Nível {effectiveStartingLevel}):
+                                        </div>
+                                        <select
+                                            value={selectedSubclassId}
+                                            onChange={(e) => setSelectedSubclassId(e.target.value)}
+                                            style={{
+                                                width: '100%',
+                                                padding: '8px',
+                                                background: '#1a1811',
+                                                color: '#ffd700',
+                                                border: '1px solid #ffd700',
+                                                borderRadius: '4px',
+                                                fontWeight: 'bold',
+                                                fontSize: '0.95rem'
+                                            }}
+                                        >
+                                            {selectedClass.subclasses.map(sc => (
+                                                <option key={sc.id} value={sc.id}>{sc.name}</option>
+                                            ))}
+                                        </select>
+                                        {selectedSubclass && (
+                                            <div style={{ marginTop: '8px', fontSize: '0.82rem', color: '#eee', lineHeight: '1.4' }}>
+                                                <div style={{ fontStyle: 'italic', color: '#cbd5e1', marginBottom: '6px' }}>{selectedSubclass.description}</div>
+                                                <div style={{ color: '#ffd700', fontWeight: 'bold', marginTop: '4px' }}>Habilidades (Nv 3):</div>
+                                                <ul style={{ paddingLeft: '16px', margin: '4px 0 0 0' }}>
+                                                    {(selectedSubclass.features || []).filter(f => f.level <= effectiveStartingLevel).map(f => (
+                                                        <li key={f.name} style={{ marginBottom: '3px' }}>
+                                                            <strong>{f.name}</strong>: <span style={{ color: '#aaa' }}>{f.description}</span>
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                <div className="info-box" style={{ marginTop: '12px' }}>
                                     {getClassImage(selectedClassId) && (
                                         <div style={{ textAlign: 'center', marginBottom: '12px' }}>
                                             <img
@@ -962,9 +1427,11 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                                             </li>
                                         ))}
                                     </ul>
-                                    <p style={{ fontSize: '0.8rem', color: '#94a3b8', fontStyle: 'italic', marginTop: '12px' }}>
-                                        🛡️ <em>As especializações de Subclasse são desbloqueadas e escolhidas no <strong>3º Nível</strong> durante a evolução do personagem.</em>
-                                    </p>
+                                    {effectiveStartingLevel < 3 && (
+                                        <p style={{ fontSize: '0.8rem', color: '#94a3b8', fontStyle: 'italic', marginTop: '12px' }}>
+                                            🛡️ <em>As especializações de Subclasse são desbloqueadas e escolhidas no <strong>3º Nível</strong> durante a evolução do personagem.</em>
+                                        </p>
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -976,28 +1443,64 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                             <div className="builder-section">
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '12px' }}>
                                     <div>
-                                        <h3 style={{ margin: 0 }}>Atributos (Point Buy — 27 Pontos)</h3>
+                                        <h3 style={{ margin: 0 }}>Geração de Atributos</h3>
                                         <div style={{ fontSize: '0.85rem', color: '#aaa', marginTop: '3px' }}>
-                                            Distribua seus atributos ou clique no Conjunto Padrão oficial.
+                                            Escolha o método oficial: Point Buy, Conjunto Padrão ou Rolar 4d6 (drop lowest).
                                         </div>
                                     </div>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                        <button
+                                            type="button"
+                                            onClick={() => setStatMethod('point_buy')}
+                                            style={{
+                                                padding: '6px 12px',
+                                                background: statMethod === 'point_buy' ? '#c5a059' : '#222',
+                                                border: '1px solid #c5a059',
+                                                borderRadius: '5px',
+                                                color: statMethod === 'point_buy' ? '#000' : '#ffd700',
+                                                fontSize: '0.85rem',
+                                                fontWeight: 'bold',
+                                                cursor: 'pointer'
+                                            }}
+                                        >
+                                            Point Buy (27 pts)
+                                        </button>
                                         <button
                                             type="button"
                                             onClick={applyStandardArray}
                                             style={{
-                                                padding: '6px 14px',
-                                                background: 'linear-gradient(135deg, rgba(197, 160, 89, 0.25), rgba(197, 160, 89, 0.1))',
+                                                padding: '6px 12px',
+                                                background: statMethod === 'standard_array' ? '#c5a059' : '#222',
                                                 border: '1px solid #c5a059',
                                                 borderRadius: '5px',
-                                                color: '#ffd700',
+                                                color: statMethod === 'standard_array' ? '#000' : '#ffd700',
                                                 fontSize: '0.85rem',
                                                 fontWeight: 'bold',
                                                 cursor: 'pointer'
                                             }}
                                             title="Distribui 15, 14, 13, 12, 10, 8 focado na sua classe"
                                         >
-                                            Conjunto Padrão (15, 14, 13, 12, 10, 8)
+                                            Conjunto Padrão (15-8)
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={roll4d6Stats}
+                                            style={{
+                                                padding: '6px 14px',
+                                                background: statMethod === 'rolled_4d6' ? '#8b5cf6' : 'linear-gradient(135deg, rgba(139, 92, 246, 0.3), rgba(139, 92, 246, 0.1))',
+                                                border: '1px solid #8b5cf6',
+                                                borderRadius: '5px',
+                                                color: '#fff',
+                                                fontSize: '0.85rem',
+                                                fontWeight: 'bold',
+                                                cursor: 'pointer',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '6px'
+                                            }}
+                                            title="Rola 4d6 descartando o menor para cada um dos 6 atributos"
+                                        >
+                                            <Dices size={16} /> Rolar 4d6 (Drop Lowest)
                                         </button>
                                         <button
                                             type="button"
@@ -1014,11 +1517,49 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                                         >
                                             Resetar (8)
                                         </button>
-                                        <span className={remainingPoints === 0 ? 'success' : 'warn'} style={{ fontSize: '1rem', fontWeight: 'bold' }}>
-                                            {remainingPoints} pts restantes
-                                        </span>
+                                        {statMethod === 'point_buy' && (
+                                            <span className={remainingPoints === 0 ? 'success' : 'warn'} style={{ fontSize: '1rem', fontWeight: 'bold' }}>
+                                                {remainingPoints} pts restantes
+                                            </span>
+                                        )}
                                     </div>
                                 </div>
+
+                                {/* ITEM 4: PAINEL DE ROLAGEM 4d6 */}
+                                {statMethod === 'rolled_4d6' && rolled4d6List.length > 0 && (
+                                    <div style={{ background: 'rgba(139, 92, 246, 0.1)', border: '1px solid rgba(139, 92, 246, 0.4)', borderRadius: '8px', padding: '14px', marginBottom: '16px' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                                            <div style={{ color: '#c4b5fd', fontWeight: 'bold', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                <Dices size={18} /> Resultados Rolados (4d6 descartando o menor):
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={roll4d6Stats}
+                                                style={{ padding: '4px 10px', background: '#8b5cf6', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '0.8rem', cursor: 'pointer', fontWeight: 'bold' }}
+                                            >
+                                                🎲 Rolar Novamente
+                                            </button>
+                                        </div>
+                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '8px' }}>
+                                            {rolled4d6List.map((entry, idx) => (
+                                                <div key={entry.id} style={{ background: 'rgba(0,0,0,0.4)', border: '1px solid #6d28d9', borderRadius: '6px', padding: '8px', textAlign: 'center' }}>
+                                                    <div style={{ fontSize: '0.75rem', color: '#a78bfa' }}>Rolagem #{idx + 1}</div>
+                                                    <div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#fff' }}>{entry.total}</div>
+                                                    <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+                                                        [{entry.dice.map((d, dIdx) => (
+                                                            <span key={dIdx} style={{ textDecoration: d === entry.dropped ? 'line-through' : 'none', color: d === entry.dropped ? '#ef4444' : '#fff', marginRight: '3px' }}>
+                                                                {d}
+                                                            </span>
+                                                        ))}]
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <p style={{ margin: '8px 0 0 0', fontSize: '0.8rem', color: '#cbd5e1', fontStyle: 'italic' }}>
+                                            💡 Atribua os valores rolados diretamente para cada atributo na grade abaixo:
+                                        </p>
+                                    </div>
+                                )}
 
                                 {/* D&D 5.5e (2024) Background Attribute Selector */}
                                 {activeSystem === 'dnd55e' && selectedBackground && (
@@ -1121,11 +1662,43 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                                         return (
                                             <div key={key} className="stat-picker">
                                                 <label style={{ textTransform: 'uppercase', fontWeight: 'bold', color: '#888' }}>{key}</label>
-                                                <div className="stat-controls" style={{ display: 'flex', alignItems: 'center', gap: '5px', justifyContent: 'center', margin: '5px 0' }}>
-                                                    <button onClick={() => updateBaseStat(key, -1)} disabled={value <= 8}>-</button>
-                                                    <span style={{ fontSize: '1.2rem', fontWeight: 'bold' }}>{value}</span>
-                                                    <button onClick={() => updateBaseStat(key, 1)} disabled={value >= 15 || remainingPoints < (calculateCost(value + 1) - calculateCost(value))}>+</button>
-                                                </div>
+                                                
+                                                {statMethod === 'point_buy' ? (
+                                                    <div className="stat-controls" style={{ display: 'flex', alignItems: 'center', gap: '5px', justifyContent: 'center', margin: '5px 0' }}>
+                                                        <button onClick={() => updateBaseStat(key, -1)} disabled={value <= 8}>-</button>
+                                                        <span style={{ fontSize: '1.2rem', fontWeight: 'bold' }}>{value}</span>
+                                                        <button onClick={() => updateBaseStat(key, 1)} disabled={value >= 15 || remainingPoints < (calculateCost(value + 1) - calculateCost(value))}>+</button>
+                                                    </div>
+                                                ) : statMethod === 'rolled_4d6' && rolled4d6List.length > 0 ? (
+                                                    <div style={{ margin: '5px 0' }}>
+                                                        <select
+                                                            value={statAssignments[key] ?? ''}
+                                                            onChange={(e) => handleAssignStat(key, parseInt(e.target.value))}
+                                                            style={{
+                                                                width: '100%',
+                                                                padding: '6px',
+                                                                background: '#1a1a24',
+                                                                color: '#c4b5fd',
+                                                                border: '1px solid #8b5cf6',
+                                                                borderRadius: '4px',
+                                                                fontWeight: 'bold',
+                                                                fontSize: '1rem',
+                                                                textAlign: 'center'
+                                                            }}
+                                                        >
+                                                            {rolled4d6List.map((entry, idx) => (
+                                                                <option key={entry.id} value={entry.id}>
+                                                                    {entry.total} (Rolagem #{idx + 1})
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                ) : (
+                                                    <div style={{ margin: '6px 0', fontSize: '1.2rem', fontWeight: 'bold', color: '#ffd700' }}>
+                                                        {value}
+                                                    </div>
+                                                )}
+
                                                 <div style={{ fontSize: '0.8rem', color: '#aaa' }}>
                                                     Base: {value} <br />
                                                     {activeSystem === 'dnd55e' ? (
@@ -1152,7 +1725,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                             <div className="builder-row">
                                 <div className="builder-col">
                                     <h3 style={{ borderBottom: '1px solid #444', paddingBottom: '5px' }}>
-                                        Perícias de Classe ({selectedSkills.length}/{selectedClass?.skillChoices.count || 2})
+                                        Perícias de Classe & Espécie ({selectedSkills.length}/{baseSkillLimit})
                                     </h3>
 
                                     {selectedBackground && selectedBackground.skillProficiencies && selectedBackground.skillProficiencies.length > 0 && (
@@ -1163,6 +1736,12 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                                             <div style={{ color: '#eee', marginTop: '3px' }}>
                                                 {selectedBackground.skillProficiencies.join(', ')} (Já concedidas automaticamente)
                                             </div>
+                                        </div>
+                                    )}
+
+                                    {selectedRace?.skillChoices && (
+                                        <div style={{ margin: '8px 0', padding: '8px 10px', background: 'rgba(59, 130, 246, 0.12)', border: '1px solid rgba(59, 130, 246, 0.3)', borderRadius: '6px', fontSize: '0.82rem', color: '#93c5fd' }}>
+                                            ⭐ <strong>Humano Versátil:</strong> Você tem direito a +1 perícia extra à sua escolha!
                                         </div>
                                     )}
 
@@ -1177,7 +1756,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                                                     onMouseEnter={() => setHoveredSkill(skill)}
                                                     onMouseLeave={() => setHoveredSkill(null)}
                                                     className={isSelected || isFromBg ? 'skill-btn selected' : 'skill-btn'}
-                                                    disabled={isFromBg || (!isSelected && selectedSkills.length >= (selectedClass?.skillChoices.count || 2))}
+                                                    disabled={isFromBg || (!isSelected && selectedSkills.length >= baseSkillLimit)}
                                                     style={{
                                                         flex: '1 0 45%',
                                                         opacity: isFromBg ? 0.75 : 1,
@@ -1190,6 +1769,59 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                                             );
                                         })}
                                     </div>
+
+                                    {/* ITEM 2: TALENTO HABILIDOSO (SKILLED) */}
+                                    {hasSkilled && (
+                                        <div style={{ marginTop: '18px', padding: '12px', background: 'rgba(168, 85, 247, 0.1)', border: '1px solid rgba(168, 85, 247, 0.4)', borderRadius: '6px' }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                                                <span style={{ color: '#c084fc', fontWeight: 'bold', fontSize: '0.9rem' }}>
+                                                    ⭐ Talento Habilidoso (Skilled) — Escolha 3 Perícias Adicionais:
+                                                </span>
+                                                <span style={{
+                                                    fontSize: '0.8rem',
+                                                    fontWeight: 'bold',
+                                                    color: skilledChoices.length === 3 ? '#4ade80' : '#f59e0b',
+                                                    background: skilledChoices.length === 3 ? 'rgba(74, 222, 128, 0.1)' : 'rgba(245, 158, 11, 0.1)',
+                                                    padding: '2px 8px',
+                                                    borderRadius: '10px'
+                                                }}>
+                                                    {skilledChoices.length}/3 Selecionadas
+                                                </span>
+                                            </div>
+                                            <p style={{ margin: '0 0 8px 0', fontSize: '0.78rem', color: '#cbd5e1' }}>
+                                                O talento Habilidoso concede proficiência em 3 perícias ou ferramentas quaisquer à sua escolha.
+                                            </p>
+                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                                {[
+                                                    'Acrobacia', 'Adestrar Animais', 'Arcanismo', 'Atletismo', 'Atuação', 'Enganação',
+                                                    'Furtividade', 'História', 'Intimidação', 'Intuição', 'Investigação', 'Medicina',
+                                                    'Natureza', 'Percepção', 'Persuasão', 'Prestidigitação', 'Religião', 'Sobrevivência'
+                                                ].filter(sk => !selectedSkills.includes(sk) && !(selectedBackground?.skillProficiencies as string[] || []).includes(sk)).map(skill => {
+                                                    const isSelected = skilledChoices.includes(skill);
+                                                    return (
+                                                        <button
+                                                            key={skill}
+                                                            type="button"
+                                                            onClick={() => toggleSkilledChoice(skill)}
+                                                            disabled={!isSelected && skilledChoices.length >= 3}
+                                                            style={{
+                                                                padding: '4px 8px',
+                                                                borderRadius: '4px',
+                                                                fontSize: '0.8rem',
+                                                                fontWeight: isSelected ? 'bold' : 'normal',
+                                                                background: isSelected ? '#a855f7' : 'rgba(0,0,0,0.3)',
+                                                                color: isSelected ? '#fff' : '#c084fc',
+                                                                border: '1px solid #a855f7',
+                                                                cursor: (!isSelected && skilledChoices.length >= 3) ? 'not-allowed' : 'pointer'
+                                                            }}
+                                                        >
+                                                            {isSelected ? '✓ ' : '+ '}{skill}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
 
                                     {selectedClassId === 'rogue' && (
                                         <div style={{ marginTop: '16px', padding: '12px', background: 'rgba(255, 215, 0, 0.06)', border: '1px solid rgba(255, 215, 0, 0.3)', borderRadius: '6px' }}>
@@ -1212,7 +1844,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                                                 Escolha 2 de suas perícias já proficientes. O seu Bônus de Proficiência será dobrado em testes realizados com elas.
                                             </p>
                                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                                                {Array.from(new Set([...selectedSkills, ...(selectedBackground?.skillProficiencies as string[] || [])])).map(skill => {
+                                                {Array.from(new Set([...selectedSkills, ...(selectedBackground?.skillProficiencies as string[] || []), ...skilledChoices])).map(skill => {
                                                     const isExpert = selectedRogueExpertises.includes(skill);
                                                     return (
                                                         <button
@@ -1251,149 +1883,333 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                         </div>
                     )}
 
-
-
                     {/* STEP 3: Proficiencies */}
-                    {
-                        steps[currentStep].label === 'Proficiências' && hasProficiencyChoice && (
-                            <div className="animate-fade">
-                                <div className="builder-section">
-                                    {selectedClass?.toolChoices && (
-                                        <div style={{ marginBottom: '20px' }}>
-                                            <h3>Ferramentas ({selectedTools.length}/{selectedClass.toolChoices.count})</h3>
-                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                                                {selectedClass.toolChoices.options.map(tool => (
-                                                    <button
-                                                        key={tool}
-                                                        onClick={() => toggleTool(tool)}
-                                                        className={selectedTools.includes(tool) ? 'skill-btn selected' : 'skill-btn'}
-                                                        disabled={!selectedTools.includes(tool) && selectedTools.length >= selectedClass.toolChoices!.count}
-                                                    >
-                                                        {tool}
-                                                    </button>
-                                                ))}
-                                            </div>
+                    {steps[currentStep].label === 'Proficiências' && hasProficiencyChoice && (
+                        <div className="animate-fade">
+                            <div className="builder-section">
+                                {/* ITEM 3: IDIOMAS COMUNS (PHB p. 43) */}
+                                {activeSystem === 'dnd55e' && (
+                                    <div style={{ marginBottom: '24px', padding: '14px', background: 'rgba(197, 160, 89, 0.08)', border: '1px solid rgba(197, 160, 89, 0.3)', borderRadius: '8px' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                            <h3 style={{ margin: 0, color: '#ffd700', fontSize: '1.05rem' }}>
+                                                🗣️ Idiomas do Personagem (PHB 2024 p. 43)
+                                            </h3>
+                                            <span style={{
+                                                fontSize: '0.85rem',
+                                                fontWeight: 'bold',
+                                                color: selectedCommonLanguages.length === 2 ? '#4ade80' : '#f59e0b',
+                                                background: selectedCommonLanguages.length === 2 ? 'rgba(74, 222, 128, 0.1)' : 'rgba(245, 158, 11, 0.1)',
+                                                padding: '2px 10px',
+                                                borderRadius: '12px'
+                                            }}>
+                                                {selectedCommonLanguages.length}/2 Idiomas Comuns Escolhidos
+                                            </span>
                                         </div>
-                                    )}
-
-                                    {selectedBackground && selectedBackground.toolProficiencies && selectedBackground.toolProficiencies.length > 0 && (
-                                        <div style={{ marginBottom: '15px', padding: '10px 12px', background: 'rgba(197, 160, 89, 0.12)', border: '1px solid rgba(197, 160, 89, 0.35)', borderRadius: '6px', fontSize: '0.85rem' }}>
-                                            <div style={{ color: '#ffd700', fontWeight: 'bold' }}>
-                                                Ferramentas do Antecedente ({selectedBackground.name}):
-                                            </div>
-                                            <div style={{ color: '#eee', marginTop: '3px' }}>
-                                                {selectedBackground.toolProficiencies.join(', ')} (Já concedidas automaticamente)
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {selectedRace?.languageChoices && (
-                                        <div>
-                                            <h3>Idiomas ({selectedLanguages.length}/{selectedRace.languageChoices.count})</h3>
-                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                                                {availableLanguages.filter(l => !selectedRace.languages?.includes(l)).map(lang => (
+                                        <p style={{ fontSize: '0.82rem', color: '#cbd5e1', margin: '0 0 10px 0' }}>
+                                            No D&D 2024, todo personagem sabe o <strong>Comum</strong> {(selectedRace?.languages || []).filter(l => l !== 'Comum').length > 0 ? `e ${(selectedRace?.languages || []).filter(l => l !== 'Comum').join(', ')} (Espécie)` : ''} + <strong>2 Idiomas Comuns adicionais</strong> à sua escolha:
+                                        </p>
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                                            {DND_COMMON_LANGUAGES.filter(l => !(selectedRace?.languages || ['Comum']).includes(l)).map(lang => {
+                                                const isSelected = selectedCommonLanguages.includes(lang);
+                                                return (
                                                     <button
                                                         key={lang}
-                                                        onClick={() => toggleLanguage(lang)}
-                                                        className={selectedLanguages.includes(lang) ? 'skill-btn selected' : 'skill-btn'}
-                                                        disabled={!selectedLanguages.includes(lang) && selectedLanguages.length >= selectedRace.languageChoices!.count}
+                                                        type="button"
+                                                        onClick={() => toggleCommonLanguage(lang)}
+                                                        className={isSelected ? 'skill-btn selected' : 'skill-btn'}
+                                                        disabled={!isSelected && selectedCommonLanguages.length >= 2}
+                                                        style={{ flex: '1 0 30%' }}
                                                     >
                                                         {lang}
                                                     </button>
-                                                ))}
-                                            </div>
+                                                );
+                                            })}
                                         </div>
-                                    )}
-                                </div>
-                            </div>
-                        )}
+                                    </div>
+                                )}
 
-
-                    {/* STEP: Spells */}
-                    {
-                        steps[currentStep].label === 'Magias' && (
-                            <div className="animate-fade">
-                                <div className="builder-section">
-                                    {isSpellCaster && (
-                                        <div className="info-box" style={{ marginBottom: '16px' }}>
-                                            Atributo de Conjuração: <strong>{selectedClass?.spellcastingConfig?.ability.toUpperCase()}</strong> |
-                                            {(selectedClass?.spellcastingConfig?.cantripsKnown || 0) > 0 && (
-                                                <span> Truques Conhecidos: <strong>{selectedCantrips.length}/{selectedClass?.spellcastingConfig?.cantripsKnown}</strong> |</span>
-                                            )}
-                                            <span> Magias de 1º Nível: <strong>{selectedSpells.length}/{selectedClass?.spellcastingConfig?.spellsKnown}</strong></span>
-                                        </div>
-                                    )}
-
-                                    {/* Filter and Search Bar */}
-                                    <div className="spell-filter-bar">
-                                        <input
-                                            type="text"
-                                            className="spell-search-input"
-                                            placeholder="Pesquisar magia por nome, efeito ou escola..."
-                                            value={spellSearch}
-                                            onChange={(e) => setSpellSearch(e.target.value)}
-                                        />
-                                        <div className="spell-school-filter-chips">
-                                            {SPELL_SCHOOLS.map(sc => (
+                                {selectedClass?.toolChoices && (
+                                    <div style={{ marginBottom: '20px' }}>
+                                        <h3>Ferramentas de Classe ({selectedTools.length}/{selectedClass.toolChoices.count})</h3>
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                                            {selectedClass.toolChoices.options.map(tool => (
                                                 <button
-                                                    key={sc.id}
-                                                    type="button"
-                                                    className={`school-chip-btn ${spellSchoolFilter === sc.id ? 'active' : ''}`}
-                                                    onClick={() => setSpellSchoolFilter(sc.id)}
+                                                    key={tool}
+                                                    onClick={() => toggleTool(tool)}
+                                                    className={selectedTools.includes(tool) ? 'skill-btn selected' : 'skill-btn'}
+                                                    disabled={!selectedTools.includes(tool) && selectedTools.length >= selectedClass.toolChoices!.count}
                                                 >
-                                                    {sc.name}
+                                                    {tool}
                                                 </button>
                                             ))}
                                         </div>
                                     </div>
+                                )}
 
-                                    {isSpellCaster && (
-                                        <>
-                                            {(selectedClass?.spellcastingConfig?.cantripsKnown || 0) > 0 && (
-                                                <div style={{ marginBottom: '24px' }}>
-                                                    <h4 style={{ color: '#c5a059', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '6px' }}>
-                                                        Truques de Classe — Escolha ({selectedCantrips.length}/{selectedClass?.spellcastingConfig?.cantripsKnown})
-                                                    </h4>
-                                                    {filterSpells(availableCantrips).length === 0 ? (
-                                                        <div style={{ color: '#888', fontStyle: 'italic', margin: '10px 0' }}>Nenhum truque encontrado com o filtro atual.</div>
-                                                    ) : (
-                                                        <div className="spells-grid">
-                                                            {filterSpells(availableCantrips).map(spell => (
-                                                                <div
-                                                                    key={spell.id}
-                                                                    className={`spell-card ${selectedCantrips.includes(spell.id) ? 'selected' : ''}`}
-                                                                    onClick={() => toggleSpell(spell.id, true)}
-                                                                >
-                                                                    <div className="spell-card-header">
-                                                                        <strong>{spell.name}</strong>
-                                                                        {spell.school && <span className="spell-school-tag">{spell.school}</span>}
-                                                                    </div>
-                                                                    <div className="spell-meta-row">
-                                                                        {spell.castingTime && <span className="spell-meta-chip">{spell.castingTime}</span>}
-                                                                        {spell.range && <span className="spell-meta-chip">{spell.range}</span>}
-                                                                        {spell.duration && <span className="spell-meta-chip">{spell.duration}</span>}
-                                                                    </div>
-                                                                    <div className="spell-desc">{spell.description}</div>
-                                                                </div>
-                                                            ))}
+                                {/* ITEM 2: TALENTO ARTÍFICE (CRAFTER) */}
+                                {hasCrafter && (
+                                    <div style={{ marginBottom: '20px', padding: '12px', background: 'rgba(249, 115, 22, 0.1)', border: '1px solid rgba(249, 115, 22, 0.35)', borderRadius: '6px' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                                            <div style={{ color: '#fb923c', fontWeight: 'bold', fontSize: '0.92rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                <Wrench size={16} /> Talento Artífice (Crafter) — Escolha 3 Ferramentas de Artesão:
+                                            </div>
+                                            <span style={{
+                                                fontSize: '0.8rem',
+                                                fontWeight: 'bold',
+                                                color: crafterTools.length === 3 ? '#4ade80' : '#f59e0b',
+                                                background: crafterTools.length === 3 ? 'rgba(74, 222, 128, 0.1)' : 'rgba(245, 158, 11, 0.1)',
+                                                padding: '2px 8px',
+                                                borderRadius: '10px'
+                                            }}>
+                                                {crafterTools.length}/3 Selecionadas
+                                            </span>
+                                        </div>
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
+                                            {ARTISAN_TOOLS.map(tool => {
+                                                const isSelected = crafterTools.includes(tool);
+                                                return (
+                                                    <button
+                                                        key={tool}
+                                                        type="button"
+                                                        onClick={() => toggleCrafterTool(tool)}
+                                                        disabled={!isSelected && crafterTools.length >= 3}
+                                                        style={{
+                                                            padding: '4px 8px',
+                                                            borderRadius: '4px',
+                                                            fontSize: '0.8rem',
+                                                            fontWeight: isSelected ? 'bold' : 'normal',
+                                                            background: isSelected ? '#ea580c' : 'rgba(0,0,0,0.3)',
+                                                            color: isSelected ? '#fff' : '#fdba74',
+                                                            border: '1px solid #ea580c',
+                                                            cursor: (!isSelected && crafterTools.length >= 3) ? 'not-allowed' : 'pointer'
+                                                        }}
+                                                    >
+                                                        {isSelected ? '✓ ' : '+ '}{tool}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* ITEM 2: TALENTO MÚSICO (MUSICIAN) */}
+                                {hasMusician && (
+                                    <div style={{ marginBottom: '20px', padding: '12px', background: 'rgba(236, 72, 153, 0.1)', border: '1px solid rgba(236, 72, 153, 0.35)', borderRadius: '6px' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                                            <div style={{ color: '#f472b6', fontWeight: 'bold', fontSize: '0.92rem' }}>
+                                                🎵 Talento Músico (Musician) — Escolha 3 Instrumentos Musicais:
+                                            </div>
+                                            <span style={{
+                                                fontSize: '0.8rem',
+                                                fontWeight: 'bold',
+                                                color: musicianInstruments.length === 3 ? '#4ade80' : '#f59e0b',
+                                                background: musicianInstruments.length === 3 ? 'rgba(74, 222, 128, 0.1)' : 'rgba(245, 158, 11, 0.1)',
+                                                padding: '2px 8px',
+                                                borderRadius: '10px'
+                                            }}>
+                                                {musicianInstruments.length}/3 Selecionados
+                                            </span>
+                                        </div>
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
+                                            {MUSICAL_INSTRUMENTS.map(inst => {
+                                                const isSelected = musicianInstruments.includes(inst);
+                                                return (
+                                                    <button
+                                                        key={inst}
+                                                        type="button"
+                                                        onClick={() => toggleMusicianInstrument(inst)}
+                                                        disabled={!isSelected && musicianInstruments.length >= 3}
+                                                        style={{
+                                                            padding: '4px 8px',
+                                                            borderRadius: '4px',
+                                                            fontSize: '0.8rem',
+                                                            fontWeight: isSelected ? 'bold' : 'normal',
+                                                            background: isSelected ? '#db2777' : 'rgba(0,0,0,0.3)',
+                                                            color: isSelected ? '#fff' : '#fbcfe8',
+                                                            border: '1px solid #db2777',
+                                                            cursor: (!isSelected && musicianInstruments.length >= 3) ? 'not-allowed' : 'pointer'
+                                                        }}
+                                                    >
+                                                        {isSelected ? '✓ ' : '+ '}{inst}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {selectedBackground && selectedBackground.toolProficiencies && selectedBackground.toolProficiencies.length > 0 && (
+                                    <div style={{ marginBottom: '15px', padding: '10px 12px', background: 'rgba(197, 160, 89, 0.12)', border: '1px solid rgba(197, 160, 89, 0.35)', borderRadius: '6px', fontSize: '0.85rem' }}>
+                                        <div style={{ color: '#ffd700', fontWeight: 'bold' }}>
+                                            Ferramentas do Antecedente ({selectedBackground.name}):
+                                        </div>
+                                        <div style={{ color: '#eee', marginTop: '3px' }}>
+                                            {selectedBackground.toolProficiencies.join(', ')} (Já concedidas automaticamente)
+                                        </div>
+                                    </div>
+                                )}
+
+                                {selectedRace?.languageChoices && (
+                                    <div>
+                                        <h3>Idiomas da Espécie ({selectedLanguages.length}/{selectedRace.languageChoices.count})</h3>
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                                            {(activeSystem === 'witcher' ? WITCHER_LANGUAGES : DND_LANGUAGES).filter(l => !selectedRace.languages?.includes(l)).map(lang => (
+                                                <button
+                                                    key={lang}
+                                                    onClick={() => toggleLanguage(lang)}
+                                                    className={selectedLanguages.includes(lang) ? 'skill-btn selected' : 'skill-btn'}
+                                                    disabled={!selectedLanguages.includes(lang) && selectedLanguages.length >= selectedRace.languageChoices!.count}
+                                                >
+                                                    {lang}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* STEP: Spells */}
+                    {steps[currentStep].label === 'Magias' && (
+                        <div className="animate-fade">
+                            <div className="builder-section">
+                                {isSpellCaster && (
+                                    <div className="info-box" style={{ marginBottom: '16px' }}>
+                                        Atributo de Conjuração: <strong>{selectedClass?.spellcastingConfig?.ability.toUpperCase()}</strong> |
+                                        {(selectedClass?.spellcastingConfig?.cantripsKnown || 0) > 0 && (
+                                            <span> Truques Conhecidos: <strong>{selectedCantrips.length}/{selectedClass?.spellcastingConfig?.cantripsKnown}</strong> |</span>
+                                        )}
+                                        <span> Magias de 1º Nível: <strong>{selectedSpells.length}/{selectedClass?.spellcastingConfig?.spellsKnown}</strong></span>
+                                    </div>
+                                )}
+
+                                {/* Filter and Search Bar */}
+                                <div className="spell-filter-bar">
+                                    <input
+                                        type="text"
+                                        className="spell-search-input"
+                                        placeholder="Pesquisar magia por nome, efeito ou escola..."
+                                        value={spellSearch}
+                                        onChange={(e) => setSpellSearch(e.target.value)}
+                                    />
+                                    <div className="spell-school-filter-chips">
+                                        {SPELL_SCHOOLS.map(sc => (
+                                            <button
+                                                key={sc.id}
+                                                type="button"
+                                                className={`school-chip-btn ${spellSchoolFilter === sc.id ? 'active' : ''}`}
+                                                onClick={() => setSpellSchoolFilter(sc.id)}
+                                            >
+                                                {sc.name}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* ITEM 2: INICIADO EM MAGIA (MAGIC INITIATE) */}
+                                {hasMagicInitiate && (
+                                    <div style={{ marginBottom: '28px', padding: '16px', background: 'rgba(168, 85, 247, 0.1)', border: '1px solid #a855f7', borderRadius: '8px' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', marginBottom: '10px' }}>
+                                            <div style={{ color: '#d8b4fe', fontWeight: 'bold', fontSize: '1.05rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                <Sparkles size={18} /> Talento: Iniciado em Magia (Magic Initiate)
+                                            </div>
+                                            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                                                <label style={{ fontSize: '0.85rem', color: '#eee' }}>
+                                                    Lista da Classe:
+                                                    <select
+                                                        value={magicInitiateClass}
+                                                        onChange={(e) => {
+                                                            const cls = e.target.value as 'cleric' | 'druid' | 'wizard';
+                                                            setMagicInitiateClass(cls);
+                                                            setMagicInitiateAbility(cls === 'wizard' ? 'int' : 'wis');
+                                                            setMagicInitiateCantrips([]);
+                                                            setMagicInitiateSpell('');
+                                                        }}
+                                                        style={{ marginLeft: '6px', padding: '4px 8px', background: '#1c1c28', color: '#c084fc', border: '1px solid #a855f7', borderRadius: '4px', fontWeight: 'bold' }}
+                                                    >
+                                                        <option value="wizard">Mago (Inteligência)</option>
+                                                        <option value="cleric">Clérigo (Sabedoria)</option>
+                                                        <option value="druid">Druida (Sabedoria)</option>
+                                                    </select>
+                                                </label>
+                                                <label style={{ fontSize: '0.85rem', color: '#eee' }}>
+                                                    Atributo Chave:
+                                                    <select
+                                                        value={magicInitiateAbility}
+                                                        onChange={(e) => setMagicInitiateAbility(e.target.value as any)}
+                                                        style={{ marginLeft: '6px', padding: '4px 8px', background: '#1c1c28', color: '#ffd700', border: '1px solid #a855f7', borderRadius: '4px' }}
+                                                    >
+                                                        <option value="int">INT</option>
+                                                        <option value="wis">SAB</option>
+                                                        <option value="cha">CAR</option>
+                                                    </select>
+                                                </label>
+                                            </div>
+                                        </div>
+
+                                        {/* Magic Initiate Cantrips */}
+                                        <div style={{ marginBottom: '14px' }}>
+                                            <div style={{ color: '#c084fc', fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '6px' }}>
+                                                Escolha 2 Truques ({magicInitiateCantrips.length}/2):
+                                            </div>
+                                            <div className="spells-grid">
+                                                {filterSpells(availableMagicInitiateCantrips).map(spell => (
+                                                    <div
+                                                        key={spell.id}
+                                                        className={`spell-card ${magicInitiateCantrips.includes(spell.id) ? 'selected' : ''}`}
+                                                        onClick={() => toggleMagicInitiateCantrip(spell.id)}
+                                                    >
+                                                        <div className="spell-card-header">
+                                                            <strong>{spell.name}</strong>
+                                                            {spell.school && <span className="spell-school-tag">{spell.school}</span>}
                                                         </div>
-                                                    )}
-                                                </div>
-                                            )}
+                                                        <div className="spell-desc">{spell.description}</div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
 
+                                        {/* Magic Initiate Level 1 Spell */}
+                                        <div>
+                                            <div style={{ color: '#c084fc', fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '6px' }}>
+                                                Escolha 1 Magia de 1º Círculo ({magicInitiateSpell ? 1 : 0}/1):
+                                            </div>
+                                            <div className="spells-grid">
+                                                {filterSpells(availableMagicInitiateSpellsL1).map(spell => (
+                                                    <div
+                                                        key={spell.id}
+                                                        className={`spell-card ${magicInitiateSpell === spell.id ? 'selected' : ''}`}
+                                                        onClick={() => setMagicInitiateSpell(prev => prev === spell.id ? '' : spell.id)}
+                                                    >
+                                                        <div className="spell-card-header">
+                                                            <strong>{spell.name}</strong>
+                                                            {spell.school && <span className="spell-school-tag">{spell.school}</span>}
+                                                        </div>
+                                                        <div className="spell-desc">{spell.description}</div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {isSpellCaster && (
+                                    <>
+                                        {(selectedClass?.spellcastingConfig?.cantripsKnown || 0) > 0 && (
                                             <div style={{ marginBottom: '24px' }}>
                                                 <h4 style={{ color: '#c5a059', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '6px' }}>
-                                                    Magias de Nível 1 — Escolha ({selectedSpells.length}/{selectedClass?.spellcastingConfig?.spellsKnown})
+                                                    Truques de Classe — Escolha ({selectedCantrips.length}/{selectedClass?.spellcastingConfig?.cantripsKnown})
                                                 </h4>
-                                                {filterSpells(availableSpellsL1).length === 0 ? (
-                                                    <div style={{ color: '#888', fontStyle: 'italic', margin: '10px 0' }}>Nenhuma magia encontrada com o filtro atual.</div>
+                                                {filterSpells(availableCantrips).length === 0 ? (
+                                                    <div style={{ color: '#888', fontStyle: 'italic', margin: '10px 0' }}>Nenhum truque encontrado com o filtro atual.</div>
                                                 ) : (
                                                     <div className="spells-grid">
-                                                        {filterSpells(availableSpellsL1).map(spell => (
+                                                        {filterSpells(availableCantrips).map(spell => (
                                                             <div
                                                                 key={spell.id}
-                                                                className={`spell-card ${selectedSpells.includes(spell.id) ? 'selected' : ''}`}
-                                                                onClick={() => toggleSpell(spell.id, false)}
+                                                                className={`spell-card ${selectedCantrips.includes(spell.id) ? 'selected' : ''}`}
+                                                                onClick={() => toggleSpell(spell.id, true)}
                                                             >
                                                                 <div className="spell-card-header">
                                                                     <strong>{spell.name}</strong>
@@ -1410,27 +2226,21 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                                                     </div>
                                                 )}
                                             </div>
-                                        </>
-                                    )}
+                                        )}
 
-                                    {/* Race Cantrips */}
-                                    {selectedRace?.cantripChoices && (
-                                        <div style={{ marginTop: '24px' }}>
+                                        <div style={{ marginBottom: '24px' }}>
                                             <h4 style={{ color: '#c5a059', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '6px' }}>
-                                                Truques Raciais ({selectedRace.name}) — Escolha ({selectedRaceCantrips.length}/{selectedRace.cantripChoices.count})
+                                                Magias de Nível 1 — Escolha ({selectedSpells.length}/{selectedClass?.spellcastingConfig?.spellsKnown})
                                             </h4>
-                                            <p style={{ fontSize: '0.85rem', color: '#aaa', margin: '6px 0 10px 0' }}>
-                                                Atributo de Conjuração: <strong>{selectedRace.cantripChoices.ability.toUpperCase()}</strong>
-                                            </p>
-                                            {filterSpells(availableRaceCantrips).length === 0 ? (
-                                                <div style={{ color: '#888', fontStyle: 'italic', margin: '10px 0' }}>Nenhum truque racial encontrado com o filtro atual.</div>
+                                            {filterSpells(availableSpellsL1).length === 0 ? (
+                                                <div style={{ color: '#888', fontStyle: 'italic', margin: '10px 0' }}>Nenhuma magia encontrada com o filtro atual.</div>
                                             ) : (
                                                 <div className="spells-grid">
-                                                    {filterSpells(availableRaceCantrips).map(spell => (
+                                                    {filterSpells(availableSpellsL1).map(spell => (
                                                         <div
                                                             key={spell.id}
-                                                            className={`spell-card ${selectedRaceCantrips.includes(spell.id) ? 'selected' : ''}`}
-                                                            onClick={() => toggleRaceCantrip(spell.id)}
+                                                            className={`spell-card ${selectedSpells.includes(spell.id) ? 'selected' : ''}`}
+                                                            onClick={() => toggleSpell(spell.id, false)}
                                                         >
                                                             <div className="spell-card-header">
                                                                 <strong>{spell.name}</strong>
@@ -1447,48 +2257,96 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                                                 </div>
                                             )}
                                         </div>
-                                    )}
-                                </div>
+                                    </>
+                                )}
+
+                                {/* Race Cantrips */}
+                                {effectiveRaceCantripChoices && (
+                                    <div style={{ marginTop: '24px' }}>
+                                        <h4 style={{ color: '#c5a059', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '6px' }}>
+                                            Truques Raciais ({selectedSubrace?.name || selectedRace?.name}) — Escolha ({selectedRaceCantrips.length}/{effectiveRaceCantripChoices.count})
+                                        </h4>
+                                        <p style={{ fontSize: '0.85rem', color: '#aaa', margin: '6px 0 10px 0' }}>
+                                            Atributo de Conjuração: <strong>{effectiveRaceCantripChoices.ability.toUpperCase()}</strong>
+                                        </p>
+                                        {filterSpells(availableRaceCantrips).length === 0 ? (
+                                            <div style={{ color: '#888', fontStyle: 'italic', margin: '10px 0' }}>Nenhum truque racial encontrado com o filtro atual.</div>
+                                        ) : (
+                                            <div className="spells-grid">
+                                                {filterSpells(availableRaceCantrips).map(spell => (
+                                                    <div
+                                                        key={spell.id}
+                                                        className={`spell-card ${selectedRaceCantrips.includes(spell.id) ? 'selected' : ''}`}
+                                                        onClick={() => toggleRaceCantrip(spell.id)}
+                                                    >
+                                                        <div className="spell-card-header">
+                                                            <strong>{spell.name}</strong>
+                                                            {spell.school && <span className="spell-school-tag">{spell.school}</span>}
+                                                        </div>
+                                                        <div className="spell-meta-row">
+                                                            {spell.castingTime && <span className="spell-meta-chip">{spell.castingTime}</span>}
+                                                            {spell.range && <span className="spell-meta-chip">{spell.range}</span>}
+                                                            {spell.duration && <span className="spell-meta-chip">{spell.duration}</span>}
+                                                        </div>
+                                                        <div className="spell-desc">{spell.description}</div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
-                        )
-                    }
+                        </div>
+                    )}
 
                     {/* STEP: Feats */}
-                    {
-                        steps[currentStep].label === 'Talentos' && (
-                            <div className="animate-fade">
-                                <div className="builder-section">
-                                    {selectedBackground && selectedBackground.featId && (
-                                        <div style={{ marginBottom: '16px', padding: '12px 14px', background: 'rgba(197, 160, 89, 0.12)', border: '1px solid rgba(197, 160, 89, 0.4)', borderRadius: '6px' }}>
-                                            <div style={{ color: '#ffd700', fontWeight: 'bold', fontSize: '0.95rem' }}>
-                                                Talento de Origem do Antecedente ({selectedBackground.name}):
-                                            </div>
-                                            <div style={{ color: '#fff', fontSize: '1.05rem', marginTop: '4px', fontWeight: 'bold' }}>
-                                                {selectedBackground.featName || FEATS.find(f => f.id === selectedBackground.featId)?.name}
-                                            </div>
-                                            <div style={{ color: '#ccc', fontSize: '0.85rem', marginTop: '2px' }}>
-                                                {FEATS.find(f => f.id === selectedBackground.featId)?.description}
-                                            </div>
+                    {steps[currentStep].label === 'Talentos' && (
+                        <div className="animate-fade">
+                            <div className="builder-section">
+                                {selectedBackground && selectedBackground.featId && (
+                                    <div style={{ marginBottom: '16px', padding: '12px 14px', background: 'rgba(197, 160, 89, 0.12)', border: '1px solid rgba(197, 160, 89, 0.4)', borderRadius: '6px' }}>
+                                        <div style={{ color: '#ffd700', fontWeight: 'bold', fontSize: '0.95rem' }}>
+                                            Talento de Origem do Antecedente ({selectedBackground.name}):
                                         </div>
-                                    )}
-
-                                    <h3>Talento Adicional / Bônus ({selectedFeats.length}/1)</h3>
-                                    <div className="spells-grid">
-                                        {FEATS.filter(f => f.category === 'Origem' && f.id !== selectedBackground?.featId).map(feat => (
-                                            <div
-                                                key={feat.id}
-                                                className={`spell-card ${selectedFeats.includes(feat.id) ? 'selected' : ''}`}
-                                                onClick={() => toggleFeat(feat.id)}
-                                            >
-                                                <strong>{feat.name}</strong>
-                                                <div className="spell-desc">{feat.description}</div>
-                                            </div>
-                                        ))}
+                                        <div style={{ color: '#fff', fontSize: '1.05rem', marginTop: '4px', fontWeight: 'bold' }}>
+                                            {selectedBackground.featName || FEATS.find(f => f.id === selectedBackground.featId)?.name}
+                                        </div>
+                                        <div style={{ color: '#ccc', fontSize: '0.85rem', marginTop: '2px' }}>
+                                            {FEATS.find(f => f.id === selectedBackground.featId)?.description}
+                                        </div>
                                     </div>
+                                )}
+
+                                {selectedRace?.originFeatChoice && selectedHumanBonusFeat && (
+                                    <div style={{ marginBottom: '16px', padding: '12px 14px', background: 'rgba(59, 130, 246, 0.12)', border: '1px solid rgba(59, 130, 246, 0.4)', borderRadius: '6px' }}>
+                                        <div style={{ color: '#60a5fa', fontWeight: 'bold', fontSize: '0.95rem' }}>
+                                            Talento de Origem Extra — Versátil (Humano):
+                                        </div>
+                                        <div style={{ color: '#fff', fontSize: '1.05rem', marginTop: '4px', fontWeight: 'bold' }}>
+                                            {FEATS.find(f => f.id === selectedHumanBonusFeat)?.name}
+                                        </div>
+                                        <div style={{ color: '#ccc', fontSize: '0.85rem', marginTop: '2px' }}>
+                                            {FEATS.find(f => f.id === selectedHumanBonusFeat)?.description}
+                                        </div>
+                                    </div>
+                                )}
+
+                                <h3>Talento Adicional / Bônus ({selectedFeats.length}/1)</h3>
+                                <div className="spells-grid">
+                                    {FEATS.filter(f => f.category === 'Origem' && f.id !== selectedBackground?.featId && f.id !== selectedHumanBonusFeat).map(feat => (
+                                        <div
+                                            key={feat.id}
+                                            className={`spell-card ${selectedFeats.includes(feat.id) ? 'selected' : ''}`}
+                                            onClick={() => toggleFeat(feat.id)}
+                                        >
+                                            <strong>{feat.name}</strong>
+                                            <div className="spell-desc">{feat.description}</div>
+                                        </div>
+                                    ))}
                                 </div>
                             </div>
-                        )
-                    }
+                        </div>
+                    )}
 
                     {/* STEP: Equipment */}
                     {steps[currentStep].label === 'Equipamentos' && (
@@ -1516,7 +2374,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                                                     <h4 style={{ color: '#c5a059', marginBottom: '10px' }}>{choice.label}</h4>
                                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                                                         {choice.options.map((option, optIdx) => {
-                                                            const isSelected = (selectedEquipmentChoices[idx] ?? 0) === optIdx; // Default to 0
+                                                            const isSelected = (selectedEquipmentChoices[idx] ?? 0) === optIdx;
                                                             return (
                                                                 <label key={`opt-${optIdx}`} style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', padding: '5px', background: isSelected ? 'rgba(255,255,255,0.1)' : 'transparent', borderRadius: '4px' }}>
                                                                     <input
@@ -1528,7 +2386,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                                                                     <span style={{ color: isSelected ? '#fff' : '#aaa' }}>{option.label}</span>
                                                                     <span style={{ fontSize: '0.8rem', color: '#666' }}>({option.items.join(', ')})</span>
                                                                 </label>
-                                                            )
+                                                            );
                                                         })}
                                                     </div>
                                                 </div>
@@ -1554,53 +2412,51 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                     )}
 
                     {/* STEP: Life */}
-                    {
-                        steps[currentStep].label === 'Vida' && (
-                            <div className="builder-row animate-fade">
-                                <div className="builder-col" style={{ width: '100%', textAlign: 'center' }}>
-                                    <h3>Pontos de Vida (Nível 1)</h3>
-                                    <div className="hp-roll-container" style={{ padding: '20px', background: 'rgba(0,0,0,0.3)', borderRadius: '8px' }}>
-                                        <p style={{ fontSize: '1.2rem' }}>
-                                            Regra: <strong style={{ color: '#c5a059' }}>Vida Máxima</strong> (Dado Completo + CON + Talentos)
-                                        </p>
-                                        <p>
-                                            Dado de Vida: <strong>{selectedClass?.hitDie}</strong> (Max: {parseInt(selectedClass?.hitDie.replace('d', '') || '10')})
-                                        </p>
-                                        <p>Modificador de Constituição: <strong>{calculateModifier(baseStats.con + getAttributeBonus('con')) >= 0 ? '+' : ''}{calculateModifier(baseStats.con + getAttributeBonus('con'))}</strong></p>
-                                        {(() => {
-                                            const bgFeat = selectedBackground?.featId ? FEATS.find(f => f.id === selectedBackground.featId) : null;
-                                            const allFeatsForHp = [...FEATS.filter(f => selectedFeats.includes(f.id)), ...(bgFeat ? [bgFeat] : [])];
-                                            const featHp = allFeatsForHp.reduce((acc, f) => {
-                                                const hpEffect = f.effects?.find(e => e.type === 'hp_per_level');
-                                                return acc + (hpEffect ? hpEffect.value : 0);
-                                            }, 0);
-                                            const totalBonus = featHp;
-                                            const dieMax = parseInt(selectedClass?.hitDie.replace('d', '') || '10');
-                                            const conMod = calculateModifier(baseStats.con + getAttributeBonus('con'));
-                                            const totalHp = Math.max(1, dieMax + conMod) + totalBonus;
+                    {steps[currentStep].label === 'Vida' && (
+                        <div className="builder-row animate-fade">
+                            <div className="builder-col" style={{ width: '100%', textAlign: 'center' }}>
+                                <h3>Pontos de Vida (Nível 1)</h3>
+                                <div className="hp-roll-container" style={{ padding: '20px', background: 'rgba(0,0,0,0.3)', borderRadius: '8px' }}>
+                                    <p style={{ fontSize: '1.2rem' }}>
+                                        Regra: <strong style={{ color: '#c5a059' }}>Vida Máxima</strong> (Dado Completo + CON + Talentos)
+                                    </p>
+                                    <p>
+                                        Dado de Vida: <strong>{selectedClass?.hitDie}</strong> (Max: {parseInt(selectedClass?.hitDie.replace('d', '') || '10')})
+                                    </p>
+                                    <p>Modificador de Constituição: <strong>{calculateModifier(baseStats.con + getAttributeBonus('con')) >= 0 ? '+' : ''}{calculateModifier(baseStats.con + getAttributeBonus('con'))}</strong></p>
+                                    {(() => {
+                                        const bgFeat = selectedBackground?.featId ? FEATS.find(f => f.id === selectedBackground.featId) : null;
+                                        const allFeatsForHp = [...FEATS.filter(f => selectedFeats.includes(f.id)), ...(bgFeat ? [bgFeat] : [])];
+                                        const featHp = allFeatsForHp.reduce((acc, f) => {
+                                            const hpEffect = f.effects?.find(e => e.type === 'hp_per_level');
+                                            return acc + (hpEffect ? hpEffect.value : 0);
+                                        }, 0);
+                                        const totalBonus = featHp;
+                                        const dieMax = parseInt(selectedClass?.hitDie.replace('d', '') || '10');
+                                        const conMod = calculateModifier(baseStats.con + getAttributeBonus('con'));
+                                        const totalHp = Math.max(1, dieMax + conMod) + totalBonus;
 
-                                            return (
-                                                <>
-                                                    {totalBonus > 0 && (
-                                                        <p>
-                                                            Bônus de Talento: <strong style={{ color: '#4caf50' }}>+{totalBonus}</strong>
-                                                            {bgFeat?.id === 'tough' && <span style={{ fontSize: '0.85rem', color: '#ffd700' }}> (Vigoroso do Antecedente)</span>}
-                                                        </p>
-                                                    )}
-                                                    <div className="roll-result" style={{ marginTop: '20px' }}>
-                                                        <p style={{ fontSize: '1.5rem', margin: '20px 0' }}>
-                                                            Vida Total: <strong style={{ color: '#4caf50', fontSize: '2.5rem' }}>{totalHp}</strong>
-                                                        </p>
-                                                    </div>
-                                                </>
-                                            );
-                                        })()}
-                                    </div>
+                                        return (
+                                            <>
+                                                {totalBonus > 0 && (
+                                                    <p>
+                                                        Bônus de Talento: <strong style={{ color: '#4caf50' }}>+{totalBonus}</strong>
+                                                        {bgFeat?.id === 'tough' && <span style={{ fontSize: '0.85rem', color: '#ffd700' }}> (Vigoroso do Antecedente)</span>}
+                                                    </p>
+                                                )}
+                                                <div className="roll-result" style={{ marginTop: '20px' }}>
+                                                    <p style={{ fontSize: '1.5rem', margin: '20px 0' }}>
+                                                        Vida Total: <strong style={{ color: '#4caf50', fontSize: '2.5rem' }}>{totalHp}</strong>
+                                                    </p>
+                                                </div>
+                                            </>
+                                        );
+                                    })()}
                                 </div>
                             </div>
-                        )
-                    }
-                </div >
+                        </div>
+                    )}
+                </div>
 
                 <div className="builder-actions">
                     {currentStep > 0 && <button className="btn-cancel" onClick={() => setCurrentStep(prev => prev - 1)}>Voltar</button>}
@@ -1609,39 +2465,34 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                         : <button
                             className="btn-apply"
                             onClick={handleApply}
-                            disabled={
-                                remainingPoints !== 0 ||
-                                selectedSkills.length < (selectedClass?.skillChoices.count || 2) ||
-                                (selectedClassId === 'rogue' && selectedRogueExpertises.length < 2) ||
-                                (!!selectedClass?.toolChoices && selectedTools.length < selectedClass.toolChoices.count) ||
-                                (!!selectedRace?.languageChoices && selectedLanguages.length < selectedRace.languageChoices.count) ||
-                                (!!selectedRace?.cantripChoices && selectedRaceCantrips.length < selectedRace.cantripChoices.count)
-                            }
+                            disabled={!isFormValid}
                             style={{
-                                opacity: (
-                                    remainingPoints !== 0 ||
-                                    selectedSkills.length < (selectedClass?.skillChoices.count || 2) ||
-                                    (selectedClassId === 'rogue' && selectedRogueExpertises.length < 2) ||
-                                    (!!selectedClass?.toolChoices && selectedTools.length < selectedClass.toolChoices.count) ||
-                                    (!!selectedRace?.languageChoices && selectedLanguages.length < selectedRace.languageChoices.count) ||
-                                    (!!selectedRace?.cantripChoices && selectedRaceCantrips.length < selectedRace.cantripChoices.count)
-                                ) ? 0.5 : 1,
-                                cursor: (
-                                    remainingPoints !== 0 ||
-                                    selectedSkills.length < (selectedClass?.skillChoices.count || 2) ||
-                                    (selectedClassId === 'rogue' && selectedRogueExpertises.length < 2) ||
-                                    (!!selectedClass?.toolChoices && selectedTools.length < selectedClass.toolChoices.count) ||
-                                    (!!selectedRace?.languageChoices && selectedLanguages.length < selectedRace.languageChoices.count) ||
-                                    (!!selectedRace?.cantripChoices && selectedRaceCantrips.length < selectedRace.cantripChoices.count)
-                                ) ? 'not-allowed' : 'pointer'
+                                opacity: !isFormValid ? 0.5 : 1,
+                                cursor: !isFormValid ? 'not-allowed' : 'pointer'
                             }}
-                            title={remainingPoints !== 0 ? `Distribua todos os 27 pontos (${remainingPoints} restantes)!` : "Tudo pronto!"}
+                            title={
+                                !isStatsValid
+                                    ? (statMethod === 'point_buy' ? `Distribua todos os 27 pontos (${remainingPoints} restantes)!` : 'Atribua todos os 6 atributos rolados!')
+                                    : !isSkillsValid
+                                        ? `Selecione ${baseSkillLimit} perícias!`
+                                        : !isLanguagesValid
+                                            ? 'Escolha seus 2 idiomas comuns!'
+                                            : !isMagicInitiateValid
+                                                ? 'Escolha 2 truques e 1 magia para Iniciado em Magia!'
+                                                : !isSkilledValid
+                                                    ? 'Escolha 3 perícias para o talento Habilidoso!'
+                                                    : !isMusicianValid
+                                                        ? 'Escolha 3 instrumentos para o talento Músico!'
+                                                        : !isCrafterValid
+                                                            ? 'Escolha 3 ferramentas para o talento Artífice!'
+                                                            : "Tudo pronto!"
+                            }
                         >
-                            {effectiveStartingLevel > 1 ? `Concluir e Evoluir (Nível ${effectiveStartingLevel})` : 'Concluir Personagem'} {remainingPoints !== 0 ? `(${remainingPoints} pts restantes)` : ''}
+                            {effectiveStartingLevel > 1 ? `Concluir e Evoluir (Nível ${effectiveStartingLevel})` : 'Concluir Personagem'}
                         </button>
                     }
                 </div>
-            </div >
+            </div>
             {viewingProgressionId && (
                 <ClassProgression
                     classData={CLASSES.find(c => c.id === viewingProgressionId)!}
@@ -1649,7 +2500,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                     onClose={() => setViewingProgressionId(null)}
                 />
             )}
-        </div >,
+        </div>,
         document.body
     );
 };
