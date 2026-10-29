@@ -122,20 +122,21 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
     const [selectedHumanBonusFeat, setSelectedHumanBonusFeat] = useState<string>('alert');
 
     // =========================================================================
-    // ATRIBUTOS DIRETOS (SEM POINT BUY, SEM 4d6)
+    // DISTRIBUIÇÃO OFICIAL DE ATRIBUTOS (D&D 5.5e / 2024 - PHB p. 38)
     // =========================================================================
     const [baseStats, setBaseStats] = useState<Record<string, number>>(() => {
         if (character?.attributes && character.name && character.name !== 'Novo Personagem') {
+            const clamp = (v?: number) => Math.max(8, Math.min(15, v ?? 8));
             return {
-                str: character.attributes.str?.value ?? 10,
-                dex: character.attributes.dex?.value ?? 10,
-                con: character.attributes.con?.value ?? 10,
-                int: character.attributes.int?.value ?? 10,
-                wis: character.attributes.wis?.value ?? 10,
-                cha: character.attributes.cha?.value ?? 10
+                str: clamp(character.attributes.str?.value),
+                dex: clamp(character.attributes.dex?.value),
+                con: clamp(character.attributes.con?.value),
+                int: clamp(character.attributes.int?.value),
+                wis: clamp(character.attributes.wis?.value),
+                cha: clamp(character.attributes.cha?.value)
             };
         }
-        return { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 };
+        return { str: 8, dex: 8, con: 8, int: 8, wis: 8, cha: 8 };
     });
 
     // =========================================================================
@@ -527,14 +528,44 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
         }
     }, [crafterTools]);
 
-    // Simple, direct stat modifier
+    // =========================================================================
+    // POINT BUY OFICIAL (27 PONTOS) - REGRAS D&D 5.5e (2024 - PHB p. 38)
+    // Tabela oficial de custos (8 a 15):
+    // 8:0, 9:1, 10:2, 11:3, 12:4, 13:5, 14:7, 15:9
+    // =========================================================================
+    const POINTS_MAX = 27;
+
+    const calculateCost = React.useCallback((score: number): number => {
+        if (score <= 8) return 0;
+        if (score === 9) return 1;
+        if (score === 10) return 2;
+        if (score === 11) return 3;
+        if (score === 12) return 4;
+        if (score === 13) return 5;
+        if (score === 14) return 7;
+        if (score === 15) return 9;
+        return 99;
+    }, []);
+
+    const usedPoints = React.useMemo(() => {
+        if (activeSystem === 'witcher') return 0;
+        return Object.values(baseStats).reduce((acc, val) => acc + calculateCost(val), 0);
+    }, [activeSystem, baseStats, calculateCost]);
+
+    const remainingPoints = activeSystem === 'witcher' ? 0 : POINTS_MAX - usedPoints;
+
     const updateBaseStat = React.useCallback((attr: string, delta: number) => {
         setBaseStats(prev => {
-            const current = prev[attr] ?? 10;
-            const next = Math.max(1, Math.min(20, current + delta));
+            const current = prev[attr] ?? 8;
+            const next = current + delta;
+            if (next < 8 || next > 15) return prev;
+
+            const costDiff = calculateCost(next) - calculateCost(current);
+            if (remainingPoints - costDiff < 0) return prev;
+
             return { ...prev, [attr]: next };
         });
-    }, []);
+    }, [remainingPoints, calculateCost]);
 
     const applyStandardArray = React.useCallback(() => {
         const primary = selectedClass?.primaryAbility?.toLowerCase() || '';
@@ -558,7 +589,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
     }, [selectedClass]);
 
     const resetStats = React.useCallback(() => {
-        setBaseStats({ str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 });
+        setBaseStats({ str: 8, dex: 8, con: 8, int: 8, wis: 8, cha: 8 });
     }, []);
 
     // Navigation Steps
@@ -592,7 +623,8 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
         }
     }, [steps.length, currentStep]);
 
-    // Validation checks for final apply (No point-buy restrictions)
+    // Validation checks for final apply (Strict Point Buy 27 pts)
+    const isStatsValid = activeSystem !== 'dnd55e' || remainingPoints === 0;
     const isMagicInitiateValid = !hasMagicInitiate || (magicInitiateCantrips.length === 2 && !!magicInitiateSpell);
     const isSkilledValid = !hasSkilled || skilledChoices.length === 3;
     const isMusicianValid = !hasMusician || musicianInstruments.length === 3;
@@ -604,6 +636,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
     const isClassSpellsValid = !isSpellCaster || (selectedClass?.spellcastingConfig?.spellsKnown || 0) === 0 || selectedSpells.length >= (selectedClass?.spellcastingConfig?.spellsKnown || 0);
 
     const isFormValid = (
+        isStatsValid &&
         isSkillsValid &&
         (selectedClassId !== 'rogue' || selectedRogueExpertises.length === 2) &&
         (!selectedClass?.toolChoices || selectedTools.length >= selectedClass.toolChoices.count) &&
@@ -1338,12 +1371,12 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                             <div className="builder-section">
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '12px' }}>
                                     <div>
-                                        <h3 style={{ margin: 0 }}>Atributos do Personagem</h3>
+                                        <h3 style={{ margin: 0 }}>Compra por Pontos Oficial (27 Pontos)</h3>
                                         <div style={{ fontSize: '0.85rem', color: '#aaa', marginTop: '3px' }}>
-                                            Ajuste os valores diretamente ou utilize o Conjunto Padrão (15, 14, 13, 12, 10, 8). Bônus de Antecedente (+2/+1 ou +1/+1/+1) são somados à base.
+                                            Distribua 27 pontos entre os atributos (valores de 8 a 15) ou aplique o Conjunto Padrão oficial (15, 14, 13, 12, 10, 8).
                                         </div>
                                         <div style={{ fontSize: '0.8rem', color: '#64748b', fontStyle: 'italic', marginTop: '2px' }}>
-                                            ℹ️ Aumentos de Atributo (ASI) ocorrem nos níveis 4, 8, 12, 16 e 19. O nível 3 desbloqueia a Subclasse.
+                                            ℹ️ Livro do Jogador 2024: No Nível 1 o teto com bônus de antecedente é 17. O Nível 3 desbloqueia a Subclasse (ASI estritamente no Nível 4).
                                         </div>
                                     </div>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
@@ -1360,7 +1393,7 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                                                 fontWeight: 'bold',
                                                 cursor: 'pointer'
                                             }}
-                                            title="Distribui 15, 14, 13, 12, 10, 8 focado na sua classe"
+                                            title="Distribui 15, 14, 13, 12, 10, 8 focado na sua classe (consome exatamente os 27 pontos)"
                                         >
                                             Conjunto Padrão (15, 14, 13, 12, 10, 8)
                                         </button>
@@ -1377,8 +1410,19 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                                                 cursor: 'pointer'
                                             }}
                                         >
-                                            Resetar (10)
+                                            Resetar (8)
                                         </button>
+                                        <div style={{
+                                            padding: '5px 12px',
+                                            borderRadius: '5px',
+                                            fontWeight: 'bold',
+                                            fontSize: '0.9rem',
+                                            background: remainingPoints === 0 ? 'rgba(76, 175, 80, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                                            border: `1px solid ${remainingPoints === 0 ? '#4caf50' : '#ef4444'}`,
+                                            color: remainingPoints === 0 ? '#4caf50' : '#ef4444'
+                                        }}>
+                                            {remainingPoints === 0 ? '✓ 27 pontos distribuídos' : `${remainingPoints} pts restantes (de 27)`}
+                                        </div>
                                     </div>
                                 </div>
 
@@ -1480,63 +1524,54 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                                         const bonus = getAttributeBonus(attrKey);
                                         const total = value + bonus;
                                         const mod = Math.floor((total - 10) / 2);
+                                        const nextCost = calculateCost(value + 1) - calculateCost(value);
+                                        const canIncrease = value < 15 && (activeSystem === 'witcher' || remainingPoints >= nextCost);
+                                        const canDecrease = value > 8;
+
                                         return (
                                             <div key={key} className="stat-picker">
                                                 <label style={{ textTransform: 'uppercase', fontWeight: 'bold', color: '#888' }}>{key}</label>
                                                 
-                                                <div className="stat-controls" style={{ display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'center', margin: '6px 0' }}>
+                                                <div className="stat-controls" style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center', margin: '6px 0' }}>
                                                     <button
                                                         type="button"
                                                         onClick={() => updateBaseStat(key, -1)}
-                                                        disabled={value <= 1}
-                                                        style={{ width: '28px', height: '28px', fontSize: '1rem', cursor: 'pointer' }}
+                                                        disabled={!canDecrease}
+                                                        style={{ width: '28px', height: '28px', fontSize: '1rem', cursor: !canDecrease ? 'not-allowed' : 'pointer', opacity: !canDecrease ? 0.35 : 1 }}
                                                     >
                                                         -
                                                     </button>
-                                                    <input
-                                                        type="number"
-                                                        min={1}
-                                                        max={20}
-                                                        value={value}
-                                                        onChange={(e) => {
-                                                            const v = parseInt(e.target.value);
-                                                            if (!isNaN(v)) {
-                                                                setBaseStats(prev => ({ ...prev, [key]: Math.max(1, Math.min(20, v)) }));
-                                                            }
-                                                        }}
-                                                        style={{
-                                                            width: '46px',
-                                                            textAlign: 'center',
-                                                            fontSize: '1.2rem',
-                                                            fontWeight: 'bold',
-                                                            background: '#151620',
-                                                            color: '#fff',
-                                                            border: '1px solid #444',
-                                                            borderRadius: '4px',
-                                                            padding: '2px 0'
-                                                        }}
-                                                    />
+                                                    <span style={{ fontSize: '1.3rem', fontWeight: 'bold', minWidth: '32px', textAlign: 'center', color: '#fff' }}>
+                                                        {value}
+                                                    </span>
                                                     <button
                                                         type="button"
                                                         onClick={() => updateBaseStat(key, 1)}
-                                                        disabled={value >= 20}
-                                                        style={{ width: '28px', height: '28px', fontSize: '1rem', cursor: 'pointer' }}
+                                                        disabled={!canIncrease}
+                                                        style={{
+                                                            width: '28px',
+                                                            height: '28px',
+                                                            fontSize: '1rem',
+                                                            cursor: !canIncrease ? 'not-allowed' : 'pointer',
+                                                            opacity: !canIncrease ? 0.35 : 1
+                                                        }}
+                                                        title={value >= 15 ? 'Máximo base oficial é 15' : !canIncrease ? `Requer ${nextCost} pts (${remainingPoints} restantes)` : `Custo: ${nextCost} pt(s)`}
                                                     >
                                                         +
                                                     </button>
                                                 </div>
 
-                                                <div style={{ fontSize: '0.8rem', color: '#aaa' }}>
-                                                    Base: {value} <br />
+                                                <div style={{ fontSize: '0.8rem', color: '#aaa', lineHeight: '1.3' }}>
+                                                    Base: {value} {activeSystem === 'dnd55e' && <span style={{ color: '#888' }}>({calculateCost(value)} pts)</span>} <br />
                                                     {activeSystem === 'dnd55e' ? (
                                                         <span>Antecedente: <strong style={{ color: bonus > 0 ? '#4caf50' : '#888' }}>+{bonus}</strong></span>
                                                     ) : (
                                                         <span>Raça: <strong style={{ color: bonus > 0 ? '#c5a059' : '#888' }}>+{bonus}</strong></span>
                                                     )}
                                                 </div>
-                                                <div style={{ background: '#222', marginTop: '5px', padding: '5px', borderRadius: '4px', border: '1px solid #444' }}>
-                                                    <div style={{ fontSize: '1.2rem', color: '#fff', fontWeight: 'bold' }}>{total}</div>
-                                                    <div style={{ fontSize: '0.9rem', color: '#c5a059' }}>{mod >= 0 ? '+' : ''}{mod}</div>
+                                                <div style={{ background: '#222', marginTop: '6px', padding: '5px', borderRadius: '4px', border: '1px solid #444' }}>
+                                                    <div style={{ fontSize: '1.25rem', color: '#fff', fontWeight: 'bold' }}>{total}</div>
+                                                    <div style={{ fontSize: '0.9rem', color: '#c5a059', fontWeight: 'bold' }}>{mod >= 0 ? '+' : ''}{mod}</div>
                                                 </div>
                                             </div>
                                         );
@@ -2291,7 +2326,22 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                 <div className="builder-actions">
                     {currentStep > 0 && <button className="btn-cancel" onClick={() => setCurrentStep(prev => prev - 1)}>Voltar</button>}
                     {currentStep < steps.length - 1
-                        ? <button className="btn-apply" onClick={() => setCurrentStep(prev => prev + 1)}>Próximo</button>
+                        ? <button
+                            className="btn-apply"
+                            disabled={steps[currentStep]?.stepKey === 'attributes' && activeSystem === 'dnd55e' && remainingPoints !== 0}
+                            style={{
+                                opacity: (steps[currentStep]?.stepKey === 'attributes' && activeSystem === 'dnd55e' && remainingPoints !== 0) ? 0.5 : 1,
+                                cursor: (steps[currentStep]?.stepKey === 'attributes' && activeSystem === 'dnd55e' && remainingPoints !== 0) ? 'not-allowed' : 'pointer'
+                            }}
+                            title={
+                                (steps[currentStep]?.stepKey === 'attributes' && activeSystem === 'dnd55e' && remainingPoints !== 0)
+                                    ? `Distribua todos os 27 pontos (${remainingPoints} restantes) ou clique em Conjunto Padrão!`
+                                    : 'Avançar para o próximo passo'
+                            }
+                            onClick={() => setCurrentStep(prev => prev + 1)}
+                        >
+                            Próximo
+                        </button>
                         : <button
                             className="btn-apply"
                             onClick={handleApply}
@@ -2301,8 +2351,10 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                                 cursor: !isFormValid ? 'not-allowed' : 'pointer'
                             }}
                             title={
-                                !isSkillsValid
-                                    ? `Selecione ${baseSkillLimit} perícias!`
+                                !isStatsValid
+                                    ? `Distribua todos os 27 pontos (${remainingPoints} restantes)!`
+                                    : !isSkillsValid
+                                        ? `Selecione ${baseSkillLimit} perícias!`
                                     : !isLanguagesValid
                                         ? 'Escolha seus 2 idiomas comuns!'
                                         : !isClassCantripsValid
