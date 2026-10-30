@@ -11,7 +11,8 @@ import {
     getFeaturesForLevel,
     getProficiencyBonus,
     isAsiLevel as checkIsAsiLevel,
-    getSubclassLevel
+    getSubclassLevel,
+    getSubclassGrantedSpells
 } from '../data/progression';
 import {
     Check,
@@ -346,12 +347,13 @@ export const LevelUpModal: React.FC<LevelUpModalProps> = ({ character, onUpdate,
         // 4. Spell Slots calculation from official 1 to 20 progression
         const updatedSpellSlots = getSpellSlotsForLevel(classData?.id || character.class, newLevel);
 
-        // 5. Class Resources calculation from official 1 to 20 progression
+        // 5. Class Resources calculation from official 1 to 20 progression (including Subclass)
         const updatedResources = getClassResourcesForLevel(
             classData?.id || character.class,
             newLevel,
             character.classResources,
-            character.attributes.cha ? character.attributes.cha.modifier : 1
+            character.attributes.cha ? character.attributes.cha.modifier : 1,
+            finalSubclassName
         );
 
         // 6. Recalculate Skills with new Proficiency Bonus and newly chosen expertises
@@ -390,10 +392,20 @@ export const LevelUpModal: React.FC<LevelUpModalProps> = ({ character, onUpdate,
             hpRolled: hpChoice === 'roll' ? finalHpGain : false
         };
 
-        // 7. Add Selected Spells
-        if (selectedSpells.length > 0) {
+        // 7. Add Selected Spells & Subclass Granted Spells
+        const allNewSpells: Spell[] = [...selectedSpells];
+        if (finalSubclassName) {
+            const scSpells = getSubclassGrantedSpells(finalSubclassName, newLevel);
+            scSpells.forEach(scSpell => {
+                if (!allNewSpells.some(s => s.id === scSpell.id)) {
+                    allNewSpells.push(scSpell);
+                }
+            });
+        }
+
+        if (allNewSpells.length > 0) {
             const existingSpellIds = new Set((character.spells || []).map(s => s.id));
-            const newSpells = selectedSpells.filter(s => !existingSpellIds.has(s.id));
+            const newSpells = allNewSpells.filter(s => !existingSpellIds.has(s.id));
             nextChar.spells = [...(character.spells || []), ...newSpells];
         }
 

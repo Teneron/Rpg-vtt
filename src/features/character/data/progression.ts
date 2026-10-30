@@ -1,5 +1,6 @@
 import { CLASS_PROGRESSIONS, type FullClassProgression } from './classProgressions';
 import { CLASSES } from './classes';
+import { SPELLS, type Spell } from './spells';
 import type { ClassFeature, ClassResource } from '../characterTypes';
 
 /**
@@ -171,7 +172,8 @@ export function getClassResourcesForLevel(
     classIdOrName: string | null | undefined,
     level: number,
     existingResources: ClassResource[] = [],
-    chaModifier = 1
+    chaModifier = 1,
+    subclassIdOrName?: string | null
 ): ClassResource[] {
     const classId = normalizeClassId(classIdOrName);
     const prog = getClassProgression(classId);
@@ -279,12 +281,100 @@ export function getClassResourcesForLevel(
         }
     }
 
+    // --- Subclass Specific Resources ---
+    if (subclassIdOrName) {
+        const subLower = subclassIdOrName.toLowerCase();
+        if (subLower.includes('battle') || subLower.includes('batalha')) {
+            const count = safeLvl >= 15 ? 6 : (safeLvl >= 7 ? 5 : 4);
+            const die = safeLvl >= 18 ? 'd12' : (safeLvl >= 10 ? 'd10' : 'd8');
+            upsertResource('combat_superiority', `Dados de Superioridade (${die})`, count, 'short');
+        } else if (subLower.includes('archfey') || subLower.includes('arquifada')) {
+            const uses = Math.max(1, chaModifier);
+            upsertResource('steps_of_the_fey', 'Passos Feéricos (Teleporte Grátis)', uses, 'long');
+        } else if (subLower.includes('celestial')) {
+            const pool = 1 + safeLvl;
+            upsertResource('healing_light', 'Luz Curativa (d6s)', pool, 'long');
+        } else if (subLower.includes('psi') || subLower.includes('psíquico') || subLower.includes('psiquico') || subLower.includes('soulknife')) {
+            const count = safeLvl >= 5 ? 6 : 4;
+            upsertResource('psionic_dice', 'Dados de Energia Psiônica', count, 'short');
+        }
+    }
+
     return resources;
 }
 
 /**
  * Retorna as características (features) da classe desbloqueadas no nível específico.
  */
+export const SUBCLASS_SPELL_IDS: Record<string, { level: number; spellId: string }[]> = {
+    vengeance: [
+        { level: 3, spellId: 'bane' },
+        { level: 3, spellId: 'hunter_mark' },
+        { level: 5, spellId: 'hold_person' },
+        { level: 5, spellId: 'misty_step' }
+    ],
+    devotion: [
+        { level: 3, spellId: 'protection_from_evil_and_good' },
+        { level: 3, spellId: 'shield_of_faith' },
+        { level: 5, spellId: 'aid' },
+        { level: 5, spellId: 'zone_of_truth' }
+    ],
+    ancients: [
+        { level: 3, spellId: 'ensnaring_strike' },
+        { level: 3, spellId: 'speak_with_animals' },
+        { level: 5, spellId: 'moonbeam' },
+        { level: 5, spellId: 'misty_step' }
+    ],
+    glory: [
+        { level: 3, spellId: 'guiding_bolt' },
+        { level: 3, spellId: 'heroism' }
+    ],
+    archfey: [
+        { level: 3, spellId: 'sleep' },
+        { level: 3, spellId: 'misty_step' },
+        { level: 5, spellId: 'calm_emotions' },
+        { level: 5, spellId: 'phantasmal_force' }
+    ],
+    fiend: [
+        { level: 3, spellId: 'burning_hands' },
+        { level: 3, spellId: 'command' },
+        { level: 5, spellId: 'scorching_ray' },
+        { level: 5, spellId: 'blindness_deafness' }
+    ],
+    celestial: [
+        { level: 3, spellId: 'cure_wounds' },
+        { level: 3, spellId: 'guiding_bolt' },
+        { level: 5, spellId: 'flaming_sphere' },
+        { level: 5, spellId: 'lesser_restoration' }
+    ]
+};
+
+/**
+ * Retorna magias concedidas automaticamente pela subclasse até o nível indicado.
+ */
+export function getSubclassGrantedSpells(
+    subclassIdOrName: string | null | undefined,
+    level: number
+): Spell[] {
+    if (!subclassIdOrName) return [];
+    const lower = subclassIdOrName.toLowerCase();
+    let key = '';
+    if (lower.includes('vengeance') || lower.includes('vingança') || lower.includes('vinganca')) key = 'vengeance';
+    else if (lower.includes('devotion') || lower.includes('devoção') || lower.includes('devocao')) key = 'devotion';
+    else if (lower.includes('ancients') || lower.includes('anciões') || lower.includes('ancioes')) key = 'ancients';
+    else if (lower.includes('glory') || lower.includes('glória') || lower.includes('gloria')) key = 'glory';
+    else if (lower.includes('archfey') || lower.includes('arquifada')) key = 'archfey';
+    else if (lower.includes('fiend') || lower.includes('ínfero') || lower.includes('infero')) key = 'fiend';
+    else if (lower.includes('celestial')) key = 'celestial';
+
+    if (!key || !SUBCLASS_SPELL_IDS[key]) return [];
+
+    const granted = SUBCLASS_SPELL_IDS[key].filter(item => item.level <= level);
+    return granted
+        .map(item => SPELLS.find(s => s.id === item.spellId))
+        .filter((s): s is Spell => s !== undefined);
+}
+
 export function getFeaturesForLevel(
     classIdOrName: string | null | undefined,
     level: number

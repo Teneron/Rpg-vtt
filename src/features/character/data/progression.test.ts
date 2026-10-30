@@ -15,7 +15,8 @@ import {
     getSpellsPreparedCount,
     getClassResourcesForLevel,
     getFeaturesForLevel,
-    getFeaturesUpToLevel
+    getFeaturesUpToLevel,
+    getSubclassGrantedSpells
 } from './progression';
 
 describe('progression.ts - 1 to 20 rules engine', () => {
@@ -240,5 +241,33 @@ describe('progression.ts - 1 to 20 rules engine', () => {
         // Level 9: Dex mod (+2) + PB (+4) = 6
         const charLvl9 = regenerateCharacterStats({ ...baseChar, level: 9 });
         expect(charLvl9.initiative).toBe(6);
+    });
+
+    it('automatically grants subclass resources (Battle Master Superiority Dice & Archfey Fey Steps)', () => {
+        // Fighter Battle Master level 3: 4 superiority dice
+        const bmResources = getClassResourcesForLevel('fighter', 3, [], 1, 'Mestre da Batalha');
+        const supDice = bmResources.find(r => r.id === 'combat_superiority');
+        expect(supDice).toBeDefined();
+        expect(supDice?.max).toBe(4);
+        expect(supDice?.rechargesOn).toBe('short');
+
+        // Warlock Archfey level 3 with Cha mod +3: 3 fey steps
+        const afResources = getClassResourcesForLevel('warlock', 3, [], 3, 'Patrono Arquifada');
+        const feySteps = afResources.find(r => r.id === 'steps_of_the_fey');
+        expect(feySteps).toBeDefined();
+        expect(feySteps?.max).toBe(3);
+        expect(feySteps?.rechargesOn).toBe('long');
+    });
+
+    it('automatically retrieves subclass granted spells for Archfey and Vengeance Paladin', () => {
+        // Archfey level 3 grants Sleep (Sono) and Misty Step (Passo Nebuloso)
+        const archfeySpells = getSubclassGrantedSpells('archfey', 3);
+        expect(archfeySpells.some(s => s.id === 'sleep')).toBe(true);
+        expect(archfeySpells.some(s => s.id === 'misty_step')).toBe(true);
+
+        // Vengeance Paladin level 3 grants Bane and Hunter's Mark
+        const vengeanceSpells = getSubclassGrantedSpells('Juramento da Vingança', 3);
+        expect(vengeanceSpells.some(s => s.id === 'bane')).toBe(true);
+        expect(vengeanceSpells.some(s => s.id === 'hunter_mark')).toBe(true);
     });
 });
