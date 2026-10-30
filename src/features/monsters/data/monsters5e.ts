@@ -1142,5 +1142,298 @@ export const MONSTERS_5E: Monster[] = [
                 description: 'Dispara 3 raios oculares a até 36m (Charme CD 16, Paralisia CD 16, Medo CD 16, Desintegração 10d8 força CD 16, Raio da Morte 10d10 necrótico CD 16).'
             }
         ]
+    },
+    {
+        id: 'capitao_carniceiro',
+        name: 'Capitão Carniceiro',
+        category: 'Humanoide',
+        description: 'Líder brutal dos Carniceiros da Fenda. Empunha um machado de batalha pesado e canaliza fúria ígnea fanática em seus ataques.',
+        cr: 2,
+        size: 'Medium',
+        imageUrl: '/tokens/token_enemy_capitao_carniceiro_1793324616093.jpg',
+        hp: { current: 35, max: 35 },
+        ac: 14,
+        speed: 9,
+        initiativeModifier: 1,
+        attributes: {
+            str: { value: 16, modifier: 3 },
+            dex: { value: 12, modifier: 1 },
+            con: { value: 14, modifier: 2 },
+            int: { value: 9, modifier: -1 },
+            wis: { value: 11, modifier: 0 },
+            cha: { value: 10, modifier: 0 }
+        },
+        skills: ['Atletismo +5', 'Intimidação +2'],
+        senses: ['Percepção Passiva 10'],
+        visionRange: 18,
+        source: 'DnD5e',
+        system: 'dnd5e',
+        actions: [
+            {
+                id: 'capitao_multiattack',
+                name: 'Ataque Múltiplo',
+                type: 'ability',
+                description: 'O Capitão Carniceiro faz dois ataques com o Machado de Batalha.'
+            },
+            {
+                id: 'capitao_battleaxe',
+                name: 'Machado de Batalha',
+                type: 'melee',
+                description: 'Ataque com arma corpo a corpo: +5 para acertar, alcance 1,5 m, um alvo. Dano: 1d8 + 3 cortante (ou 1d10 + 3 com as duas mãos).',
+                damage: '1d8 + 3',
+                toHit: 5,
+                range: '1,5 m'
+            },
+            {
+                id: 'capitao_grito_furia',
+                name: 'Grito de Fúria (Recarrega 5-6)',
+                type: 'ability',
+                description: 'Com uma ação bônus, o Capitão solta um brado de guerra e seus ataques causam +1d4 de dano de fogo até o fim do seu próximo turno.'
+            }
+        ]
+    },
+    {
+        id: 'sabujo_corrompido',
+        name: 'Sabujo Corrompido',
+        category: 'Monstruosidade',
+        description: 'Fera retorcida com espinhos ósseos protuberantes ao longo do dorso e mandíbulas que estraçalham carne e derrubam presas.',
+        cr: 0.5,
+        size: 'Medium',
+        imageUrl: '/tokens/token_enemy_sabujo_corrompido_1793324650921.jpg',
+        hp: { current: 18, max: 18 },
+        ac: 13,
+        speed: 12,
+        initiativeModifier: 2,
+        attributes: {
+            str: { value: 13, modifier: 1 },
+            dex: { value: 15, modifier: 2 },
+            con: { value: 12, modifier: 1 },
+            int: { value: 3, modifier: -4 },
+            wis: { value: 12, modifier: 1 },
+            cha: { value: 6, modifier: -2 }
+        },
+        skills: ['Percepção +3'],
+        senses: ['Faro e Audição Aguçados (Vantagem)', 'Visão no Escuro 18m', 'Percepção Passiva 13'],
+        visionRange: 18,
+        source: 'DnD5e',
+        system: 'dnd5e',
+        actions: [
+            {
+                id: 'sabujo_faro_audicao',
+                name: 'Faro e Audição Aguçados',
+                type: 'ability',
+                description: 'Vantagem em testes de Percepção baseados em cheiro ou som.'
+            },
+            {
+                id: 'sabujo_bite',
+                name: 'Mordida de Espinhos',
+                type: 'melee',
+                description: 'Ataque com arma corpo a corpo: +4 para acertar, alcance 1,5 m, um alvo. Dano: 1d6 + 2 perfurante. Se o alvo for uma criatura, deve passar em Salvaguarda de FOR CD 11 ou cair Caído.',
+                damage: '1d6 + 2',
+                toHit: 4,
+                range: '1,5 m'
+            }
+        ]
+    },
+    {
+        id: 'arqueiro_das_sombras',
+        name: 'Arqueiro das Sombras',
+        category: 'Humanoide',
+        description: 'Atirador de emboscada ágil que utiliza as colunas e relevos para abater viajantes com disparos cirúrgicos.',
+        cr: 0.5,
+        size: 'Medium',
+        imageUrl: '/tokens/token_enemy_arqueiro_sombras_1793324700133.jpg',
+        hp: { current: 16, max: 16 },
+        ac: 12,
+        speed: 9,
+        initiativeModifier: 2,
+        attributes: {
+            str: { value: 10, modifier: 0 },
+            dex: { value: 15, modifier: 2 },
+            con: { value: 12, modifier: 1 },
+            int: { value: 10, modifier: 0 },
+            wis: { value: 13, modifier: 1 },
+            cha: { value: 9, modifier: -1 }
+        },
+        skills: ['Furtividade +4', 'Percepção +3'],
+        senses: ['Percepção Passiva 13'],
+        visionRange: 18,
+        source: 'DnD5e',
+        system: 'dnd5e',
+        actions: [
+            {
+                id: 'arqueiro_shortbow',
+                name: 'Arco Curto',
+                type: 'ranged',
+                description: 'Ataque com arma à distância: +4 para acertar, alcance 24/96 m, um alvo. Dano: 1d6 + 2 perfurante.',
+                damage: '1d6 + 2',
+                toHit: 4,
+                range: '24/96 m'
+            },
+            {
+                id: 'arqueiro_dagger',
+                name: 'Adaga',
+                type: 'melee',
+                description: 'Ataque com arma corpo a corpo: +4 para acertar, alcance 1,5 m, um alvo. Dano: 1d4 + 2 perfurante.',
+                damage: '1d4 + 2',
+                toHit: 4,
+                range: '1,5 m'
+            }
+        ]
+    },
+    {
+        id: 'criatura_de_cinzas',
+        name: 'A Criatura de Cinzas',
+        category: 'Elemental',
+        description: 'Entidade ígnea elemental forjada nas fendas vulcânicas do Hipogeu para o Duelo do Golias. Seu corpo arde com brasas incandescentes.',
+        cr: 1,
+        size: 'Medium',
+        imageUrl: '/tokens/token_enemy_criatura_cinzas_1793324750467.jpg',
+        hp: { current: 28, max: 28 },
+        ac: 13,
+        speed: 9,
+        initiativeModifier: 1,
+        attributes: {
+            str: { value: 16, modifier: 3 },
+            dex: { value: 12, modifier: 1 },
+            con: { value: 15, modifier: 2 },
+            int: { value: 6, modifier: -2 },
+            wis: { value: 10, modifier: 0 },
+            cha: { value: 7, modifier: -2 }
+        },
+        skills: ['Atletismo +5'],
+        senses: ['Visão no Escuro 18m', 'Percepção Passiva 10'],
+        damageResistances: ['Fogo'],
+        damageVulnerabilities: ['Frio'],
+        visionRange: 18,
+        source: 'DnD5e',
+        system: 'dnd5e',
+        actions: [
+            {
+                id: 'cinzas_pancada',
+                name: 'Pancada Incandescente',
+                type: 'melee',
+                description: 'Ataque corpo a corpo: +5 para acertar, alcance 1,5 m, um alvo. Dano: 1d8 + 3 de concussão + 1d4 de fogo.',
+                damage: '1d8 + 3 + 1d4',
+                toHit: 5,
+                range: '1,5 m'
+            }
+        ]
+    },
+    {
+        id: 'espectro_do_massacre',
+        name: 'O Espectro do Massacre',
+        category: 'Morto-Vivo',
+        description: 'Espírito guerreiro retorcido do massacre draconato (Duelo de Drakthar). Carrega a essência da culpa e o frio do túmulo.',
+        cr: 1,
+        size: 'Medium',
+        imageUrl: '/tokens/token_enemy_espectro_massacre_1793324797108.jpg',
+        hp: { current: 26, max: 26 },
+        ac: 13,
+        speed: 9,
+        initiativeModifier: 3,
+        attributes: {
+            str: { value: 6, modifier: -2 },
+            dex: { value: 16, modifier: 3 },
+            con: { value: 13, modifier: 1 },
+            int: { value: 10, modifier: 0 },
+            wis: { value: 12, modifier: 1 },
+            cha: { value: 14, modifier: 2 }
+        },
+        skills: ['Furtividade +5', 'Percepção +3'],
+        senses: ['Visão no Escuro 18m', 'Percepção Passiva 13'],
+        damageResistances: ['Necrótico', 'Concussão, perfurante e cortante de armas não mágicas'],
+        damageVulnerabilities: ['Radiante'],
+        visionRange: 18,
+        source: 'DnD5e',
+        system: 'dnd5e',
+        actions: [
+            {
+                id: 'espectro_lamina_sombras',
+                name: 'Lâmina de Sombras',
+                type: 'melee',
+                description: 'Ataque corpo a corpo com energia espectral: +5 para acertar, alcance 1,5 m, um alvo. Dano: 1d8 + 3 necrótico.',
+                damage: '1d8 + 3',
+                toHit: 5,
+                range: '1,5 m'
+            }
+        ]
+    },
+    {
+        id: 'duplo_de_vidro',
+        name: 'O Duplo de Vidro',
+        category: 'Constructo',
+        description: 'Cópia reflexiva ilusória no Salão dos Espelhos (Duelo de Le Frey). Emite disparos perfurantes de vidro negro, mas estilhaça sob impacto contundente ou força.',
+        cr: 1,
+        size: 'Medium',
+        imageUrl: '/tokens/token_enemy_duplo_vidro_1793324850140.jpg',
+        hp: { current: 22, max: 22 },
+        ac: 12,
+        speed: 9,
+        initiativeModifier: 2,
+        attributes: {
+            str: { value: 10, modifier: 0 },
+            dex: { value: 14, modifier: 2 },
+            con: { value: 12, modifier: 1 },
+            int: { value: 12, modifier: 1 },
+            wis: { value: 10, modifier: 0 },
+            cha: { value: 16, modifier: 3 }
+        },
+        skills: ['Enganação +5', 'Percepção +2'],
+        senses: ['Visão no Escuro 18m', 'Percepção Passiva 12'],
+        damageVulnerabilities: ['Força', 'Concussão'],
+        visionRange: 18,
+        source: 'DnD5e',
+        system: 'dnd5e',
+        actions: [
+            {
+                id: 'duplo_raio_vidro',
+                name: 'Raio de Vidro Negro',
+                type: 'ranged',
+                description: 'Ataque mágico à distância: +5 para acertar, alcance 18 m, um alvo. Dano: 1d10 + 2 perfurante.',
+                damage: '1d10 + 2',
+                toHit: 5,
+                range: '18 m'
+            }
+        ]
+    },
+    {
+        id: 'automato_do_vento',
+        name: 'O Autômato do Vento',
+        category: 'Constructo',
+        description: 'Guardião mecânico veloz da câmara de engrenagens (Duelo de DoomFist). Forjado em placas de latão com lâminas afiadas giratórias.',
+        cr: 1,
+        size: 'Medium',
+        imageUrl: '/tokens/token_enemy_automato_vento.svg',
+        hp: { current: 24, max: 24 },
+        ac: 14,
+        speed: 9,
+        initiativeModifier: 3,
+        attributes: {
+            str: { value: 15, modifier: 2 },
+            dex: { value: 16, modifier: 3 },
+            con: { value: 13, modifier: 1 },
+            int: { value: 4, modifier: -3 },
+            wis: { value: 10, modifier: 0 },
+            cha: { value: 1, modifier: -5 }
+        },
+        skills: ['Acrobacia +5', 'Percepção +2'],
+        senses: ['Visão no Escuro 18m', 'Percepção Passiva 12'],
+        damageImmunities: ['Veneno'],
+        conditionImmunities: ['Envenenado'],
+        visionRange: 18,
+        source: 'DnD5e',
+        system: 'dnd5e',
+        actions: [
+            {
+                id: 'automato_laminas_duplas',
+                name: 'Lâminas Duplas',
+                type: 'melee',
+                description: 'O autômato faz dois ataques velozes com suas lâminas cortantes de latão: +5 para acertar, alcance 1,5 m, um alvo. Dano: 1d6 + 2 cortante cada.',
+                damage: '1d6 + 2',
+                toHit: 5,
+                range: '1,5 m'
+            }
+        ]
     }
 ];
