@@ -118,6 +118,31 @@ export const WARLOCK_INVOCATIONS = [
         id: 'repelling_blast',
         name: 'Repulsão Mística (Repelling Blast)',
         description: 'Ao acertar uma criatura com a Rajada Mística, você pode empurrá-la até 3 metros em linha reta para longe de você.'
+    },
+    {
+        id: 'mask_of_many_faces',
+        name: 'Máscara de Muitas Faces (Mask of Many Faces)',
+        description: 'Você pode conjurar Disfarçar-se sobre si mesmo à vontade, sem gastar espaços de magia ou componentes.'
+    },
+    {
+        id: 'eldritch_mind',
+        name: 'Mente Mística (Eldritch Mind)',
+        description: 'Você possui Vantagem em testes de resistência de Constituição para manter a concentração em suas magias.'
+    },
+    {
+        id: 'pact_of_the_tome',
+        name: 'Pacto do Tomo (Pact of the Tome)',
+        description: 'Seu patrono lhe concede um grimório das sombras com 3 truques adicionais de qualquer classe e rituais.'
+    },
+    {
+        id: 'pact_of_the_blade',
+        name: 'Pacto da Lâmina (Pact of the Blade)',
+        description: 'Você vincula uma arma mágica usando Carisma para jogadas de ataque e dano no lugar de Força ou Destreza.'
+    },
+    {
+        id: 'pact_of_the_chain',
+        name: 'Pacto da Corrente (Pact of the Chain)',
+        description: 'Você aprende Encontrar Familiar e adquire familiares sobrenaturais inteligentes (como Sprite ou Pseudodragão).'
     }
 ];
 
