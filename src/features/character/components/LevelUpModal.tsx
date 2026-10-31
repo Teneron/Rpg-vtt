@@ -87,64 +87,8 @@ export const FIGHTING_STYLES = [
     }
 ];
 
-// Invocações Místicas do Bruxo (D&D 2024 / 5e)
-export const WARLOCK_INVOCATIONS = [
-    {
-        id: 'devils_sight',
-        name: 'Visão Diabólica (Devil\'s Sight)',
-        description: 'Você enxerga normalmente na escuridão mágica e não mágica até 36 metros de distância.'
-    },
-    {
-        id: 'agonizing_blast',
-        name: 'Rajada Agonizante (Agonizing Blast)',
-        description: 'Ao acertar com a Rajada Mística (Eldritch Blast), adicione seu modificador de Carisma ao dano causado.'
-    },
-    {
-        id: 'armor_of_shadows',
-        name: 'Armadura das Sombras (Armor of Shadows)',
-        description: 'Você pode conjurar Armadura Arcana sobre si mesmo à vontade, sem gastar espaços de magia ou componentes materiais.'
-    },
-    {
-        id: 'eyes_rune_keeper',
-        name: 'Olhos do Guardião das Runas (Eyes of the Rune Keeper)',
-        description: 'Você consegue ler e compreender qualquer escrita, runa ou idioma escrito.'
-    },
-    {
-        id: 'eldritch_spear',
-        name: 'Lança Mística (Eldritch Spear)',
-        description: 'O alcance da sua Rajada Mística aumenta para 90 metros (300 pés).'
-    },
-    {
-        id: 'repelling_blast',
-        name: 'Repulsão Mística (Repelling Blast)',
-        description: 'Ao acertar uma criatura com a Rajada Mística, você pode empurrá-la até 3 metros em linha reta para longe de você.'
-    },
-    {
-        id: 'mask_of_many_faces',
-        name: 'Máscara de Muitas Faces (Mask of Many Faces)',
-        description: 'Você pode conjurar Disfarçar-se sobre si mesmo à vontade, sem gastar espaços de magia ou componentes.'
-    },
-    {
-        id: 'eldritch_mind',
-        name: 'Mente Mística (Eldritch Mind)',
-        description: 'Você possui Vantagem em testes de resistência de Constituição para manter a concentração em suas magias.'
-    },
-    {
-        id: 'pact_of_the_tome',
-        name: 'Pacto do Tomo (Pact of the Tome)',
-        description: 'Seu patrono lhe concede um grimório das sombras com 3 truques adicionais de qualquer classe e rituais.'
-    },
-    {
-        id: 'pact_of_the_blade',
-        name: 'Pacto da Lâmina (Pact of the Blade)',
-        description: 'Você vincula uma arma mágica usando Carisma para jogadas de ataque e dano no lugar de Força ou Destreza.'
-    },
-    {
-        id: 'pact_of_the_chain',
-        name: 'Pacto da Corrente (Pact of the Chain)',
-        description: 'Você aprende Encontrar Familiar e adquire familiares sobrenaturais inteligentes (como Sprite ou Pseudodragão).'
-    }
-];
+import { WARLOCK_INVOCATIONS } from '../data/warlockInvocations';
+export { WARLOCK_INVOCATIONS };
 
 export const LevelUpModal: React.FC<LevelUpModalProps> = ({ character, onUpdate, onClose }) => {
     const newLevel = character.level;
@@ -164,7 +108,7 @@ export const LevelUpModal: React.FC<LevelUpModalProps> = ({ character, onUpdate,
     const isAsiLevel = checkIsAsiLevel(classData?.id || character.class, newLevel);
 
     const hasFightingStyleChoice = (isFighter && newLevel === 2) || (isPaladin && newLevel === 2) || (isRanger && newLevel === 2);
-    const hasInvocationChoice = isWarlock && newLevel === 2;
+    const hasInvocationChoice = isWarlock && (newLevel === 2 || newLevel === 5 || newLevel === 7 || newLevel === 9 || newLevel === 12 || newLevel === 15 || newLevel === 18);
     const subclassLevel = getSubclassLevel(classData?.id || character.class);
     const hasSubclassChoice = !character.subclass && newLevel >= subclassLevel && (classData?.subclasses?.length || 0) > 0;
     const hasClassSpecialChoice = hasFightingStyleChoice || hasInvocationChoice || hasSubclassChoice;
@@ -843,7 +787,7 @@ export const LevelUpModal: React.FC<LevelUpModalProps> = ({ character, onUpdate,
                                     </p>
 
                                     <div className="lvl-choices-grid">
-                                        {WARLOCK_INVOCATIONS.map(inv => {
+                                        {WARLOCK_INVOCATIONS.filter(inv => inv.minLevel <= newLevel).map(inv => {
                                             const isSelected = selectedInvocation === inv.id;
                                             return (
                                                 <div

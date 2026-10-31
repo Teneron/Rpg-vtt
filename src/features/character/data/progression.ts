@@ -251,6 +251,7 @@ export function getClassResourcesForLevel(
             break;
         }
         case 'paladin': {
+            upsertResource('lay_on_hands', 'Cura pelas Mãos (Reserva de PV)', 5 * safeLvl, 'long');
             if (safeLvl >= 2) {
                 const cdUses = parseInt(row.values['channelDivinity'] || '2', 10) || 2;
                 upsertResource('channel_divinity', 'Canalizar Divindade', cdUses, 'short');

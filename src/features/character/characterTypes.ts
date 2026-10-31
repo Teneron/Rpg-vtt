@@ -1,3 +1,4 @@
+import { getClassResourcesForLevel } from './data/progression';
 import type { Spell } from './data/spells';
 import { FEATS, type Feat } from './data/feats';
 import { RACES } from './data/races';
@@ -449,6 +450,88 @@ export const resolveRacialBaseSpeed = (char: Partial<Character>): number => {
 };
 
 // Helper para recalcular tudo (chamado ao atualizar atributos ou nível)
+
+/**
+ * Garante que todos os recursos fundamentais de classe, raça/espécie e talentos
+ * estejam sempre cadastrados e com seus valores máximos atualizados.
+ */
+export function enrichCharacterResources(
+    char: Character,
+    attributes: CharacterAttributes,
+    profBonus: number,
+    level: number
+): ClassResource[] {
+    const chaMod = attributes.cha?.modifier || 1;
+    let resources = getClassResourcesForLevel(char.class, level, char.classResources || [], chaMod, char.subclass);
+
+    const upsert = (id: string, name: string, maxVal: number, recharge: 'short' | 'long') => {
+        const idx = resources.findIndex(r => r.id === id);
+        if (idx >= 0) {
+            resources[idx].name = name;
+            resources[idx].max = maxVal;
+            resources[idx].current = Math.min(resources[idx].current ?? maxVal, maxVal);
+        } else {
+            resources.push({
+                id,
+                name,
+                max: maxVal,
+                current: maxVal,
+                rechargesOn: recharge
+            });
+        }
+    };
+
+    const raceLower = `${char.race || ''} ${char.subrace || ''}`.toLowerCase();
+    const allFeaturesText = `${(char.features || []).map(f => f.name + ' ' + (f.description || '')).join(' ')} ${(char.feats || []).map(f => f.name).join(' ')}`.toLowerCase();
+
+    // Draconato: Arma de Sopro
+    if (raceLower.includes('draconato') || raceLower.includes('dragonborn') || allFeaturesText.includes('arma de sopro') || allFeaturesText.includes('breath weapon')) {
+        upsert('breath_weapon', 'Arma de Sopro Draconato', profBonus, 'long');
+    }
+
+    // Golias: Linhagens de Gigantes
+    if (raceLower.includes('golias') || raceLower.includes('goliath') || allFeaturesText.includes('linhagem de gigante')) {
+        if (raceLower.includes('nuvem') || raceLower.includes('cloud') || allFeaturesText.includes('salto da nuvem')) {
+            upsert('clouds_jaunt', 'Salto da Nuvem (Teleporte 9m)', profBonus, 'long');
+        }
+        if (raceLower.includes('pedra') || raceLower.includes('stone') || allFeaturesText.includes('resistência da pedra') || allFeaturesText.includes('resistencia da pedra')) {
+            upsert('stones_endurance', 'Resistência da Pedra (1d12 + CON)', profBonus, 'long');
+        }
+        if (raceLower.includes('fogo') || raceLower.includes('fire') || allFeaturesText.includes('golpe incandescente')) {
+            upsert('fires_burn', 'Golpe Incandescente (+1d10 Fogo)', profBonus, 'long');
+        }
+        if (raceLower.includes('gelo') || raceLower.includes('frost') || allFeaturesText.includes('frio queimante')) {
+            upsert('frosts_chill', 'Frio Queimante (+1d6 Frio)', profBonus, 'long');
+        }
+        if (raceLower.includes('colina') || raceLower.includes('hill') || allFeaturesText.includes('tombamento')) {
+            upsert('hills_tumble', 'Tombamento da Colina', profBonus, 'long');
+        }
+        if (raceLower.includes('tempestade') || raceLower.includes('storm') || allFeaturesText.includes('retaliação da tempestade')) {
+            upsert('storms_thunder', 'Retaliação da Tempestade (1d8 Trovão)', profBonus, 'long');
+        }
+    }
+
+    // Aasimar
+    if (raceLower.includes('aasimar') || allFeaturesText.includes('revelação celestial') || allFeaturesText.includes('celestial revelation')) {
+        upsert('celestial_revelation', 'Revelação Celestial', 1, 'long');
+    }
+
+    // Iniciado em Magia
+    if (allFeaturesText.includes('iniciado em magia') || allFeaturesText.includes('magic initiate')) {
+        upsert('magic_initiate_free_spell', 'Iniciado em Magia (Magia Grátis 1x/dia)', 1, 'long');
+    }
+
+    // Bruxo Arquifada
+    const isWarlock = /bruxo|warlock/i.test(char.class || '');
+    const isArchfey = (char.subclass || '').toLowerCase().includes('arquifada') || (char.subclass || '').toLowerCase().includes('archfey');
+    if (isWarlock && isArchfey) {
+        upsert('fey_presence', 'Presença Feérica (Fey Presence)', 1, 'short');
+        upsert('steps_of_the_fey', 'Passos Feéricos (Teleporte Grátis)', Math.max(1, chaMod), 'long');
+    }
+
+    return resources;
+}
+
 export const regenerateCharacterStats = (char: Character): Character => {
     const safeLevel = typeof char.level === 'number' && Number.isFinite(char.level) && char.level >= 1 ? char.level : 1;
     const profBonus = calculateProficiencyBonus(safeLevel);
@@ -624,7 +707,14 @@ export const regenerateCharacterStats = (char: Character): Character => {
         }
     }
 
-    const calculatedAcWithoutOverrides = (isArmored ? armorCalculatedAc : baseUnarmoredAc) + shieldBonus + magicItemAcBonus;
+    // --- Estilo de Luta: Defesa (+1 na CA ao usar armadura) ---
+    const hasDefenseFightingStyle = isArmored && (
+        (Array.isArray(char.features) && char.features.some(f => /estilo de luta.*defesa|fighting style.*defense/i.test(f.name + ' ' + (f.description || '')))) ||
+        (Array.isArray(char.feats) && char.feats.some(f => /estilo de luta.*defesa|fighting style.*defense/i.test(f.name) || f.id === 'fighting_style_defense'))
+    );
+    const defenseBonus = hasDefenseFightingStyle ? 1 : 0;
+
+    const calculatedAcWithoutOverrides = (isArmored ? armorCalculatedAc : baseUnarmoredAc) + shieldBonus + magicItemAcBonus + defenseBonus;
 
     // Build human-readable acBreakdown string
     let calculatedBreakdown = '';
@@ -635,6 +725,9 @@ export const regenerateCharacterStats = (char: Character): Character => {
         }
         if (shieldBonus > 0) {
             armorParts.push(`${equippedShieldName || 'Escudo'} (+${shieldBonus})`);
+        }
+        if (defenseBonus > 0) {
+            armorParts.push('Estilo Defesa (+1)');
         }
         if (magicItemAcBonus > 0) {
             armorParts.push(magicItemNames.join(' + '));
@@ -681,14 +774,31 @@ export const regenerateCharacterStats = (char: Character): Character => {
                 const damage = item.damage || def?.damage || '1d4';
                 const damageType = item.damageType || def?.damageType || 'físico';
 
-                // Determine Attribute (Str vs Dex)
+                // Determine Attribute (Str vs Dex vs Cha vs Wis)
                 let attrMod = newAttrs.str.modifier;
                 const isFinesse = props.some(p => p.toLowerCase().includes('acuidade'));
+                const isMonkWeapon = isMonk && (
+                    props.some(p => /simples|acuidade|leve/i.test(p)) ||
+                    /lança|lanca|spear|cajado|quarterstaff|adaga|dagger|espada curta|shortsword|clava|club|machadinha|handaxe|dardo|javelin|maça|mace|foice|sickle/i.test(item.name || def?.name || '')
+                );
 
                 if (range && !props.some(p => p.toLowerCase().includes('arremesso'))) {
                     attrMod = newAttrs.dex.modifier;
-                } else if (isFinesse) {
+                } else if (isFinesse || isMonkWeapon) {
                     attrMod = Math.max(newAttrs.str.modifier, newAttrs.dex.modifier);
+                }
+
+                // Pacto da Lâmina (Carisma para Bruxo)
+                const hasPactBlade = Array.isArray(char.features) && char.features.some(f => /pacto da l[âa]mina|pact of the blade/i.test(f.name));
+                if (hasPactBlade && newAttrs.cha) {
+                    attrMod = Math.max(attrMod, newAttrs.cha.modifier);
+                }
+
+                // Shillelagh (Sabedoria para Bordão/Cajado/Clava)
+                const hasShillelagh = Array.isArray(char.spells) && char.spells.some(s => /shillelagh/i.test(s.name || s.id));
+                const isShillelaghWeapon = /bord[ãa]o|cajado|quarterstaff|clava|club/i.test(item.name || def?.name || '');
+                if (hasShillelagh && isShillelaghWeapon && newAttrs.wis) {
+                    attrMod = Math.max(attrMod, newAttrs.wis.modifier);
                 }
 
                 const hitBonus = attrMod + profBonus;
@@ -761,6 +871,82 @@ export const regenerateCharacterStats = (char: Character): Character => {
         const bestMentalMod = Math.max(intMod, wisMod, chaMod);
         newSpellSaveDC = 8 + profBonus + bestMentalMod;
         newSpellAttackBonus = profBonus + bestMentalMod;
+    }
+
+// Rajada Mística (Eldritch Blast) com Explosão Agonizante
+    const isWarlockChar = /bruxo|warlock/i.test(className);
+    const hasEldritchBlast = isWarlockChar || (Array.isArray(char.spells) && char.spells.some(s => /rajada m[íi]stica|eldritch blast/i.test(s.name || s.id)));
+    if (hasEldritchBlast) {
+        const hasAgonizing = Array.isArray(char.features) && char.features.some(f => /agonizante|agonizing/i.test(f.name));
+        const chaBonus = newAttrs.cha?.modifier || 0;
+        const agonizingStr = hasAgonizing && chaBonus > 0 ? ` + ${chaBonus}` : '';
+        const ebIdx = newAttacks.findIndex(a => /rajada m[íi]stica|eldritch blast/i.test(a.name || a.id));
+        const ebAttack: Attack = {
+            id: 'eldritch_blast',
+            name: 'Rajada Mística (Eldritch Blast)',
+            attackBonus: newSpellAttackBonus || (profBonus + chaBonus),
+            damageDice: `1d10${agonizingStr}`,
+            damageType: 'força',
+            range: '36m',
+            properties: hasAgonizing ? 'Explosão Agonizante (+CAR no dano)' : 'Truque'
+        };
+        if (ebIdx >= 0) {
+            newAttacks[ebIdx] = ebAttack;
+        } else {
+            newAttacks.push(ebAttack);
+        }
+    }
+
+    // Magias Concedidas por Invocações Místicas (à vontade)
+    const finalSpells = Array.isArray(char.spells) ? [...char.spells] : [];
+    if (Array.isArray(char.features)) {
+        const hasFiendishVigor = char.features.some(f => /vigor [íi]nfero|fiendish vigor/i.test(f.name));
+        if (hasFiendishVigor && !finalSpells.some(s => s.id === 'false_life_at_will' || /vitalidade vazia/i.test(s.name))) {
+            finalSpells.push({
+                id: 'false_life_at_will',
+                name: 'Vitalidade Vazia (Vigor Ínfero - À Vontade)',
+                level: 1,
+                school: 'Necromancia',
+                castingTime: '1 ação',
+                range: 'Pessoal',
+                components: 'V, S, M',
+                duration: '1 hora',
+                description: 'Você recebe 12 PV Temporários automaticamente no D&D 2024 sem gastar espaço de magia.',
+                classes: ['warlock']
+            });
+        }
+
+        const hasArmorOfShadows = char.features.some(f => /armadura das sombras|armor of shadows/i.test(f.name));
+        if (hasArmorOfShadows && !finalSpells.some(s => s.id === 'mage_armor_at_will' || /armadura arcana/i.test(s.name))) {
+            finalSpells.push({
+                id: 'mage_armor_at_will',
+                name: 'Armadura Arcana (À Vontade)',
+                level: 1,
+                school: 'Abjuração',
+                castingTime: '1 ação',
+                range: 'Toque',
+                components: 'V, S, M',
+                duration: '8 horas',
+                description: 'CA base torna-se 13 + DES sem armadura, à vontade sem gastar espaço.',
+                classes: ['warlock']
+            });
+        }
+
+        const hasMaskOfManyFaces = char.features.some(f => /m[áa]scara de muitas faces|mask of many faces/i.test(f.name));
+        if (hasMaskOfManyFaces && !finalSpells.some(s => s.id === 'disguise_self_at_will' || /disfar[çc]ar-se/i.test(s.name))) {
+            finalSpells.push({
+                id: 'disguise_self_at_will',
+                name: 'Disfarçar-se (À Vontade)',
+                level: 1,
+                school: 'Ilusão',
+                castingTime: '1 ação',
+                range: 'Pessoal',
+                components: 'V, S',
+                duration: '1 hora',
+                description: 'Muda sua aparência visual e roupas à vontade sem gastar espaço de magia.',
+                classes: ['warlock']
+            });
+        }
     }
 
     // --- Initiative ---
@@ -868,6 +1054,8 @@ export const regenerateCharacterStats = (char: Character): Character => {
         };
     });
 
+    const finalClassResources = enrichCharacterResources(char, newAttrs, profBonus, safeLevel);
+
     return {
         ...char,
         level: safeLevel,
@@ -895,10 +1083,10 @@ export const regenerateCharacterStats = (char: Character): Character => {
             });
         })(),
         companions: updatedCompanions,
-        spells: Array.isArray(char.spells) ? char.spells : [],
+        spells: finalSpells,
         feats: Array.isArray(char.feats) ? char.feats : [],
         features: Array.isArray(char.features) ? char.features : [],
-        classResources: Array.isArray(char.classResources) ? char.classResources : [],
+        classResources: finalClassResources,
         proficiencies: Array.isArray(char.proficiencies) ? char.proficiencies : [],
         languages: Array.isArray(char.languages) ? char.languages : ['Comum'],
         initiative: finalInitiative,

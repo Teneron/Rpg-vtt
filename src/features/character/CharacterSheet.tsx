@@ -29,6 +29,7 @@ import { BioPanel } from './components/BioPanel';
 import { SpellsPanel } from './components/SpellsPanel';
 import { FeatsPanel } from './components/FeatsPanel';
 import { AbilitiesPanel } from './components/AbilitiesPanel';
+import { ManageInvocationsModal } from './components/ManageInvocationsModal';
 import { LevelUpModal } from './components/LevelUpModal';
 import { InventoryPanel } from './components/InventoryPanel';
 import { CompanionModal } from './components/CompanionModal';
@@ -502,6 +503,7 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
     const [showCompanions, setShowCompanions] = useState(false);
     const [showBestiary, setShowBestiary] = useState(false);
     const [showManageSpells, setShowManageSpells] = useState(false);
+    const [showManageInvocations, setShowManageInvocations] = useState(false);
     const [showProgressionModal, setShowProgressionModal] = useState(false);
 
     const currentClassData = React.useMemo(() => {
@@ -973,6 +975,7 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
                             <AbilitiesPanel
                                 character={character}
                                 onOpenProgression={() => setShowProgressionModal(true)}
+                                onOpenInvocations={() => setShowManageInvocations(true)}
                             />
                         )}
                         {activeTab === 'feats' && (
@@ -1190,6 +1193,17 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
                         classData={currentClassData}
                         characterLevel={character.level}
                         onClose={() => setShowProgressionModal(false)}
+                    />
+                </div>,
+                document.body
+            )}
+
+            {showManageInvocations && typeof document !== 'undefined' && createPortal(
+                <div style={{ position: 'relative', zIndex: 100050 }}>
+                    <ManageInvocationsModal
+                        character={character}
+                        onUpdateCharacter={updateCharacter}
+                        onClose={() => setShowManageInvocations(false)}
                     />
                 </div>,
                 document.body

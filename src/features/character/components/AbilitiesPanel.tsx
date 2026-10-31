@@ -1,17 +1,27 @@
 import React, { useState } from 'react';
 import type { Character, ClassFeature } from '../characterTypes';
 import { useChat } from '../../chat/ChatContext';
-import { Table, Scroll } from 'lucide-react';
+import { Table, Scroll, Sparkles } from 'lucide-react';
+import { getMaxInvocations, WARLOCK_INVOCATIONS } from '../data/warlockInvocations';
 import './AbilitiesPanel.css';
 
 interface AbilitiesPanelProps {
     character: Character;
     onOpenProgression?: () => void;
+    onOpenInvocations?: () => void;
 }
 
-export const AbilitiesPanel: React.FC<AbilitiesPanelProps> = ({ character, onOpenProgression }) => {
+export const AbilitiesPanel: React.FC<AbilitiesPanelProps> = ({ character, onOpenProgression, onOpenInvocations }) => {
     const { sendMessage } = useChat();
     const [expandedId, setExpandedId] = useState<string | null>(null);
+
+    const isWarlock = /bruxo|warlock/i.test(character.class || '');
+    const maxInvocations = getMaxInvocations(character.level);
+    const currentInvocationsCount = (character.features || []).filter(f => {
+        const fn = f.name.toLowerCase();
+        return fn.startsWith('invocação mística:') ||
+            WARLOCK_INVOCATIONS.some(inv => fn.includes(inv.name.toLowerCase()) || fn.includes(inv.nameEn.toLowerCase()));
+    }).length;
 
     const toggleExpand = (name: string) => {
         setExpandedId(prev => prev === name ? null : name);
@@ -31,17 +41,30 @@ export const AbilitiesPanel: React.FC<AbilitiesPanelProps> = ({ character, onOpe
         <div className="abilities-panel-book">
             <div className="book-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <h3>Habilidades de Classe & Raça</h3>
-                {onOpenProgression && (
-                    <button
-                        className="book-btn simple"
-                        onClick={onOpenProgression}
-                        title="Ver Tabela Oficial de Progressão de Níveis 1 a 20"
-                        style={{ fontSize: '0.78rem', padding: '4px 8px', color: '#c5a059', borderColor: '#c5a059', display: 'flex', alignItems: 'center', gap: '5px' }}
-                    >
-                        <Table size={13} />
-                        <span>Progressão 1–20</span>
-                    </button>
-                )}
+                <div style={{ display: 'flex', gap: '8px' }}>
+                    {onOpenInvocations && isWarlock && (
+                        <button
+                            className="book-btn simple"
+                            onClick={onOpenInvocations}
+                            title="Gerenciar Invocações Místicas (Eldritch Invocations)"
+                            style={{ fontSize: '0.78rem', padding: '4px 8px', color: '#a78bfa', borderColor: '#7c3aed', display: 'flex', alignItems: 'center', gap: '5px' }}
+                        >
+                            <Sparkles size={13} />
+                            <span>Invocações ({currentInvocationsCount}/{maxInvocations})</span>
+                        </button>
+                    )}
+                    {onOpenProgression && (
+                        <button
+                            className="book-btn simple"
+                            onClick={onOpenProgression}
+                            title="Ver Tabela Oficial de Progressão de Níveis 1 a 20"
+                            style={{ fontSize: '0.78rem', padding: '4px 8px', color: '#c5a059', borderColor: '#c5a059', display: 'flex', alignItems: 'center', gap: '5px' }}
+                        >
+                            <Table size={13} />
+                            <span>Progressão 1–20</span>
+                        </button>
+                    )}
+                </div>
             </div>
 
             <div className="abilities-list">
