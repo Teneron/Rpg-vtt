@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import type { Character } from '../characterTypes';
 import { useDice } from '../../dice/DiceContext';
 import { playSynthSound } from '../../audio/audioSynth';
-import { Sparkles, Moon, Sun, AlertCircle, X } from 'lucide-react';
+import { Sparkles, Moon, Sun, AlertCircle, X, Lock } from 'lucide-react';
 
 interface CombatPanelProps {
     character: Character;
@@ -46,6 +46,10 @@ export const CombatPanel: React.FC<CombatPanelProps> = React.memo(({
 
     // Quick HP Damage / Heal adjustments
     const applyDelta = (delta: number) => {
+        if (!isGM) {
+            console.warn('[CombatPanel] Tentativa de alteração de PV bloqueada: apenas o GM pode alterar PV.');
+            return;
+        }
         if (delta < 0) {
             // Damage: Absorbed first by Temp HP, then subtracted from current HP
             const dmg = Math.abs(delta);
@@ -122,7 +126,15 @@ export const CombatPanel: React.FC<CombatPanelProps> = React.memo(({
 
         if (roll === 20) {
             // Nat 20: Character regains 1 HP immediately and revives
-            applyDelta(1);
+            if (onUpdateCharacter) {
+                onUpdateCharacter({
+                    hp: {
+                        ...character.hp,
+                        current: 1
+                    },
+                    deathSaves: { successes: 0, failures: 0 }
+                });
+            }
             playSynthSound('crit');
             alert('20 Natural no Teste contra a Morte! O personagem recupera 1 PV e recobra a consciência!');
         } else if (roll >= 10) {
@@ -175,6 +187,10 @@ export const CombatPanel: React.FC<CombatPanelProps> = React.memo(({
 
     // Short Rest (Spend 1 Hit Die to Heal)
     const handleShortRest = () => {
+        if (!isGM) {
+            alert('Apenas o Mestre (GM) pode autorizar descansos curtos.');
+            return;
+        }
         const curHd = character.hitDice?.current ?? 0;
         if (curHd <= 0) {
             alert('Sem Dados de Vida disponíveis para gastar no Descanso Curto.');
@@ -201,6 +217,10 @@ export const CombatPanel: React.FC<CombatPanelProps> = React.memo(({
 
     // Long Rest (Full Recovery per 2024 Rules)
     const handleLongRest = () => {
+        if (!isGM) {
+            alert('Apenas o Mestre (GM) pode autorizar descansos longos.');
+            return;
+        }
         if (!confirm('Realizar Descanso Longo? (Restaura todo o PV, metade dos Dados de Vida, espaços de magia e recursos)')) return;
 
         const maxHd = character.hitDice?.max ?? character.level ?? 1;
@@ -365,10 +385,15 @@ export const CombatPanel: React.FC<CombatPanelProps> = React.memo(({
                             className="premium-input large"
                             type="number"
                             value={character.hp.current}
-                            onChange={e => onUpdateHP(Math.max(0, parseInt(e.target.value) || 0), character.hp.temp || 0)}
+                            onChange={e => isGM && onUpdateHP(Math.max(0, parseInt(e.target.value) || 0), character.hp.temp || 0)}
+                            readOnly={!isGM}
+                            title={!isGM ? "Apenas o Mestre (GM) pode alterar o PV Atual" : "PV Atual (Editável pelo Mestre)"}
                             style={{
                                 color: character.hp.current === 0 ? '#ef4444' : character.hp.current <= Math.floor(character.hp.max / 2) ? '#f59e0b' : '#10b981',
-                                fontWeight: 'bold'
+                                fontWeight: 'bold',
+                                cursor: !isGM ? 'not-allowed' : 'text',
+                                opacity: !isGM ? 0.9 : 1,
+                                borderColor: isGM ? '#4CAF50' : undefined
                             }}
                         />
                     </div>
@@ -378,33 +403,59 @@ export const CombatPanel: React.FC<CombatPanelProps> = React.memo(({
                             className="premium-input"
                             type="number"
                             value={character.hp.temp || 0}
-                            onChange={e => onUpdateHP(character.hp.current, Math.max(0, parseInt(e.target.value) || 0))}
-                            style={{ color: (character.hp.temp || 0) > 0 ? '#38bdf8' : '#aaa' }}
+                            onChange={e => isGM && onUpdateHP(character.hp.current, Math.max(0, parseInt(e.target.value) || 0))}
+                            readOnly={!isGM}
+                            title={!isGM ? "Apenas o Mestre (GM) pode alterar o PV Temporário" : "PV Temporário (Editável pelo Mestre)"}
+                            style={{
+                                color: (character.hp.temp || 0) > 0 ? '#38bdf8' : '#aaa',
+                                cursor: !isGM ? 'not-allowed' : 'text',
+                                opacity: !isGM ? 0.85 : 1,
+                                borderColor: isGM ? '#4CAF50' : undefined
+                            }}
                         />
                     </div>
                 </div>
 
                 {/* QUICK ADJUST BUTTONS */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', margin: '10px 0 6px 0', flexWrap: 'wrap' }}>
-                    <div style={{ display: 'flex', gap: '4px' }}>
-                        <button type="button" onClick={() => applyDelta(-5)} className="hp-adjust-btn dmg" title="Receber 5 de dano">-5</button>
-                        <button type="button" onClick={() => applyDelta(-1)} className="hp-adjust-btn dmg" title="Receber 1 de dano">-1</button>
-                        <button type="button" onClick={() => applyDelta(1)} className="hp-adjust-btn heal" title="Curar 1 PV">+1</button>
-                        <button type="button" onClick={() => applyDelta(5)} className="hp-adjust-btn heal" title="Curar 5 PV">+5</button>
-                    </div>
+                {isGM ? (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', margin: '10px 0 6px 0', flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', gap: '4px' }}>
+                            <button type="button" onClick={() => applyDelta(-5)} className="hp-adjust-btn dmg" title="Receber 5 de dano">-5</button>
+                            <button type="button" onClick={() => applyDelta(-1)} className="hp-adjust-btn dmg" title="Receber 1 de dano">-1</button>
+                            <button type="button" onClick={() => applyDelta(1)} className="hp-adjust-btn heal" title="Curar 1 PV">+1</button>
+                            <button type="button" onClick={() => applyDelta(5)} className="hp-adjust-btn heal" title="Curar 5 PV">+5</button>
+                        </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <input
-                            type="number"
-                            placeholder="Qtd"
-                            value={customAmount}
-                            onChange={e => setCustomAmount(e.target.value)}
-                            style={{ width: '48px', padding: '3px 4px', background: '#14141c', border: '1px solid #444', borderRadius: '4px', color: '#fff', fontSize: '0.82rem', textAlign: 'center' }}
-                        />
-                        <button type="button" onClick={handleCustomDamage} className="hp-adjust-btn dmg" style={{ padding: '3px 7px', fontSize: '0.75rem' }}>Dano</button>
-                        <button type="button" onClick={handleCustomHeal} className="hp-adjust-btn heal" style={{ padding: '3px 7px', fontSize: '0.75rem' }}>Curar</button>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <input
+                                type="number"
+                                placeholder="Qtd"
+                                value={customAmount}
+                                onChange={e => setCustomAmount(e.target.value)}
+                                style={{ width: '48px', padding: '3px 4px', background: '#14141c', border: '1px solid #444', borderRadius: '4px', color: '#fff', fontSize: '0.82rem', textAlign: 'center' }}
+                            />
+                            <button type="button" onClick={handleCustomDamage} className="hp-adjust-btn dmg" style={{ padding: '3px 7px', fontSize: '0.75rem' }}>Dano</button>
+                            <button type="button" onClick={handleCustomHeal} className="hp-adjust-btn heal" style={{ padding: '3px 7px', fontSize: '0.75rem' }}>Curar</button>
+                        </div>
                     </div>
-                </div>
+                ) : (
+                    <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                        margin: '10px 0 6px 0',
+                        padding: '6px 10px',
+                        background: 'rgba(0, 0, 0, 0.25)',
+                        border: '1px dashed rgba(255, 255, 255, 0.12)',
+                        borderRadius: '6px',
+                        color: '#94a3b8',
+                        fontSize: '0.78rem'
+                    }}>
+                        <Lock size={13} style={{ color: '#f59e0b' }} />
+                        <span>Alteração de PV gerenciada exclusivamente pelo Mestre (GM)</span>
+                    </div>
+                )}
 
                 {/* HIT DICE & DEATH SAVES */}
                 <div className="hp-footer is-flex" style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.08)', gap: '14px' }}>
@@ -420,21 +471,41 @@ export const CombatPanel: React.FC<CombatPanelProps> = React.memo(({
                             <button
                                 type="button"
                                 onClick={handleShortRest}
+                                disabled={!isGM}
                                 className="btn-small-outline"
-                                title="Descanso Curto: Gasta 1 Dado de Vida + CON para curar"
-                                style={{ flex: 1, padding: '4px 6px', fontSize: '0.72rem', background: 'rgba(255,255,255,0.05)', border: '1px solid #555', color: '#eee', borderRadius: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                                title={!isGM ? "Apenas o Mestre (GM) pode autorizar Descanso Curto" : "Descanso Curto: Gasta 1 Dado de Vida + CON para curar"}
+                                style={{
+                                    flex: 1, padding: '4px 6px', fontSize: '0.72rem',
+                                    background: 'rgba(255,255,255,0.05)',
+                                    border: '1px solid #555',
+                                    color: !isGM ? '#666' : '#eee',
+                                    borderRadius: '4px',
+                                    cursor: !isGM ? 'not-allowed' : 'pointer',
+                                    opacity: !isGM ? 0.6 : 1,
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px'
+                                }}
                             >
-                                <Sun size={12} color="#f59e0b" />
+                                <Sun size={12} color={!isGM ? '#666' : '#f59e0b'} />
                                 <span>Curto (1 DV)</span>
                             </button>
                             <button
                                 type="button"
                                 onClick={handleLongRest}
+                                disabled={!isGM}
                                 className="btn-small-outline"
-                                title="Descanso Longo: Recupera todo o PV, metade dos dados de vida, magias e recursos"
-                                style={{ flex: 1, padding: '4px 6px', fontSize: '0.72rem', background: 'rgba(255,255,255,0.05)', border: '1px solid #555', color: '#eee', borderRadius: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                                title={!isGM ? "Apenas o Mestre (GM) pode autorizar Descanso Longo" : "Descanso Longo: Recupera todo o PV, metade dos dados de vida, magias e recursos"}
+                                style={{
+                                    flex: 1, padding: '4px 6px', fontSize: '0.72rem',
+                                    background: 'rgba(255,255,255,0.05)',
+                                    border: '1px solid #555',
+                                    color: !isGM ? '#666' : '#eee',
+                                    borderRadius: '4px',
+                                    cursor: !isGM ? 'not-allowed' : 'pointer',
+                                    opacity: !isGM ? 0.6 : 1,
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px'
+                                }}
                             >
-                                <Moon size={12} color="#818cf8" />
+                                <Moon size={12} color={!isGM ? '#666' : '#818cf8'} />
                                 <span>Longo</span>
                             </button>
                         </div>

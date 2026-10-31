@@ -302,9 +302,21 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
 
     // --- HANDLERS ---
     const updateCharacter = (updates: Partial<Character>) => {
+        let sanitizedUpdates = updates;
+        if (!isGM && updates.hp) {
+            // Permite apenas recuperação de 1 PV em 20 Natural no teste contra a morte ou durante Level Up
+            const isReviveFromZero = character.hp.current === 0 && updates.hp.current === 1;
+            const isLevelUp = Boolean(character.pendingLevelUp);
+            if (!isReviveFromZero && !isLevelUp) {
+                console.warn('[CharacterSheet] Bloqueada tentativa de alteração de PV pelo jogador:', updates.hp);
+                const { hp: _blockedHp, ...rest } = updates;
+                sanitizedUpdates = rest;
+            }
+        }
+
         // Safe update with regen
         setCharacterWithDirty(prev => {
-            const next = regenerateCharacterStats({ ...prev, ...updates });
+            const next = regenerateCharacterStats({ ...prev, ...sanitizedUpdates });
             return next;
         });
     };
@@ -837,8 +849,20 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
 
                     <CombatPanel
                         character={character}
-                        onUpdateHP={React.useCallback((curr: number, temp: number) => updateCharacter({ hp: { ...character.hp, current: curr, temp: temp } }), [character.hp])}
-                        onUpdateMaxHP={React.useCallback((max: number) => updateCharacter({ hp: { ...character.hp, max: max } }), [character.hp])}
+                        onUpdateHP={React.useCallback((curr: number, temp: number) => {
+                            if (!isGM) {
+                                console.warn('[CharacterSheet] Apenas o Mestre (GM) pode alterar o PV.');
+                                return;
+                            }
+                            updateCharacter({ hp: { ...character.hp, current: curr, temp: temp } });
+                        }, [character.hp, isGM])}
+                        onUpdateMaxHP={React.useCallback((max: number) => {
+                            if (!isGM) {
+                                console.warn('[CharacterSheet] Apenas o Mestre (GM) pode alterar o PV Máximo.');
+                                return;
+                            }
+                            updateCharacter({ hp: { ...character.hp, max: max } });
+                        }, [character.hp, isGM])}
                         onUpdateAC={React.useCallback((ac: number) => updateCharacter({ armorClass: ac, acOverride: ac }), [])}
 
                         onRollAttack={(name, bonus) => handleRoll(name, bonus)}
