@@ -697,15 +697,18 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
         nextChar.hitDice.dieFace = selectedClass.hitDie;
         nextChar.subclass = undefined;
 
-        // HP (Level 1 Max)
-        if (nextChar.level === 1) {
-            const hdValue = parseInt(selectedClass.hitDie.replace('d', ''));
+        // HP (Level 1 Base — sempre calculado a partir do 1º nível antes da fila de progressão)
+        nextChar.level = 1;
+        nextChar.levelHistory = undefined;
+        nextChar.pendingHpRolls = undefined;
+        {
+            const hdValue = parseInt(selectedClass.hitDie.replace('d', ''), 10) || 8;
             const conMod = calculateModifier(nextChar.attributes.con.value);
             const baseHp = hdValue;
             nextChar.hp.max = Math.max(1, baseHp + conMod);
             nextChar.hp.current = nextChar.hp.max;
-            nextChar.hitDice.max = nextChar.level;
-            nextChar.hitDice.current = nextChar.level;
+            nextChar.hitDice.max = 1;
+            nextChar.hitDice.current = 1;
         }
 
         // Saving throws
@@ -967,11 +970,12 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                 chosenFeats.push(humanFeat);
             }
         }
-        nextChar.feats = [...chosenFeats];
+        nextChar.feats = chosenFeats.map(f => ({ ...f, acquiredAtLevel: 1 }));
 
-        // Apply Feat & Racial HP Bonuses for Level 1 (or Speed for all)
-        if (nextChar.level === 1) {
-            const isDwarf = selectedRace?.id === 'dwarf' || /anão|dwarf/i.test(selectedRace?.name || '');
+        // Apply Feat & Racial HP Bonuses for Level 1 Base unconditionally
+        const appliedHpIds: string[] = [];
+        {
+            const isDwarf = selectedRace?.id === 'dwarf' || /an[ãa]o|dwarf/i.test(selectedRace?.name || '');
             if (isDwarf) {
                 nextChar.hp.max += 1;
                 nextChar.hp.current = nextChar.hp.max;
@@ -981,16 +985,26 @@ export const CharacterBuilder: React.FC<CharacterBuilderProps> = ({ character, o
                 const canonicalFeat = FEATS.find(f => f.id === feat.id);
                 const effects = canonicalFeat?.effects || feat.effects;
                 if (effects) {
+                    let appliedThisFeatHp = false;
                     effects.forEach((effect: any) => {
                         if (effect.type === 'hp_per_level') {
                             const bonusHP = effect.value * 1;
                             nextChar.hp.max += bonusHP;
                             nextChar.hp.current = nextChar.hp.max;
+                            appliedThisFeatHp = true;
+                        } else if (effect.type === 'hp_flat') {
+                            nextChar.hp.max += effect.value;
+                            nextChar.hp.current = nextChar.hp.max;
+                            appliedThisFeatHp = true;
                         }
                     });
+                    if (appliedThisFeatHp && !appliedHpIds.includes(feat.id)) {
+                        appliedHpIds.push(feat.id);
+                    }
                 }
             });
         }
+        nextChar.hpAppliedFeatIds = appliedHpIds;
 
         // Apply Speed from Feats
         chosenFeats.forEach(feat => {

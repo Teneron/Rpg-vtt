@@ -4,10 +4,10 @@ current_phase: 4
 current_phase_name: Otimização de Performance e Code-Splitting
 status: complete
 stopped_at: Project initialization complete. Ready for Phase 1 planning.
-last_updated: "2026-11-02T21:11:00.000Z"
+last_updated: "2026-11-02T21:48:30.000Z"
 last_activity: 2026-11-02
-last_activity_desc: Completed quick task 261102-oo0 (nivel 4 downgrade e talentos completos)
-state_head: fa693ed
+last_activity_desc: Completed quick task 261102-ppj (travas de dados talentos vigoroso e permissoes)
+state_head: 6cd95e6
 progress:
   total_phases: 4
   completed_phases: 4
@@ -87,7 +87,8 @@ None yet.
 | 261013-s6a | producao backup json ping sonar e fullscreen ux | 2026-10-13 | bcd709a | [261013-s6a-producao-backup-ping-ux](./quick/261013-s6a-producao-backup-ping-ux/) |
 | 261024-s7a | correcao pente-fino producao f5 backup diario nevoa e rede | 2026-10-24 | 6a4c276 | [261024-s7a-correcao-pente-fino-producao](./quick/261024-s7a-correcao-pente-fino-producao/) |
 | 261102-s8a | dados 3d d10 real sincronizacao de pv e imagem de token monstros/npcs | 2026-11-02 | fa693ed | [261102-s8a-dados-3d-e-sincronizacao-hp](./quick/261102-s8a-dados-3d-e-sincronizacao-hp/) |
-| 261102-oo0 | nivel 4 downgrade completo e catalogo oficial de talentos 5.5e | 2026-11-02 | pending | [261102-oo0-nivel-4-downgrade-e-talentos-completos](./quick/261102-oo0-nivel-4-downgrade-e-talentos-completos/) |
+| 261102-oo0 | nivel 4 downgrade completo e catalogo oficial de talentos 5.5e | 2026-11-02 | 6cd95e6 | [261102-oo0-nivel-4-downgrade-e-talentos-completos](./quick/261102-oo0-nivel-4-downgrade-e-talentos-completos/) |
+| 261102-ppj | travas de dados de vida limite de talentos vs asi calculo de vigoroso e permissoes | 2026-11-02 | pending | [261102-ppj-travas-dados-talentos-vigoroso-e-permiss](./quick/261102-ppj-travas-dados-talentos-vigoroso-e-permiss/) |
 
 ## Deferred Items
 

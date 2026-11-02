@@ -84,10 +84,10 @@ export const CompanionModal: React.FC<CompanionModalProps> = ({
     const handleSelectPreset = (preset: CompanionPreset) => {
         const check = checkMeetsRequirement(character, preset);
         if (!check.meets && !isGM) {
-            const proceed = confirm(
-                `Aviso de Regras Oficiais do D&D:\n\n${check.reason}\n\nO jogador só pode ter este companheiro com a classe/magia exigida ou autorização expressa do Mestre.\n\nDeseja prosseguir mesmo assim?`
+            alert(
+                `Pré-requisito Oficial não atendido:\n\n${check.reason}\n\nApenas o Mestre (GM) pode conceder manualmente este companheiro fora dos pré-requisitos da classe/magia.`
             );
-            if (!proceed) return;
+            return;
         }
 
         const wisMod = character.attributes?.wis?.modifier ?? 2;

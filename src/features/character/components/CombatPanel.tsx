@@ -43,6 +43,7 @@ export const CombatPanel: React.FC<CombatPanelProps> = React.memo(({
     const { triggerRoll } = useDice();
     const [customAmount, setCustomAmount] = useState('');
     const [showConditionsModal, setShowConditionsModal] = useState(false);
+    const [isRollingAction, setIsRollingAction] = useState(false);
 
     const latestCharRef = React.useRef(character);
     const onUpdateCharacterRef = React.useRef(onUpdateCharacter);
@@ -102,9 +103,9 @@ export const CombatPanel: React.FC<CombatPanelProps> = React.memo(({
         playSynthSound(nextVal ? 'crit' : 'magic');
     };
 
-    // Death Saves
+    // Death Saves (marcação manual restrita ao Mestre; jogadores usam o botão Rolar d20)
     const toggleDeathSaveSuccess = (index: number) => {
-        if (!onUpdateCharacter) return;
+        if (!isGM || !onUpdateCharacter) return;
         const cur = character.deathSaves?.successes || 0;
         const next = cur === index ? index - 1 : index;
         onUpdateCharacter({
@@ -116,7 +117,7 @@ export const CombatPanel: React.FC<CombatPanelProps> = React.memo(({
     };
 
     const toggleDeathSaveFailure = (index: number) => {
-        if (!onUpdateCharacter) return;
+        if (!isGM || !onUpdateCharacter) return;
         const cur = character.deathSaves?.failures || 0;
         const next = cur === index ? index - 1 : index;
         onUpdateCharacter({
@@ -128,7 +129,13 @@ export const CombatPanel: React.FC<CombatPanelProps> = React.memo(({
     };
 
     const rollDeathSave = () => {
+        if (isRollingAction) return;
+        setIsRollingAction(true);
+        const safetyUnlock = setTimeout(() => setIsRollingAction(false), 9000);
+
         triggerRoll({ d20: 1 }, 0, 'Teste contra a Morte', (res) => {
+            clearTimeout(safetyUnlock);
+            setIsRollingAction(false);
             const roll = res.breakdown[0] ?? res.total;
             const curChar = latestCharRef.current;
             const updateFn = onUpdateCharacterRef.current;
@@ -197,6 +204,7 @@ export const CombatPanel: React.FC<CombatPanelProps> = React.memo(({
             alert('Apenas o Mestre (GM) pode autorizar descansos curtos.');
             return;
         }
+        if (isRollingAction) return;
         const curHd = character.hitDice?.current ?? 0;
         if (curHd <= 0) {
             alert('Sem Dados de Vida disponíveis para gastar no Descanso Curto.');
@@ -206,11 +214,17 @@ export const CombatPanel: React.FC<CombatPanelProps> = React.memo(({
         const conMod = character.attributes.con.modifier;
         const dieKey = (character.hitDice?.dieFace || 'd8').toLowerCase();
 
+        setIsRollingAction(true);
+        const safetyUnlock = setTimeout(() => setIsRollingAction(false), 9000);
+
         // Consome o Dado de Vida e rola o dado 3D real aplicando o valor exato obtido na mesa
         triggerRoll({ [dieKey]: 1 }, conMod, 'Descanso Curto (Dado de Vida)', (res) => {
+            clearTimeout(safetyUnlock);
+            setIsRollingAction(false);
             const curChar = latestCharRef.current;
             const updateFn = onUpdateCharacterRef.current;
             const latestHd = curChar.hitDice?.current ?? 0;
+            if (latestHd <= 0) return;
             const healTotal = Math.max(1, res.total);
             const newCurrentHp = Math.min(curChar.hp.max, curChar.hp.current + healTotal);
             playSynthSound('heal');
@@ -285,8 +299,16 @@ export const CombatPanel: React.FC<CombatPanelProps> = React.memo(({
             <div className="top-stats-row">
                 <div
                     className="shield-stat-container"
-                    title={character.acBreakdown ? `Classe de Armadura: ${character.armorClass}\nFórmula Oficial: ${character.acBreakdown}\n\n(Clique para ver detalhes ou definir valor manual)` : `Classe de Armadura: ${character.armorClass}`}
+                    title={character.acBreakdown ? `Classe de Armadura: ${character.armorClass}\nFórmula Oficial: ${character.acBreakdown}${isGM ? '\n\n(Clique para definir valor manual de CA)' : '\n\n(Clique para ver detalhes da fórmula)'}` : `Classe de Armadura: ${character.armorClass}`}
                     onClick={() => {
+                        if (!isGM) {
+                            alert(
+                                character.acBreakdown
+                                    ? `Cálculo de Classe de Armadura (CA = ${character.armorClass}):\n\n${character.acBreakdown}`
+                                    : `Classe de Armadura (CA): ${character.armorClass}`
+                            );
+                            return;
+                        }
                         const current = character.armorClass;
                         const msg = character.acBreakdown
                             ? `Cálculo de Classe de Armadura (CA):\n\n${character.acBreakdown}\n\nDeseja definir um valor manual temporário? (Deixe em branco ou cancele para manter o cálculo automático)`
@@ -348,10 +370,22 @@ export const CombatPanel: React.FC<CombatPanelProps> = React.memo(({
                     </div>
                 </div>
 
-                <div className="stat-box-premium">
-                    <span className="stat-label">Iniciativa</span>
-                    <span className="stat-val">{(character.attributes.dex.modifier >= 0 ? '+' : '') + character.attributes.dex.modifier}</span>
-                </div>
+                {(() => {
+                    const initBonus = typeof character.initiative === 'number'
+                        ? character.initiative
+                        : character.attributes.dex.modifier;
+                    return (
+                        <div
+                            className="stat-box-premium"
+                            style={{ cursor: 'pointer' }}
+                            title="Clique para rolar Iniciativa (1d20 + bônus)"
+                            onClick={() => onRollAttack('Iniciativa', initBonus)}
+                        >
+                            <span className="stat-label">Iniciativa</span>
+                            <span className="stat-val">{(initBonus >= 0 ? '+' : '') + initBonus}</span>
+                        </div>
+                    );
+                })()}
 
                 <div className="stat-box-premium">
                     <span className="stat-label">Desloc.</span>
@@ -487,17 +521,17 @@ export const CombatPanel: React.FC<CombatPanelProps> = React.memo(({
                             <button
                                 type="button"
                                 onClick={handleShortRest}
-                                disabled={!isGM}
+                                disabled={!isGM || isRollingAction || (character.hitDice?.current ?? character.level) <= 0}
                                 className="btn-small-outline"
                                 title={!isGM ? "Apenas o Mestre (GM) pode autorizar Descanso Curto" : "Descanso Curto: Gasta 1 Dado de Vida + CON para curar"}
                                 style={{
                                     flex: 1, padding: '4px 6px', fontSize: '0.72rem',
                                     background: 'rgba(255,255,255,0.05)',
                                     border: '1px solid #555',
-                                    color: !isGM ? '#666' : '#eee',
+                                    color: (!isGM || isRollingAction || (character.hitDice?.current ?? character.level) <= 0) ? '#666' : '#eee',
                                     borderRadius: '4px',
-                                    cursor: !isGM ? 'not-allowed' : 'pointer',
-                                    opacity: !isGM ? 0.6 : 1,
+                                    cursor: (!isGM || isRollingAction || (character.hitDice?.current ?? character.level) <= 0) ? 'not-allowed' : 'pointer',
+                                    opacity: (!isGM || isRollingAction || (character.hitDice?.current ?? character.level) <= 0) ? 0.6 : 1,
                                     display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px'
                                 }}
                             >
@@ -535,10 +569,11 @@ export const CombatPanel: React.FC<CombatPanelProps> = React.memo(({
                                 <button
                                     type="button"
                                     onClick={rollDeathSave}
-                                    style={{ background: '#7f1d1d', border: '1px solid #ef4444', color: '#fff', fontSize: '0.65rem', padding: '1px 5px', borderRadius: '3px', cursor: 'pointer', fontWeight: 'bold' }}
+                                    disabled={isRollingAction}
+                                    style={{ background: '#7f1d1d', border: '1px solid #ef4444', color: '#fff', fontSize: '0.65rem', padding: '1px 5px', borderRadius: '3px', cursor: isRollingAction ? 'not-allowed' : 'pointer', opacity: isRollingAction ? 0.6 : 1, fontWeight: 'bold' }}
                                     title="Rolar d20 contra a morte"
                                 >
-                                    Rolar d20
+                                    {isRollingAction ? 'Rolando...' : 'Rolar d20'}
                                 </button>
                             )}
                         </div>
@@ -548,10 +583,10 @@ export const CombatPanel: React.FC<CombatPanelProps> = React.memo(({
                                 {[1, 2, 3].map(i => (
                                     <div
                                         key={i}
-                                        onClick={() => toggleDeathSaveSuccess(i)}
+                                        onClick={() => isGM && toggleDeathSaveSuccess(i)}
                                         className={`check-box ${(character.deathSaves?.successes || 0) >= i ? 'filled success' : ''}`}
-                                        title={`Sucesso ${i} (Clique para marcar)`}
-                                        style={{ cursor: 'pointer' }}
+                                        title={isGM ? `Sucesso ${i} (Clique para ajustar)` : `Sucesso ${i}`}
+                                        style={{ cursor: isGM ? 'pointer' : 'default' }}
                                     />
                                 ))}
                             </div>
@@ -562,10 +597,10 @@ export const CombatPanel: React.FC<CombatPanelProps> = React.memo(({
                                 {[1, 2, 3].map(i => (
                                     <div
                                         key={i}
-                                        onClick={() => toggleDeathSaveFailure(i)}
+                                        onClick={() => isGM && toggleDeathSaveFailure(i)}
                                         className={`check-box ${(character.deathSaves?.failures || 0) >= i ? 'filled fail' : ''}`}
-                                        title={`Falha ${i} (Clique para marcar)`}
-                                        style={{ cursor: 'pointer' }}
+                                        title={isGM ? `Falha ${i} (Clique para ajustar)` : `Falha ${i}`}
+                                        style={{ cursor: isGM ? 'pointer' : 'default' }}
                                     />
                                 ))}
                             </div>

@@ -1,19 +1,22 @@
 import React, { useState, useMemo } from 'react';
 import type { Character, ClassFeature } from '../characterTypes';
 import { WARLOCK_INVOCATIONS, getMaxInvocations, type WarlockInvocation } from '../data/warlockInvocations';
-import { Sparkles, Check, Search } from 'lucide-react';
+import { checkInvocationPrerequisites } from '../utils/featPrerequisites';
+import { Sparkles, Check, Search, Lock } from 'lucide-react';
 import './ManageInvocationsModal.css';
 
 interface ManageInvocationsModalProps {
     character: Character;
     onUpdateCharacter: (updates: Partial<Character>) => void;
     onClose: () => void;
+    isGM?: boolean;
 }
 
 export const ManageInvocationsModal: React.FC<ManageInvocationsModalProps> = ({
     character,
     onUpdateCharacter,
-    onClose
+    onClose,
+    isGM = false
 }) => {
     const maxAllowed = getMaxInvocations(character.level);
     const [search, setSearch] = useState('');
@@ -47,13 +50,22 @@ export const ManageInvocationsModal: React.FC<ManageInvocationsModalProps> = ({
     }, [search, filterLevel]);
 
     const toggleInvocation = (inv: WarlockInvocation) => {
-        if (inv.minLevel > character.level) return;
+        if (inv.minLevel > character.level && !isGM) return;
 
         setSelectedIds(prev => {
             const next = new Set(prev);
             if (next.has(inv.id)) {
+                if (!isGM && currentSelectedIds.has(inv.id)) {
+                    alert('Pelas regras oficiais de D&D 5.5e, uma Invocação Mística já aprendida só pode ser substituída ao subir de nível (ou com autorização do Mestre).');
+                    return prev;
+                }
                 next.delete(inv.id);
             } else {
+                const prereq = checkInvocationPrerequisites(inv, character, character.level, next);
+                if (!prereq.met && !isGM) {
+                    alert(`Pré-requisito não atendido: ${prereq.reason}`);
+                    return prev;
+                }
                 if (next.size >= maxAllowed) {
                     alert(`Limite atingido! No Nível ${character.level}, um Bruxo pode ter no máximo ${maxAllowed} Invocações Místicas ativas.`);
                     return prev;
@@ -185,7 +197,9 @@ export const ManageInvocationsModal: React.FC<ManageInvocationsModalProps> = ({
                 <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                     {filteredInvocations.map(inv => {
                         const isSelected = selectedIds.has(inv.id);
-                        const isLocked = inv.minLevel > character.level;
+                        const prereq = checkInvocationPrerequisites(inv, character, character.level, selectedIds);
+                        const isLocked = !isSelected && !prereq.met && !isGM;
+                        const isSavedLocked = isSelected && !isGM && currentSelectedIds.has(inv.id);
 
                         return (
                             <div
@@ -195,8 +209,8 @@ export const ManageInvocationsModal: React.FC<ManageInvocationsModalProps> = ({
                                     padding: '14px 16px', borderRadius: '8px',
                                     background: isSelected ? 'rgba(124, 58, 237, 0.15)' : '#191b24',
                                     border: `1px solid ${isSelected ? '#8b5cf6' : (isLocked ? '#2e303d' : '#333748')}`,
-                                    cursor: isLocked ? 'not-allowed' : 'pointer',
-                                    opacity: isLocked ? 0.5 : 1,
+                                    cursor: (isLocked || isSavedLocked) ? 'not-allowed' : 'pointer',
+                                    opacity: isLocked ? 0.48 : 1,
                                     transition: 'all 0.15s ease',
                                     display: 'flex', gap: '14px', alignItems: 'flex-start'
                                 }}
@@ -228,9 +242,12 @@ export const ManageInvocationsModal: React.FC<ManageInvocationsModalProps> = ({
                                         {inv.prerequisite && (
                                             <span style={{
                                                 fontSize: '0.72rem', padding: '2px 8px', borderRadius: '4px',
-                                                background: '#451a03', color: '#fcd34d'
+                                                background: prereq.met ? '#451a03' : 'rgba(127, 29, 29, 0.45)',
+                                                color: prereq.met ? '#fcd34d' : '#fca5a5',
+                                                display: 'inline-flex', alignItems: 'center', gap: '4px'
                                             }}>
-                                                Requisito: {inv.prerequisite}
+                                                {!prereq.met && <Lock size={11} />}
+                                                {prereq.met ? `Requisito: ${inv.prerequisite}` : (prereq.reason || inv.prerequisite)}
                                             </span>
                                         )}
                                     </div>

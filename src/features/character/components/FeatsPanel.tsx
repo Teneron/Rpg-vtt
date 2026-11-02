@@ -93,14 +93,12 @@ export const FeatsPanel: React.FC<FeatsPanelProps> = ({
 
         const newConMod = calculateModifier(nextAttrs.con?.value || 10);
         const conModDelta = newConMod - oldConMod;
+        const configuredLevel = (character.pendingLevelUp && !character.levelHistory?.[character.level])
+            ? Math.max(1, (character.level || 1) - 1)
+            : (character.level || 1);
 
-        let hpDelta = conModDelta * (character.level || 1);
-        if (selectedFeatToAdd.id === 'tough' && !(character.feats || []).some(f => f.id === 'tough')) {
-            hpDelta += 2 * (character.level || 1);
-        }
-        if (selectedFeatToAdd.id === 'boon_of_fortitude' && !(character.feats || []).some(f => f.id === 'boon_of_fortitude')) {
-            hpDelta += 40;
-        }
+        // Nota: efeitos diretos de PV (Vigoroso / Dádiva da Fortitude) são aplicados automaticamente por regenerateCharacterStats via hpAppliedFeatIds
+        const hpConDelta = conModDelta * configuredLevel;
 
         const storedFeat: Feat = {
             ...selectedFeatToAdd,
@@ -113,12 +111,12 @@ export const FeatsPanel: React.FC<FeatsPanelProps> = ({
             feats: [...(character.feats || []), storedFeat]
         };
 
-        if (hpDelta !== 0) {
-            const nextMax = Math.max(1, (character.hp?.max || 10) + hpDelta);
+        if (hpConDelta !== 0) {
+            const nextMax = Math.max(1, (character.hp?.max || 10) + hpConDelta);
             updates.hp = {
                 ...character.hp,
                 max: nextMax,
-                current: Math.min(nextMax, Math.max(0, (character.hp?.current || 0) + Math.max(0, hpDelta)))
+                current: Math.min(nextMax, Math.max(0, (character.hp?.current || 0) + Math.max(0, hpConDelta)))
             };
         }
 
@@ -148,18 +146,10 @@ export const FeatsPanel: React.FC<FeatsPanelProps> = ({
 
         const newConMod = calculateModifier(nextAttrs.con?.value || 10);
         const conModDelta = newConMod - oldConMod;
-
-        let hpDelta = conModDelta * (character.level || 1);
-        const canonical = FEATS.find(f => f.id === feat.id);
-        const effects = canonical?.effects || feat.effects;
-        if (effects?.some(e => e.type === 'hp_per_level')) {
-            const perLvl = effects.find(e => e.type === 'hp_per_level')?.value || 0;
-            hpDelta -= perLvl * (character.level || 1);
-        }
-        if (effects?.some(e => e.type === 'hp_flat')) {
-            const flat = effects.find(e => e.type === 'hp_flat')?.value || 0;
-            hpDelta -= flat;
-        }
+        const configuredLevel = (character.pendingLevelUp && !character.levelHistory?.[character.level])
+            ? Math.max(1, (character.level || 1) - 1)
+            : (character.level || 1);
+        const hpConDelta = conModDelta * configuredLevel;
 
         const nextFeats = character.feats.filter((_, idx) => idx !== index);
         const updates: Partial<Character> = {
@@ -167,8 +157,8 @@ export const FeatsPanel: React.FC<FeatsPanelProps> = ({
             feats: nextFeats
         };
 
-        if (hpDelta !== 0) {
-            const nextMax = Math.max(1, (character.hp?.max || 10) + hpDelta);
+        if (hpConDelta !== 0) {
+            const nextMax = Math.max(1, (character.hp?.max || 10) + hpConDelta);
             updates.hp = {
                 ...character.hp,
                 max: nextMax,

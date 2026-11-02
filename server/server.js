@@ -253,38 +253,100 @@ const authorizeAndStamp = (room, socketId, message) => {
             // Jogador só atualiza a PRÓPRIA ficha; o Mestre pode atualizar a de qualquer um.
             if (!fromHost && payload.peerId !== member.userId) return null;
 
-            // Autoridade de PV do Mestre: impede que auto-saves ou reconexões defasadas do jogador revertam o PV
+            // Autoridade do Mestre (PV, Nível, Talentos, Atributos e CA Override): impede auto-saves defasados ou adulterações por jogadores
             if (!fromHost) {
                 const existingChar = member.character;
-                if (isPlainObject(existingChar) && existingChar.id === payload.character.id && isPlainObject(existingChar.hp)) {
-                    const incomingHp = isPlainObject(payload.character.hp) ? payload.character.hp : null;
-                    const completedPendingLevelUp = Boolean(existingChar.pendingLevelUp) && !payload.character.pendingLevelUp;
-                    const isLevelChange = Number(payload.character.level || 1) !== Number(existingChar.level || 1) || completedPendingLevelUp;
-                    const isNat20Revive = Number(existingChar.hp.current) <= 0
-                        && incomingHp
-                        && Number(incomingHp.current) === 1
-                        && Number(payload.character.deathSaves?.successes || 0) === 0
-                        && Number(payload.character.deathSaves?.failures || 0) === 0;
-                    const isShortRestHeal = Boolean(incomingHp)
-                        && Number(payload.character.hitDice?.current ?? 0) < Number(existingChar.hitDice?.current ?? 0)
-                        && Number(incomingHp.current) > Number(existingChar.hp.current || 0)
-                        && Number(incomingHp.max) === Number(existingChar.hp.max || 0);
-                    const isMaxHpStructuralChange = Boolean(incomingHp)
-                        && Number(incomingHp.max) !== Number(existingChar.hp.max)
-                        && (
-                            Number(payload.character.attributes?.con?.value ?? 10) !== Number(existingChar.attributes?.con?.value ?? 10)
-                            || (Array.isArray(payload.character.feats) ? payload.character.feats.length : 0) !== (Array.isArray(existingChar.feats) ? existingChar.feats.length : 0)
-                        );
+                if (isPlainObject(existingChar) && existingChar.id === payload.character.id) {
+                    const sanitizedChar = { ...payload.character };
+                    const isAlreadyBuilt = Boolean(existingChar.class && String(existingChar.class).trim());
+                    const isInitialCharacterBuild = !isAlreadyBuilt && Boolean(sanitizedChar.class && String(sanitizedChar.class).trim());
+                    const wasPendingLevelUp = Boolean(existingChar.pendingLevelUp);
 
-                    if (!isLevelChange && !isNat20Revive && !isShortRestHeal && !isMaxHpStructuralChange) {
-                        stamped.payload = {
-                            ...payload,
-                            character: {
-                                ...payload.character,
-                                hp: { ...existingChar.hp }
+                    if (isAlreadyBuilt) {
+                        // 1. Preserva overrides exclusivos do Mestre
+                        sanitizedChar.acOverride = existingChar.acOverride;
+                        sanitizedChar.speedOverride = existingChar.speedOverride;
+
+                        // 2. Autoridade de Nível: jogador não sobe nem desce de nível sem autorização pendente do Mestre
+                        const prevLvl = Number(existingChar.level || 1);
+                        const incomingLvl = Number(sanitizedChar.level || prevLvl);
+                        const maxAllowedLvl = wasPendingLevelUp
+                            ? Math.max(prevLvl, Number(existingChar.levelUpTarget || prevLvl))
+                            : prevLvl;
+                        if (!Number.isFinite(incomingLvl) || incomingLvl < prevLvl || incomingLvl > maxAllowedLvl) {
+                            sanitizedChar.level = prevLvl;
+                        }
+
+                        // 3. Limite estrito de Talentos e Atributos fora/dentro do Level Up (exclusividade 1 Talento OU +2 ASI)
+                        const prevFeats = Array.isArray(existingChar.feats) ? existingChar.feats : [];
+                        const nextFeats = Array.isArray(sanitizedChar.feats) ? sanitizedChar.feats : prevFeats;
+                        const sumAttrs = (attrsObj) => {
+                            if (!isPlainObject(attrsObj)) return 0;
+                            let s = 0;
+                            for (const k of ['str', 'dex', 'con', 'int', 'wis', 'cha']) {
+                                if (isPlainObject(attrsObj[k]) && Number.isFinite(Number(attrsObj[k].value))) {
+                                    s += Number(attrsObj[k].value);
+                                }
                             }
+                            return s;
                         };
+                        const prevAttrSum = sumAttrs(existingChar.attributes);
+                        const nextAttrSum = sumAttrs(sanitizedChar.attributes);
+                        const featCountDelta = nextFeats.length - prevFeats.length;
+                        const attrSumDelta = nextAttrSum - prevAttrSum;
+
+                        if (!wasPendingLevelUp) {
+                            if (featCountDelta > 0) {
+                                sanitizedChar.feats = prevFeats;
+                            }
+                            if (prevAttrSum > 0 && attrSumDelta > 0) {
+                                sanitizedChar.attributes = existingChar.attributes;
+                            }
+                        } else {
+                            // Em 1 passo de Level Up: no máximo +1 talento (com até +1 de atributo de meio-talento) OU +2 de atributo sem novo talento
+                            const maxAttrGainAllowed = featCountDelta > 0 ? 1 : 2;
+                            if (featCountDelta > 1 || (prevAttrSum > 0 && attrSumDelta > maxAttrGainAllowed)) {
+                                sanitizedChar.feats = prevFeats;
+                                sanitizedChar.attributes = existingChar.attributes;
+                            }
+                        }
                     }
+
+                    // 4. Autoridade de PV do Mestre
+                    if (isPlainObject(existingChar.hp)) {
+                        const incomingHp = isPlainObject(sanitizedChar.hp) ? sanitizedChar.hp : null;
+                        const completedPendingLevelUp = wasPendingLevelUp && !sanitizedChar.pendingLevelUp;
+                        const isLevelChange = Number(sanitizedChar.level || 1) !== Number(existingChar.level || 1) || completedPendingLevelUp;
+                        const isNat20Revive = Number(existingChar.hp.current) <= 0
+                            && incomingHp
+                            && Number(incomingHp.current) === 1
+                            && Number(sanitizedChar.deathSaves?.successes || 0) === 0
+                            && Number(sanitizedChar.deathSaves?.failures || 0) === 0;
+                        const isShortRestHeal = Boolean(incomingHp)
+                            && Number(sanitizedChar.hitDice?.current ?? 0) < Number(existingChar.hitDice?.current ?? 0)
+                            && Number(incomingHp.current) > Number(existingChar.hp.current || 0)
+                            && Number(incomingHp.max) === Number(existingChar.hp.max || 0);
+                        const isFeatHpMigration = Boolean(incomingHp)
+                            && !Array.isArray(existingChar.hpAppliedFeatIds)
+                            && Array.isArray(sanitizedChar.hpAppliedFeatIds)
+                            && sanitizedChar.hpAppliedFeatIds.length > 0
+                            && Number(incomingHp.max) > Number(existingChar.hp.max || 0);
+                        const isMaxHpStructuralChange = Boolean(incomingHp)
+                            && Number(incomingHp.max) !== Number(existingChar.hp.max)
+                            && (
+                                Number(sanitizedChar.attributes?.con?.value ?? 10) !== Number(existingChar.attributes?.con?.value ?? 10)
+                                || (Array.isArray(sanitizedChar.feats) ? sanitizedChar.feats.length : 0) !== (Array.isArray(existingChar.feats) ? existingChar.feats.length : 0)
+                            );
+
+                        if (!isInitialCharacterBuild && !isLevelChange && !isNat20Revive && !isShortRestHeal && !isFeatHpMigration && !isMaxHpStructuralChange) {
+                            sanitizedChar.hp = { ...existingChar.hp };
+                        }
+                    }
+
+                    stamped.payload = {
+                        ...payload,
+                        character: sanitizedChar
+                    };
                 }
             }
             break;

@@ -196,7 +196,7 @@ export const InventoryPanel: React.FC<InventoryPanelProps> = ({
                                     <div>
                                         <div style={{ fontWeight: 'bold', color: isEquipped ? '#c5a059' : '#e0e0e0', fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
                                             {item.name}
-                                            {onUpdateItem && (
+                                            {isGM && onUpdateItem && (
                                                 <button
                                                     onClick={(e) => {
                                                         e.stopPropagation();
@@ -219,7 +219,7 @@ export const InventoryPanel: React.FC<InventoryPanelProps> = ({
                                     </div>
                                 </div>
                                 {isEquipped && <Check size={18} color="#4ade80" style={{ marginRight: '8px' }} />}
-                                {onRemoveItem && (
+                                {isGM && onRemoveItem && (
                                     <button
                                         onClick={(e) => {
                                             e.stopPropagation();

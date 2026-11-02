@@ -91,7 +91,13 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
         if (character.id !== characterId && characterId) {
             CharacterRepository.loadAsync(characterId).then(loaded => {
                 if (loaded) {
-                    setCharacter(regenerateCharacterStats({ ...initialCharacter, ...loaded }));
+                    const next = regenerateCharacterStats({ ...initialCharacter, ...loaded });
+                    characterRef.current = next;
+                    setCharacter(next);
+                    if (!Array.isArray(loaded.hpAppliedFeatIds) && next.hp.max !== loaded.hp?.max) {
+                        dirtyRef.current = true;
+                        fastSaveRef.current = true;
+                    }
                 }
             });
         }
@@ -121,6 +127,10 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
                     const next = regenerateCharacterStats(myCharacter);
                     characterRef.current = next;
                     setCharacter(next);
+                    if (!Array.isArray(myCharacter.hpAppliedFeatIds) && next.hp.max !== myCharacter.hp?.max) {
+                        dirtyRef.current = true;
+                        fastSaveRef.current = true;
+                    }
                 }
             }
         } else {
@@ -342,16 +352,27 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
     };
 
     const updateCharacter = (updates: Partial<Character>) => {
-        let sanitizedUpdates = updates;
+        let sanitizedUpdates = { ...updates };
         const currentSnap = characterRef.current || character;
-        if (!isGM && updates.hp) {
-            // Permite apenas recuperação de 1 PV em 20 Natural no teste contra a morte ou durante Level Up
-            const isReviveFromZero = currentSnap.hp.current === 0 && updates.hp.current === 1;
-            const isLevelUp = Boolean(currentSnap.pendingLevelUp);
-            if (!isReviveFromZero && !isLevelUp) {
-                console.warn('[CharacterSheet] Bloqueada tentativa de alteração de PV pelo jogador:', updates.hp);
-                const { hp: _blockedHp, ...rest } = updates;
-                sanitizedUpdates = rest;
+        if (!isGM) {
+            if (sanitizedUpdates.hp) {
+                // Permite apenas recuperação de 1 PV em 20 Natural no teste contra a morte ou durante Level Up
+                const isReviveFromZero = currentSnap.hp.current === 0 && sanitizedUpdates.hp.current === 1;
+                const isLevelUp = Boolean(currentSnap.pendingLevelUp);
+                if (!isReviveFromZero && !isLevelUp) {
+                    console.warn('[CharacterSheet] Bloqueada tentativa de alteração de PV pelo jogador:', sanitizedUpdates.hp);
+                    delete sanitizedUpdates.hp;
+                }
+            }
+            if ('acOverride' in sanitizedUpdates) {
+                delete sanitizedUpdates.acOverride;
+            }
+            if ('speedOverride' in sanitizedUpdates) {
+                delete sanitizedUpdates.speedOverride;
+            }
+            if (sanitizedUpdates.feats && !currentSnap.pendingLevelUp) {
+                console.warn('[CharacterSheet] Bloqueada alteração direta de talentos fora de evolução de nível.');
+                delete sanitizedUpdates.feats;
             }
         }
 
@@ -573,6 +594,12 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
         const file = e.target.files?.[0];
         if (!file) return;
 
+        if (!isGM && isConnected && Boolean(character.class)) {
+            alert('Apenas o Mestre pode sobrescrever uma ficha em andamento por arquivo .json durante a campanha.');
+            if (sheetFileInputRef.current) sheetFileInputRef.current.value = '';
+            return;
+        }
+
         if (!confirm('Importar esta ficha substituirá os dados atuais da tela. Deseja continuar?')) {
             if (sheetFileInputRef.current) sheetFileInputRef.current.value = '';
             return;
@@ -761,15 +788,17 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
                         >
                             <Download size={16} />
                         </button>
-                        <button
-                            type="button"
-                            className="btn-save"
-                            onClick={() => sheetFileInputRef.current?.click()}
-                            title="Importar / Sobrescrever Ficha (.json)"
-                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                        >
-                            <Upload size={16} />
-                        </button>
+                        {(isGM || !isConnected || !character.class) && (
+                            <button
+                                type="button"
+                                className="btn-save"
+                                onClick={() => sheetFileInputRef.current?.click()}
+                                title="Importar / Sobrescrever Ficha (.json)"
+                                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                            >
+                                <Upload size={16} />
+                            </button>
+                        )}
                         <input
                             ref={sheetFileInputRef}
                             type="file"
@@ -953,7 +982,7 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
                         {activeTab === 'feats' && (
                             <FeatsPanel
                                 character={character}
-                                canEdit={isGM || isOwner}
+                                canEdit={isGM}
                                 onUpdateCharacter={updateCharacter}
                             />
                         )}
@@ -1145,6 +1174,13 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
                 <div style={{ position: 'relative', zIndex: 100060 }}>
                     <LevelUpModal
                         character={character}
+                        isGM={isGM}
+                        onPersistDraft={(draftChar) => {
+                            const stampedDraft: Character = { ...draftChar, lastModified: Date.now() };
+                            characterRef.current = stampedDraft;
+                            setCharacter(stampedDraft);
+                            handleSave(stampedDraft);
+                        }}
                         onUpdate={(updatedChar) => {
                             console.log("Level Up Completed: Forcing Immediate Sync...");
                             const stampedChar: Character = { ...updatedChar, lastModified: Date.now() };
@@ -1198,6 +1234,7 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
                 <div style={{ position: 'relative', zIndex: 100050 }}>
                     <ManageInvocationsModal
                         character={character}
+                        isGM={isGM}
                         onUpdateCharacter={updateCharacter}
                         onClose={() => setShowManageInvocations(false)}
                     />

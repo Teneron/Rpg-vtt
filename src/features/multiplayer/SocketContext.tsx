@@ -267,6 +267,7 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
             return { char: hostSaved, needsPushToPlayer: true };
         }
 
+        const isInitialCharacterBuild = !hostSaved.class && Boolean(incomingChar.class);
         const completedPendingLevelUp = Boolean(hostSaved.pendingLevelUp) && !incomingChar.pendingLevelUp;
         const isLevelChange = (incomingChar.level || 1) !== (hostSaved.level || 1) || completedPendingLevelUp;
         const isNat20Revive = (hostSaved.hp?.current ?? 0) <= 0
@@ -276,13 +277,17 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
         const isShortRestHeal = (incomingChar.hitDice?.current ?? 0) < (hostSaved.hitDice?.current ?? 0)
             && (incomingChar.hp?.current ?? 0) > (hostSaved.hp?.current ?? 0)
             && (incomingChar.hp?.max ?? 0) === (hostSaved.hp?.max ?? 0);
+        const isFeatHpMigration = !Array.isArray(hostSaved.hpAppliedFeatIds)
+            && Array.isArray(incomingChar.hpAppliedFeatIds)
+            && incomingChar.hpAppliedFeatIds.length > 0
+            && (incomingChar.hp?.max ?? 0) > (hostSaved.hp?.max ?? 0);
         const isMaxHpStructuralChange = (incomingChar.hp?.max ?? 0) !== (hostSaved.hp?.max ?? 0)
             && (
                 (incomingChar.attributes?.con?.value ?? 10) !== (hostSaved.attributes?.con?.value ?? 10)
                 || (incomingChar.feats?.length ?? 0) !== (hostSaved.feats?.length ?? 0)
             );
 
-        if (!isLevelChange && !isNat20Revive && !isShortRestHeal && !isMaxHpStructuralChange && hostSaved.hp) {
+        if (!isInitialCharacterBuild && !isLevelChange && !isNat20Revive && !isShortRestHeal && !isFeatHpMigration && !isMaxHpStructuralChange && hostSaved.hp) {
             const hpDiffers = hostSaved.hp.current !== incomingChar.hp?.current
                 || hostSaved.hp.max !== incomingChar.hp?.max
                 || (hostSaved.hp.temp || 0) !== (incomingChar.hp?.temp || 0);

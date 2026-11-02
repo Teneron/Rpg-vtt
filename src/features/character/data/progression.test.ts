@@ -7,6 +7,11 @@ import { WARLOCK_INVOCATIONS } from './warlockInvocations';
 import { regenerateCharacterStats, initialCharacter, type Character } from '../characterTypes';
 import { applyCharacterLevelDown } from '../utils/levelUtils';
 import {
+    checkFeatPrerequisites,
+    checkInvocationPrerequisites,
+    getValidFeatAbilityOptions
+} from '../utils/featPrerequisites';
+import {
     normalizeClassId,
     getProficiencyBonus,
     getAsiLevels,
@@ -395,5 +400,144 @@ describe('progression.ts - 1 to 20 rules engine', () => {
         expect(revertedLegacy.attributes.con.value).toBe(15);
         expect(revertedLegacy.hp.max).toBe(28);
         expect(revertedLegacy.feats).toHaveLength(1);
+    });
+
+    it('calculates, self-heals, and removes Tough (Vigoroso) & Boon of Fortitude HP without double counting', () => {
+        // 1. Broken legacy Level 4 Fighter (d10, CON +2) that had Tough in feats without HP applied (36 instead of 44)
+        const brokenLvl4WithTough: Character = {
+            ...initialCharacter,
+            class: 'Guerreiro',
+            level: 4,
+            hp: { current: 36, max: 36, temp: 0 },
+            hitDice: { current: 4, max: 4, dieFace: 'd10' },
+            attributes: {
+                ...initialCharacter.attributes,
+                con: { ...initialCharacter.attributes.con, value: 14, modifier: 2 }
+            },
+            feats: [{ id: 'tough', name: 'Vigoroso (Tough)', description: '' }]
+        };
+
+        const healed = regenerateCharacterStats(brokenLvl4WithTough);
+        expect(healed.hp.max).toBe(44); // +8 HP (+2 * 4 levels)
+        expect(healed.hp.current).toBe(44);
+        expect(healed.hpAppliedFeatIds).toContain('tough');
+
+        // Re-running regenerateCharacterStats must be 100% idempotent (never double-count!)
+        const secondPass = regenerateCharacterStats(healed);
+        expect(secondPass.hp.max).toBe(44);
+
+        // 2. Already-correct Level 1 Fighter with Tough (10 + 2 CON + 2 Tough = 14) must NOT add +2 again
+        const validLvl1WithTough: Character = {
+            ...initialCharacter,
+            class: 'Guerreiro',
+            level: 1,
+            hp: { current: 14, max: 14, temp: 0 },
+            hitDice: { current: 1, max: 1, dieFace: 'd10' },
+            attributes: {
+                ...initialCharacter.attributes,
+                con: { ...initialCharacter.attributes.con, value: 14, modifier: 2 }
+            },
+            feats: [{ id: 'tough', name: 'Vigoroso (Tough)', description: '' }]
+        };
+        const checkedValid = regenerateCharacterStats(validLvl1WithTough);
+        expect(checkedValid.hp.max).toBe(14);
+        expect(checkedValid.hpAppliedFeatIds).toContain('tough');
+
+        // 3. Removing Tough (GM action) subtracts 2 * level cleanly
+        const withoutTough = regenerateCharacterStats({ ...healed, feats: [] });
+        expect(withoutTough.hp.max).toBe(36);
+        expect(withoutTough.hpAppliedFeatIds).not.toContain('tough');
+    });
+
+    it('enforces D&D 5.5e Feat and Warlock Invocation prerequisites strictly at Level 4+', () => {
+        const gwm = FEATS.find(f => f.id === 'great_weapon_master')!;
+        const warCaster = FEATS.find(f => f.id === 'war_caster')!;
+        const archeryStyle = FEATS.find(f => f.id === 'fighting_style_archery')!;
+        const heavyArmorMaster = FEATS.find(f => f.id === 'heavy_armor_master')!;
+        const boonFortitude = FEATS.find(f => f.id === 'boon_of_fortitude')!;
+        const resilient = FEATS.find(f => f.id === 'resilient')!;
+
+        const wizardLv4: Character = {
+            ...initialCharacter,
+            class: 'Mago',
+            level: 4,
+            attributes: {
+                ...initialCharacter.attributes,
+                str: { ...initialCharacter.attributes.str, value: 8, modifier: -1, saveProficiency: false },
+                int: { ...initialCharacter.attributes.int, value: 17, modifier: 3, saveProficiency: true },
+                wis: { ...initialCharacter.attributes.wis, value: 14, modifier: 2, saveProficiency: true }
+            }
+        };
+
+        // Wizard Lv 4: cannot take GWM (STR 8 < 13), Fighting Style, Heavy Armor Master, or Lv 19 Epic Boon
+        expect(checkFeatPrerequisites(gwm, wizardLv4, 4).met).toBe(false);
+        expect(checkFeatPrerequisites(archeryStyle, wizardLv4, 4).met).toBe(false);
+        expect(checkFeatPrerequisites(heavyArmorMaster, wizardLv4, 4).met).toBe(false);
+        expect(checkFeatPrerequisites(boonFortitude, wizardLv4, 4).met).toBe(false);
+        // Wizard Lv 4 CAN take War Caster (has Spellcasting)
+        expect(checkFeatPrerequisites(warCaster, wizardLv4, 4).met).toBe(true);
+        // Resilient excludes already-proficient INT and WIS saves
+        const resilientOpts = getValidFeatAbilityOptions(resilient, wizardLv4);
+        expect(resilientOpts).not.toContain('int');
+        expect(resilientOpts).not.toContain('wis');
+        expect(resilientOpts).toContain('con');
+
+        const fighterLv4: Character = {
+            ...initialCharacter,
+            class: 'Guerreiro',
+            level: 4,
+            attributes: {
+                ...initialCharacter.attributes,
+                str: { ...initialCharacter.attributes.str, value: 16, modifier: 3 }
+            }
+        };
+        expect(checkFeatPrerequisites(gwm, fighterLv4, 4).met).toBe(true);
+        expect(checkFeatPrerequisites(archeryStyle, fighterLv4, 4).met).toBe(true);
+        expect(checkFeatPrerequisites(heavyArmorMaster, fighterLv4, 4).met).toBe(true);
+        expect(checkFeatPrerequisites(warCaster, fighterLv4, 4).met).toBe(false);
+        expect(checkFeatPrerequisites(warCaster, { ...fighterLv4, subclass: 'Cavaleiro Arcano' }, 4).met).toBe(true);
+
+        // Warlock Invocation prerequisites (Thirsting Blade requires Level 5+ and Pact of the Blade)
+        const thirstingBlade = WARLOCK_INVOCATIONS.find(i => i.id === 'thirsting_blade')!;
+        const warlockLv5: Character = { ...initialCharacter, class: 'Bruxo', level: 5, features: [] };
+        expect(checkInvocationPrerequisites(thirstingBlade, warlockLv5, 5).met).toBe(false);
+        expect(checkInvocationPrerequisites(thirstingBlade, warlockLv5, 5, ['pact_of_the_blade']).met).toBe(true);
+    });
+
+    it('applies Archery (+2 ranged hit) and Dueling (+2 one-handed melee damage) Fighting Styles in regenerateCharacterStats', () => {
+        const archer: Character = regenerateCharacterStats({
+            ...initialCharacter,
+            class: 'Guerreiro',
+            level: 4,
+            attributes: {
+                ...initialCharacter.attributes,
+                dex: { ...initialCharacter.attributes.dex, value: 16, modifier: 3 },
+                str: { ...initialCharacter.attributes.str, value: 16, modifier: 3 }
+            },
+            feats: [{ id: 'fighting_style_archery', name: 'Estilo de Luta: Arquearia (Archery)', description: '' }],
+            inventory: [
+                { id: 'longbow', name: 'Arco Longo', description: '', type: 'weapon', quantity: 1, weight: 1, equipped: true, damage: '1d8', range: '45/180m', properties: ['Munição', 'Pesada', 'Duas Mãos'] }
+            ]
+        });
+        const bowAtk = archer.attacks.find(a => a.id === 'longbow');
+        // DEX (+3) + PB (+2) + Archery (+2) = +7
+        expect(bowAtk?.attackBonus).toBe(7);
+
+        const duelist: Character = regenerateCharacterStats({
+            ...initialCharacter,
+            class: 'Guerreiro',
+            level: 4,
+            attributes: {
+                ...initialCharacter.attributes,
+                str: { ...initialCharacter.attributes.str, value: 16, modifier: 3 }
+            },
+            feats: [{ id: 'fighting_style_dueling', name: 'Estilo de Luta: Duelismo (Dueling)', description: '' }],
+            inventory: [
+                { id: 'longsword', name: 'Espada Longa', description: '', type: 'weapon', quantity: 1, weight: 1.5, equipped: true, damage: '1d8', properties: ['Versátil (1d10)'] }
+            ]
+        });
+        const swordAtk = duelist.attacks.find(a => a.id === 'longsword');
+        // STR (+3) + Dueling (+2) = +5 damage
+        expect(swordAtk?.damageDice).toBe('1d8 + 5');
     });
 });

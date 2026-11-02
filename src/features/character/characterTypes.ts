@@ -2,6 +2,7 @@ import { getClassResourcesForLevel } from './data/progression';
 import type { Spell } from './data/spells';
 import { FEATS, type Feat } from './data/feats';
 import { RACES } from './data/races';
+import { CLASSES } from './data/classes';
 import { ITEMS } from './data/items';
 import { COMPANION_PRESETS, type CompanionPreset } from './data/companionPresets';
 
@@ -256,6 +257,10 @@ export interface Character {
     pendingLevelUp?: boolean;
     levelUpTarget?: number;
     levelHistory?: Record<number, LevelUpSnapshot>;
+    /** IDs de talentos com efeito direto de PV máximo (ex: Vigoroso, Dádiva da Fortitude) já aplicados ao hp.max */
+    hpAppliedFeatIds?: string[];
+    /** Rolagens de Dado de Vida travadas por nível pendente para impedir rerrolagem infinita */
+    pendingHpRolls?: Record<number, { dieRoll: number; totalGain: number }>;
     lastModified?: number; // Timestamp for Conflict Resolution
     system?: string; // Optional game system identifier (e.g. "dnd5e", "witcher", "cyberpunk")
 }
@@ -773,6 +778,23 @@ export const regenerateCharacterStats = (char: Character): Character => {
     }
 
     // --- Auto-Build Attacks from Equipped Weapons ---
+    const hasArcheryStyle = (
+        (Array.isArray(char.feats) && char.feats.some(f => f.id === 'fighting_style_archery' || /estilo de luta.*arquearia|fighting style.*archery/i.test(f.name || ''))) ||
+        (Array.isArray(char.features) && char.features.some(f => /estilo de luta.*arquearia|fighting style.*archery/i.test(`${f.name || ''} ${f.description || ''}`)))
+    );
+    const hasDuelingStyle = (
+        (Array.isArray(char.feats) && char.feats.some(f => f.id === 'fighting_style_dueling' || /estilo de luta.*duelismo|fighting style.*dueling/i.test(f.name || ''))) ||
+        (Array.isArray(char.features) && char.features.some(f => /estilo de luta.*duelismo|fighting style.*dueling/i.test(`${f.name || ''} ${f.description || ''}`)))
+    );
+    const equippedWeaponsCount = Array.isArray(char.inventory)
+        ? char.inventory.filter(item => {
+            if (!item.equipped) return false;
+            const d = ITEMS.find(i => i.id === item.id || (item.defId && i.id === item.defId) || (item.name && i.name.toLowerCase() === item.name.toLowerCase().trim()));
+            const t = (item.type || d?.type || '').toLowerCase();
+            return t === 'weapon' || t === 'arma' || d?.type === 'weapon';
+        }).length
+        : 0;
+
     const newAttacks: Attack[] = [];
     if (Array.isArray(char.inventory)) {
         char.inventory.forEach(item => {
@@ -793,6 +815,10 @@ export const regenerateCharacterStats = (char: Character): Character => {
                 const damage = item.damage || def?.damage || '1d4';
                 const damageType = item.damageType || def?.damageType || 'físico';
 
+                const isThrown = props.some(p => p.toLowerCase().includes('arremesso'));
+                const isRangedOnly = Boolean(range) && !isThrown;
+                const isTwoHanded = props.some(p => /duas m[ãa]os|two-handed/i.test(p));
+
                 // Determine Attribute (Str vs Dex vs Cha vs Wis)
                 let attrMod = newAttrs.str.modifier;
                 const isFinesse = props.some(p => p.toLowerCase().includes('acuidade'));
@@ -801,7 +827,7 @@ export const regenerateCharacterStats = (char: Character): Character => {
                     /lança|lanca|spear|cajado|quarterstaff|adaga|dagger|espada curta|shortsword|clava|club|machadinha|handaxe|dardo|javelin|maça|mace|foice|sickle/i.test(item.name || def?.name || '')
                 );
 
-                if (range && !props.some(p => p.toLowerCase().includes('arremesso'))) {
+                if (isRangedOnly) {
                     attrMod = newAttrs.dex.modifier;
                 } else if (isFinesse || isMonkWeapon) {
                     attrMod = Math.max(newAttrs.str.modifier, newAttrs.dex.modifier);
@@ -820,9 +846,13 @@ export const regenerateCharacterStats = (char: Character): Character => {
                     attrMod = Math.max(attrMod, newAttrs.wis.modifier);
                 }
 
-                const hitBonus = attrMod + profBonus;
-                const formattedMod = attrMod >= 0 ? `+ ${attrMod}` : `- ${Math.abs(attrMod)}`;
-                const damageDice = attrMod === 0 ? damage : `${damage} ${formattedMod}`;
+                const archeryHitBonus = isRangedOnly && hasArcheryStyle ? 2 : 0;
+                const duelingDmgBonus = !isRangedOnly && !isTwoHanded && hasDuelingStyle && equippedWeaponsCount === 1 ? 2 : 0;
+
+                const hitBonus = attrMod + profBonus + archeryHitBonus;
+                const totalDmgMod = attrMod + duelingDmgBonus;
+                const formattedMod = totalDmgMod >= 0 ? `+ ${totalDmgMod}` : `- ${Math.abs(totalDmgMod)}`;
+                const damageDice = totalDmgMod === 0 ? damage : `${damage} ${formattedMod}`;
 
                 newAttacks.push({
                     id: item.id,
@@ -987,7 +1017,7 @@ export const regenerateCharacterStats = (char: Character): Character => {
     // --- Initiative ---
     const finalInitiative = newDexMod + extraInitiative;
 
-    // --- HP Max Update (Only Con Delta) ---
+    // --- HP Max Update (Con Delta + Feat HP Synchronization / Self-Healing) ---
     const newConMod = newAttrs.con.modifier;
     const oldConMod = typeof char.attributes?.con?.modifier === 'number' && Number.isFinite(char.attributes.con.modifier)
         ? char.attributes.con.modifier
@@ -1000,10 +1030,94 @@ export const regenerateCharacterStats = (char: Character): Character => {
         temp: typeof char.hp?.temp === 'number' && Number.isFinite(char.hp.temp) ? char.hp.temp : 0
     };
 
+    const configuredLevel = (char.pendingLevelUp && !char.levelHistory?.[safeLevel])
+        ? Math.max(1, safeLevel - 1)
+        : safeLevel;
+
     let finalHpMax = safeHp.max;
+    let finalHpCurrent = safeHp.current;
     if (conDelta !== 0) {
-        finalHpMax = Math.max(1, finalHpMax + (conDelta * safeLevel));
+        const hpConDelta = conDelta * configuredLevel;
+        finalHpMax = Math.max(1, finalHpMax + hpConDelta);
+        if (hpConDelta > 0 && finalHpCurrent > 0) {
+            finalHpCurrent = Math.min(finalHpMax, finalHpCurrent + hpConDelta);
+        } else if (finalHpCurrent > finalHpMax) {
+            finalHpCurrent = finalHpMax;
+        }
     }
+
+    // Sincroniza e autocorrige PV de talentos como Vigoroso (Tough: +2 PV/nível) e Dádiva da Fortitude (+40 PV)
+    const charFeats = Array.isArray(char.feats) ? char.feats : [];
+    const activeHpFeats = charFeats
+        .map(feat => {
+            const canonical = FEATS.find(cf => cf.id === feat.id);
+            const effects = canonical?.effects || feat.effects || [];
+            const perLvl = effects.find(e => e.type === 'hp_per_level')?.value || 0;
+            const flat = effects.find(e => e.type === 'hp_flat')?.value || 0;
+            return { id: feat.id, acquiredAtLevel: feat.acquiredAtLevel, perLvl, flat };
+        })
+        .filter(f => f.perLvl > 0 || f.flat > 0);
+
+    let appliedHpFeatSet: Set<string>;
+    if (Array.isArray(char.hpAppliedFeatIds)) {
+        appliedHpFeatSet = new Set(char.hpAppliedFeatIds);
+    } else {
+        // Migração retrocompatível com autocorreção de fichas existentes onde Vigoroso não somou PV
+        appliedHpFeatSet = new Set<string>();
+        if (char.class && activeHpFeats.length > 0) {
+            const clsData = CLASSES.find(
+                c => c.id.toLowerCase() === (char.class || '').toLowerCase() ||
+                    c.name.toLowerCase() === (char.class || '').toLowerCase()
+            );
+            const dieFaces = parseInt((clsData?.hitDie || char.hitDice?.dieFace || 'd8').replace('d', ''), 10) || 8;
+            const racialPerLvl = /an[ãa]o|dwarf/i.test(char.race || '') ? 1 : 0;
+            const lvl1NoFeat = Math.max(1, dieFaces + newConMod + racialPerLvl);
+            const avgNoFeat = Math.max(1, Math.floor(dieFaces / 2) + 1 + newConMod + racialPerLvl);
+            const expectedMaxNoFeat = lvl1NoFeat + Math.max(0, configuredLevel - 1) * avgNoFeat;
+
+            for (const hf of activeHpFeats) {
+                const alreadyRecordedInHistory = Boolean(hf.acquiredAtLevel && char.levelHistory?.[hf.acquiredAtLevel]);
+                if (alreadyRecordedInHistory || finalHpMax > expectedMaxNoFeat) {
+                    appliedHpFeatSet.add(hf.id);
+                }
+            }
+        }
+    }
+
+    if (char.class || Array.isArray(char.hpAppliedFeatIds)) {
+        let featHpDelta = 0;
+
+        // Talentos de PV adicionados que ainda não estavam contabilizados
+        for (const hf of activeHpFeats) {
+            if (!appliedHpFeatSet.has(hf.id)) {
+                featHpDelta += (hf.perLvl * configuredLevel) + hf.flat;
+                appliedHpFeatSet.add(hf.id);
+            }
+        }
+
+        // Talentos de PV removidos (ex: Mestre removeu Vigoroso no painel)
+        const currentHpFeatIdSet = new Set(activeHpFeats.map(f => f.id));
+        for (const oldFeatId of Array.from(appliedHpFeatSet)) {
+            if (!currentHpFeatIdSet.has(oldFeatId)) {
+                const canonical = FEATS.find(cf => cf.id === oldFeatId);
+                const effects = canonical?.effects || [];
+                const perLvl = effects.find(e => e.type === 'hp_per_level')?.value || 0;
+                const flat = effects.find(e => e.type === 'hp_flat')?.value || 0;
+                featHpDelta -= (perLvl * configuredLevel) + flat;
+                appliedHpFeatSet.delete(oldFeatId);
+            }
+        }
+
+        if (featHpDelta !== 0) {
+            finalHpMax = Math.max(1, finalHpMax + featHpDelta);
+            if (featHpDelta > 0 && finalHpCurrent > 0) {
+                finalHpCurrent = Math.min(finalHpMax, finalHpCurrent + featHpDelta);
+            } else if (finalHpCurrent > finalHpMax) {
+                finalHpCurrent = finalHpMax;
+            }
+        }
+    }
+    const nextHpAppliedFeatIds = Array.from(appliedHpFeatSet);
 
     // --- Speed Calculation (R4: usa deslocamento base racial, nunca soma sobre char.speed!) ---
     const racialBaseSpeed = resolveRacialBaseSpeed(char);
@@ -1101,7 +1215,7 @@ export const regenerateCharacterStats = (char: Character): Character => {
         acBreakdown: finalAcBreakdown,
         baseSpeed: racialBaseSpeed,
         speed: finalSpeed,
-        hp: { ...safeHp, max: finalHpMax },
+        hp: { ...safeHp, current: Math.min(finalHpMax, finalHpCurrent), max: finalHpMax },
         hitDice: { ...initialCharacter.hitDice, ...(char.hitDice || {}) },
         deathSaves: { ...initialCharacter.deathSaves, ...(char.deathSaves || {}) },
         currency: { ...initialCharacter.currency, ...(char.currency || {}) },
@@ -1130,7 +1244,9 @@ export const regenerateCharacterStats = (char: Character): Character => {
         spellAttackBonus: newSpellAttackBonus,
         pendingLevelUp: char.pendingLevelUp || false,
         levelUpTarget: char.levelUpTarget,
-        levelHistory: char.levelHistory ? { ...char.levelHistory } : undefined
+        levelHistory: char.levelHistory ? { ...char.levelHistory } : undefined,
+        hpAppliedFeatIds: nextHpAppliedFeatIds,
+        pendingHpRolls: char.pendingHpRolls ? { ...char.pendingHpRolls } : undefined
     };
 };
 

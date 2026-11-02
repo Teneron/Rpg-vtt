@@ -1,9 +1,15 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import type { Character, Spell, Skill, CharacterAttributes, LevelUpSnapshot } from '../characterTypes';
 import { regenerateCharacterStats, calculateModifier, XP_TABLE } from '../characterTypes';
 import { CLASSES } from '../data/classes';
 import { SPELLS } from '../data/spells';
 import { FEATS, type Feat, type FeatCategory, type AbilityScoreKey } from '../data/feats';
+import {
+    checkFeatPrerequisites,
+    checkInvocationPrerequisites,
+    getValidFeatAbilityOptions,
+    hasFightingStyleFeature
+} from '../utils/featPrerequisites';
 import { playSynthSound } from '../../audio/audioSynth';
 import {
     getSpellSlotsForLevel,
@@ -28,7 +34,8 @@ import {
     X,
     UserCheck,
     Flame,
-    Search
+    Search,
+    Lock
 } from 'lucide-react';
 import './LevelUpModal.css';
 
@@ -36,6 +43,8 @@ interface LevelUpModalProps {
     character: Character;
     onUpdate: (char: Character) => void;
     onClose: () => void;
+    isGM?: boolean;
+    onPersistDraft?: (draftChar: Character) => void;
 }
 
 const ATTR_KEYS: AbilityScoreKey[] = ['str', 'dex', 'con', 'int', 'wis', 'cha'];
@@ -116,7 +125,13 @@ export const FIGHTING_STYLES = [
 import { WARLOCK_INVOCATIONS } from '../data/warlockInvocations';
 export { WARLOCK_INVOCATIONS };
 
-export const LevelUpModal: React.FC<LevelUpModalProps> = ({ character, onUpdate, onClose }) => {
+export const LevelUpModal: React.FC<LevelUpModalProps> = ({
+    character,
+    onUpdate,
+    onClose,
+    isGM = false,
+    onPersistDraft
+}) => {
     const newLevel = character.level;
     const classData = useMemo(() => {
         return CLASSES.find(c => c.id === character.class || c.name === character.class) || CLASSES[0];
@@ -187,9 +202,42 @@ export const LevelUpModal: React.FC<LevelUpModalProps> = ({ character, onUpdate,
     const [currentStepIdx, setCurrentStepIdx] = useState<number>(0);
     const currentStep = steps[currentStepIdx]?.id || 'summary';
 
-    // HP State
-    const [hpChoice, setHpChoice] = useState<'avg' | 'roll'>('avg');
-    const [rolledHp, setRolledHp] = useState<number | null>(null);
+    const readPersistedHpRoll = (charSnap: Character, lvl: number): { dieRoll: number; totalGain: number } | null => {
+        const fromChar = charSnap.pendingHpRolls?.[lvl];
+        if (fromChar && typeof fromChar.totalGain === 'number') {
+            return fromChar;
+        }
+        try {
+            if (typeof localStorage !== 'undefined' && charSnap.id) {
+                const raw = localStorage.getItem(`rpg_lvl_hp_roll_${charSnap.id}_${lvl}`);
+                if (raw) {
+                    const parsed = JSON.parse(raw);
+                    if (parsed && typeof parsed.totalGain === 'number') {
+                        return {
+                            dieRoll: Number(parsed.dieRoll || 1),
+                            totalGain: Number(parsed.totalGain)
+                        };
+                    }
+                }
+            }
+        } catch {
+            // ignore storage errors
+        }
+        return null;
+    };
+
+    // HP State (com trava de rolagem única persistida por nível)
+    const initialSavedRoll = readPersistedHpRoll(character, newLevel);
+    const [hpChoice, setHpChoice] = useState<'avg' | 'roll'>(initialSavedRoll ? 'roll' : 'avg');
+    const [rolledHpData, setRolledHpData] = useState<{ dieRoll: number; totalGain: number } | null>(initialSavedRoll);
+    const rolledHp = rolledHpData ? rolledHpData.totalGain : null;
+    const hasLockedHpRoll = rolledHpData !== null;
+
+    useEffect(() => {
+        const saved = readPersistedHpRoll(character, newLevel);
+        setRolledHpData(saved);
+        setHpChoice(saved ? 'roll' : 'avg');
+    }, [character.id, newLevel]);
 
     // Expertise Selection State
     const [selectedNewExpertises, setSelectedNewExpertises] = useState<string[]>([]);
@@ -240,33 +288,49 @@ export const LevelUpModal: React.FC<LevelUpModalProps> = ({ character, onUpdate,
     });
     const [asiSplitAttrs, setAsiSplitAttrs] = useState<AbilityScoreKey[]>([]);
 
+    const selectProgressionType = (mode: 'feat' | 'asi') => {
+        setProgressionType(mode);
+        if (mode === 'asi') {
+            setSelectedFeat(null);
+            setFeatAbilityChoice(null);
+        } else {
+            setAsiSplitAttrs([]);
+        }
+    };
+
+    const canTakeFightingStyleFeats = useMemo(
+        () => hasFightingStyleFeature(character, newLevel),
+        [character, newLevel]
+    );
+
     // Eligible ability options for selected half-feat / epic boon
     const featMaxCap = selectedFeat?.maxAttributeCap || 20;
     const featBonusCandidates = useMemo<AbilityScoreKey[]>(() => {
-        if (!selectedFeat?.abilityBonusOptions) return [];
-        const raw = selectedFeat.abilityBonusOptions === 'any' ? ATTR_KEYS : selectedFeat.abilityBonusOptions;
-        return raw;
-    }, [selectedFeat]);
+        if (!selectedFeat) return [];
+        return getValidFeatAbilityOptions(selectedFeat, character);
+    }, [selectedFeat, character]);
 
     const upgradeableFeatBonusAttrs = useMemo<AbilityScoreKey[]>(() => {
         return featBonusCandidates.filter(k => {
             const val = character.attributes[k]?.value || 10;
             if (selectedFeat?.grantsSaveProficiency) {
-                // Em Resiliente, prioriza atributos sem proficiência em Salvaguarda
-                return !character.attributes[k]?.saveProficiency || val < featMaxCap;
+                return !character.attributes[k]?.saveProficiency;
             }
             return val < featMaxCap;
         });
     }, [featBonusCandidates, character.attributes, featMaxCap, selectedFeat]);
 
     const handleSelectFeat = (feat: Feat) => {
+        const prereq = checkFeatPrerequisites(feat, character, newLevel);
+        if (!prereq.met && !isGM) return;
+
         setSelectedFeat(feat);
         const cap = feat.maxAttributeCap || 20;
-        if (!feat.abilityBonusOptions) {
+        const opts = getValidFeatAbilityOptions(feat, character);
+        if (opts.length === 0) {
             setFeatAbilityChoice(null);
             return;
         }
-        const opts = feat.abilityBonusOptions === 'any' ? ATTR_KEYS : feat.abilityBonusOptions;
         const validOpts = opts.filter(k => {
             if (feat.grantsSaveProficiency) {
                 return !character.attributes[k]?.saveProficiency;
@@ -278,7 +342,7 @@ export const LevelUpModal: React.FC<LevelUpModalProps> = ({ character, onUpdate,
         } else if (featAbilityChoice && validOpts.includes(featAbilityChoice)) {
             // Keep current valid choice
         } else {
-            setFeatAbilityChoice(validOpts[0] || null);
+            setFeatAbilityChoice(validOpts[0] || opts[0] || null);
         }
     };
 
@@ -353,9 +417,9 @@ export const LevelUpModal: React.FC<LevelUpModalProps> = ({ character, onUpdate,
     const profBonus = getProficiencyBonus(newLevel);
     const newFeatures = getFeaturesForLevel(classId, newLevel);
 
-    // Filtered Feats for Step 6
+    // Filtered Feats for Step 6 (com pré-requisitos reais D&D 5.5e ordenando elegíveis primeiro)
     const availableFeats = useMemo(() => {
-        return FEATS.filter(feat => {
+        const filtered = FEATS.filter(feat => {
             if (feat.category === 'Dádiva Épica' && newLevel < 19) return false;
             if (featCategoryFilter !== 'all' && feat.category !== featCategoryFilter) return false;
             if (featSearch.trim()) {
@@ -368,14 +432,66 @@ export const LevelUpModal: React.FC<LevelUpModalProps> = ({ character, onUpdate,
             }
             return true;
         });
-    }, [newLevel, featCategoryFilter, featSearch]);
 
-    // Roll HP Handler
+        return filtered.sort((a, b) => {
+            const aOwned = !a.repeatable && (character.feats || []).some(cf => cf.id === a.id);
+            const bOwned = !b.repeatable && (character.feats || []).some(cf => cf.id === b.id);
+            const aMet = checkFeatPrerequisites(a, character, newLevel).met;
+            const bMet = checkFeatPrerequisites(b, character, newLevel).met;
+            const aScore = aOwned ? 2 : aMet ? 0 : 1;
+            const bScore = bOwned ? 2 : bMet ? 0 : 1;
+            return aScore - bScore;
+        });
+    }, [newLevel, featCategoryFilter, featSearch, character]);
+
+    // Roll HP Handler (Tentativa Única por nível para jogadores; persistida imediatamente)
     const handleRollHp = () => {
-        const roll = Math.floor(Math.random() * hitDieValue) + 1;
-        const total = Math.max(1, roll + oldModCon + totalBonus);
-        setRolledHp(total);
+        if (rolledHpData !== null && !isGM) return;
+        const dieRoll = Math.floor(Math.random() * hitDieValue) + 1;
+        const totalGain = Math.max(1, dieRoll + oldModCon + totalBonus);
+        const rollRecord = { dieRoll, totalGain };
+        setRolledHpData(rollRecord);
+        setHpChoice('roll');
         playSynthSound('dice');
+
+        try {
+            if (typeof localStorage !== 'undefined' && character.id) {
+                localStorage.setItem(`rpg_lvl_hp_roll_${character.id}_${newLevel}`, JSON.stringify(rollRecord));
+            }
+        } catch {
+            // ignore storage quota errors
+        }
+
+        if (onPersistDraft) {
+            onPersistDraft({
+                ...character,
+                pendingHpRolls: {
+                    ...(character.pendingHpRolls || {}),
+                    [newLevel]: rollRecord
+                }
+            });
+        }
+    };
+
+    const handleGmResetHpRoll = () => {
+        if (!isGM) return;
+        setRolledHpData(null);
+        setHpChoice('avg');
+        try {
+            if (typeof localStorage !== 'undefined' && character.id) {
+                localStorage.removeItem(`rpg_lvl_hp_roll_${character.id}_${newLevel}`);
+            }
+        } catch {
+            // ignore
+        }
+        if (onPersistDraft) {
+            const nextRolls = { ...(character.pendingHpRolls || {}) };
+            delete nextRolls[newLevel];
+            onPersistDraft({
+                ...character,
+                pendingHpRolls: Object.keys(nextRolls).length > 0 ? nextRolls : undefined
+            });
+        }
     };
 
     // Step Validation Handler
@@ -389,13 +505,23 @@ export const LevelUpModal: React.FC<LevelUpModalProps> = ({ character, onUpdate,
         if (currentStep === 'choices') {
             if (hasSubclassChoice && !selectedSubclass) return true;
             if (hasFightingStyleChoice && !selectedFightingStyle) return true;
-            if (hasInvocationChoice && !selectedInvocation) return true;
+            if (hasInvocationChoice) {
+                if (!selectedInvocation) return true;
+                const chosenInv = WARLOCK_INVOCATIONS.find(i => i.id === selectedInvocation);
+                if (chosenInv && !isGM && !checkInvocationPrerequisites(chosenInv, character, newLevel).met) {
+                    return true;
+                }
+            }
             return false;
         }
         if (currentStep === 'feat') {
             if (progressionType === 'feat') {
                 if (!selectedFeat) return true;
-                if (upgradeableFeatBonusAttrs.length > 0 && !featAbilityChoice) return true;
+                if (!selectedFeat.repeatable && (character.feats || []).some(cf => cf.id === selectedFeat.id)) return true;
+                if (!isGM && !checkFeatPrerequisites(selectedFeat, character, newLevel).met) return true;
+                if (upgradeableFeatBonusAttrs.length > 0 && (!featAbilityChoice || !featBonusCandidates.includes(featAbilityChoice))) {
+                    return true;
+                }
                 return false;
             }
             if (progressionType === 'asi') {
@@ -424,14 +550,17 @@ export const LevelUpModal: React.FC<LevelUpModalProps> = ({ character, onUpdate,
         selectedFightingStyle,
         hasInvocationChoice,
         selectedInvocation,
+        isGM,
+        character,
+        newLevel,
         progressionType,
         selectedFeat,
         upgradeableFeatBonusAttrs.length,
+        featBonusCandidates,
         featAbilityChoice,
         asiMode,
         asiSingleAttr,
-        asiSplitAttrs,
-        character.attributes
+        asiSplitAttrs
     ]);
 
     // Finish & Apply Progression
@@ -585,7 +714,7 @@ export const LevelUpModal: React.FC<LevelUpModalProps> = ({ character, onUpdate,
             nextChar.spells = [...(character.spells || []), ...newSpells];
         }
 
-        // 9. Add Feat if chosen at ASI level
+        // 9. Add Feat ONLY if progressionType === 'feat' at ASI level (estritamente exclusivo com ASI)
         if (isAsiLevel && newLevel !== 3 && progressionType === 'feat' && selectedFeat) {
             const storedFeat: Feat = {
                 ...selectedFeat,
@@ -593,6 +722,29 @@ export const LevelUpModal: React.FC<LevelUpModalProps> = ({ character, onUpdate,
                 acquiredAtLevel: newLevel
             };
             nextChar.feats = [...(character.feats || []), storedFeat];
+        }
+
+        // Sincroniza hpAppliedFeatIds pois newMaxHp acima já incluiu retroactiveFeatHpBonus (ex: Vigoroso / Fortitude)
+        nextChar.hpAppliedFeatIds = (nextChar.feats || [])
+            .filter(f => {
+                const canonical = FEATS.find(cf => cf.id === f.id);
+                const effs = canonical?.effects || f.effects || [];
+                return effs.some(e => e.type === 'hp_per_level' || e.type === 'hp_flat');
+            })
+            .map(f => f.id);
+
+        // Limpa a trava de rolagem do nível recém-concluído
+        if (nextChar.pendingHpRolls) {
+            const remainingRolls = { ...nextChar.pendingHpRolls };
+            delete remainingRolls[newLevel];
+            nextChar.pendingHpRolls = Object.keys(remainingRolls).length > 0 ? remainingRolls : undefined;
+        }
+        try {
+            if (typeof localStorage !== 'undefined' && character.id) {
+                localStorage.removeItem(`rpg_lvl_hp_roll_${character.id}_${newLevel}`);
+            }
+        } catch {
+            // ignore storage errors
         }
 
         // Regenerate derived stats (AC, DC, PB, attacks — note conDelta === 0 since previewAttributes already has updated CON modifier)
@@ -609,7 +761,8 @@ export const LevelUpModal: React.FC<LevelUpModalProps> = ({ character, onUpdate,
             setSelectedFeat(null);
             setFeatAbilityChoice(null);
             setAsiSplitAttrs([]);
-            setRolledHp(null);
+            setRolledHpData(null);
+            setHpChoice('avg');
             setSelectedNewExpertises([]);
             setSelectedSubclass('');
             setSelectedFightingStyle('');
@@ -790,17 +943,27 @@ export const LevelUpModal: React.FC<LevelUpModalProps> = ({ character, onUpdate,
                         <div>
                             <h3 style={{ margin: '0 0 6px 0', color: '#ffd700' }}>Aumento de Pontos de Vida (HP)</h3>
                             <p style={{ color: '#94a3b8', fontSize: '0.88rem', margin: 0 }}>
-                                Escolha se prefere o aumento seguro pela média fixa ou arriscar uma rolagem de dado (1d{hitDieValue}).
+                                Escolha entre o aumento seguro pela média fixa ou realizar <strong>uma única rolagem</strong> de dado (1d{hitDieValue}). Ao optar por rolar o dado, o resultado fica travado para este nível.
                             </p>
 
                             <div className="lvl-hp-grid">
                                 <div
                                     className={`lvl-hp-card ${hpChoice === 'avg' ? 'selected' : ''}`}
-                                    onClick={() => setHpChoice('avg')}
+                                    style={hasLockedHpRoll ? { opacity: 0.42, cursor: 'not-allowed' } : undefined}
+                                    title={hasLockedHpRoll ? 'Você já optou por rolar o Dado de Vida neste nível.' : undefined}
+                                    onClick={() => {
+                                        if (hasLockedHpRoll) return;
+                                        setHpChoice('avg');
+                                    }}
                                 >
                                     <Shield size={24} color="#ffd700" />
                                     <h4 style={{ margin: '8px 0 2px 0' }}>Média Fixa (Recomendado)</h4>
                                     <span className="lvl-hp-val">+{avgHp} PV</span>
+                                    {hasLockedHpRoll && (
+                                        <span style={{ fontSize: '0.7rem', color: '#f87171', fontWeight: 600, marginBottom: '4px' }}>
+                                            Bloqueado (Dado já rolado)
+                                        </span>
+                                    )}
                                     <small style={{ color: '#888' }}>
                                         Metade do dado ({Math.floor(hitDieValue / 2) + 1}) + Mod. Con ({oldModCon >= 0 ? `+${oldModCon}` : oldModCon})
                                         {featBonusPerLevel > 0 && ` + Vigoroso (+${featBonusPerLevel})`}
@@ -814,20 +977,36 @@ export const LevelUpModal: React.FC<LevelUpModalProps> = ({ character, onUpdate,
                                 >
                                     <Dices size={24} color="#60a5fa" />
                                     <h4 style={{ margin: '8px 0 2px 0' }}>Rolar Dado (1d{hitDieValue})</h4>
-                                    {rolledHp !== null ? (
-                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                                            <span className="lvl-hp-val">+{rolledHp} PV</span>
-                                            <button
-                                                type="button"
-                                                className="lvl-btn-back"
-                                                style={{ fontSize: '0.72rem', padding: '3px 10px', marginBottom: '4px' }}
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    handleRollHp();
-                                                }}
-                                            >
-                                                Rerrolar
-                                            </button>
+                                    {rolledHpData !== null ? (
+                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+                                            <span className="lvl-hp-val">+{rolledHpData.totalGain} PV</span>
+                                            <span style={{
+                                                fontSize: '0.73rem',
+                                                color: '#93c5fd',
+                                                background: 'rgba(59, 130, 246, 0.14)',
+                                                border: '1px solid rgba(96, 165, 250, 0.35)',
+                                                padding: '2px 8px',
+                                                borderRadius: '10px',
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: '4px'
+                                            }}>
+                                                <Lock size={11} /> Dado d{hitDieValue}: [{rolledHpData.dieRoll}] (Rolagem Única)
+                                            </span>
+                                            {isGM && (
+                                                <button
+                                                    type="button"
+                                                    className="lvl-btn-back"
+                                                    style={{ fontSize: '0.7rem', padding: '2px 8px', marginTop: '2px' }}
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleGmResetHpRoll();
+                                                    }}
+                                                    title="Apenas o Mestre pode liberar uma nova rolagem de Dado de Vida"
+                                                >
+                                                    Liberar Nova Rolagem (GM)
+                                                </button>
+                                            )}
                                         </div>
                                     ) : (
                                         <button
@@ -836,11 +1015,10 @@ export const LevelUpModal: React.FC<LevelUpModalProps> = ({ character, onUpdate,
                                             style={{ margin: '10px 0', padding: '6px 16px', fontSize: '0.85rem' }}
                                             onClick={(e) => {
                                                 e.stopPropagation();
-                                                setHpChoice('roll');
                                                 handleRollHp();
                                             }}
                                         >
-                                            <Dices size={14} /> Rolar 1d{hitDieValue}
+                                            <Dices size={14} /> Rolar 1d{hitDieValue} (Tentativa Única)
                                         </button>
                                     )}
                                     <small style={{ color: '#888' }}>
@@ -1022,26 +1200,34 @@ export const LevelUpModal: React.FC<LevelUpModalProps> = ({ character, onUpdate,
 
                                     <div className="lvl-choices-grid">
                                         {WARLOCK_INVOCATIONS.filter(inv => inv.minLevel <= newLevel).map(inv => {
-                                            const alreadyOwned = (character.features || []).some(f => f.name.toLowerCase().includes(inv.name.toLowerCase()));
+                                            const alreadyOwned = (character.features || []).some(
+                                                f => f.name.toLowerCase().includes(inv.name.toLowerCase()) || f.name.toLowerCase().includes(inv.nameEn.toLowerCase())
+                                            );
+                                            const prereq = checkInvocationPrerequisites(inv, character, newLevel);
+                                            const isBlocked = alreadyOwned || (!prereq.met && !isGM);
                                             const isSelected = selectedInvocation === inv.id;
                                             return (
                                                 <div
                                                     key={inv.id}
                                                     className={`lvl-choice-card ${isSelected ? 'selected' : ''}`}
-                                                    style={alreadyOwned ? { opacity: 0.45, pointerEvents: 'none' } : undefined}
-                                                    onClick={() => !alreadyOwned && setSelectedInvocation(inv.id)}
+                                                    style={isBlocked ? { opacity: 0.45, cursor: 'not-allowed' } : undefined}
+                                                    onClick={() => !isBlocked && setSelectedInvocation(inv.id)}
                                                 >
                                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
                                                         <h4>{inv.name}</h4>
                                                         {alreadyOwned ? (
                                                             <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>Adquirida</span>
+                                                        ) : !prereq.met ? (
+                                                            <span style={{ fontSize: '0.68rem', color: '#f87171', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                                                <Lock size={11} /> Bloqueada
+                                                            </span>
                                                         ) : (
                                                             isSelected && <Check size={16} color="#ffd700" />
                                                         )}
                                                     </div>
                                                     {inv.prerequisite && (
-                                                        <span style={{ fontSize: '0.72rem', color: '#eab308' }}>
-                                                            Pré-req: {inv.prerequisite}
+                                                        <span style={{ fontSize: '0.72rem', color: prereq.met ? '#eab308' : '#f87171' }}>
+                                                            {prereq.met ? `Pré-req: ${inv.prerequisite}` : `🔒 ${prereq.reason || inv.prerequisite}`}
                                                         </span>
                                                     )}
                                                     <p>{inv.description}</p>
@@ -1294,19 +1480,46 @@ export const LevelUpModal: React.FC<LevelUpModalProps> = ({ character, onUpdate,
                                 <button
                                     type="button"
                                     className={`fts-btn ${progressionType === 'feat' ? 'active' : ''}`}
-                                    onClick={() => setProgressionType('feat')}
+                                    onClick={() => selectProgressionType('feat')}
                                 >
                                     <Award size={16} />
-                                    <span>Novo Talento (D&D 5.5e)</span>
+                                    <span>1 Talento (D&D 5.5e)</span>
                                 </button>
                                 <button
                                     type="button"
                                     className={`fts-btn ${progressionType === 'asi' ? 'active' : ''}`}
-                                    onClick={() => setProgressionType('asi')}
+                                    onClick={() => selectProgressionType('asi')}
                                 >
                                     <Sparkles size={16} />
-                                    <span>Aumento no Atributo (+2 ou +1/+1)</span>
+                                    <span>OU Aumento de Atributo (+2 / +1+1)</span>
                                 </button>
+                            </div>
+
+                            <div style={{
+                                fontSize: '0.78rem',
+                                color: '#cbd5e1',
+                                background: 'rgba(197, 160, 89, 0.08)',
+                                border: '1px solid rgba(255, 215, 0, 0.22)',
+                                borderRadius: '6px',
+                                padding: '7px 11px',
+                                marginBottom: '10px',
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                gap: '8px',
+                                flexWrap: 'wrap'
+                            }}>
+                                <span>
+                                    <strong style={{ color: '#ffd700' }}>Escolha Exclusiva (Nível {newLevel}):</strong>{' '}
+                                    {progressionType === 'feat'
+                                        ? 'Você está escolhendo 1 Talento elegível (Talentos Gerais já concedem +1 no atributo listado no próprio talento).'
+                                        : 'Você está escolhendo Aumento Puro de Atributo (+2 em um atributo ou +1 em dois atributos, sem novo talento).'}
+                                </span>
+                                {(retroactiveFeatHpBonus > 0 || retroactiveConHpBonus > 0) && (
+                                    <span style={{ color: '#4ade80', fontWeight: 700 }}>
+                                        +{retroactiveFeatHpBonus + retroactiveConHpBonus} PV Máx aplicado automaticamente!
+                                    </span>
+                                )}
                             </div>
 
                             {progressionType === 'feat' ? (
@@ -1337,13 +1550,15 @@ export const LevelUpModal: React.FC<LevelUpModalProps> = ({ character, onUpdate,
                                             >
                                                 Origem
                                             </button>
-                                            <button
-                                                type="button"
-                                                className={`feat-filter-pill ${featCategoryFilter === 'Estilo de Luta' ? 'active' : ''}`}
-                                                onClick={() => setFeatCategoryFilter('Estilo de Luta')}
-                                            >
-                                                Estilos de Luta
-                                            </button>
+                                            {(canTakeFightingStyleFeats || isGM) && (
+                                                <button
+                                                    type="button"
+                                                    className={`feat-filter-pill ${featCategoryFilter === 'Estilo de Luta' ? 'active' : ''}`}
+                                                    onClick={() => setFeatCategoryFilter('Estilo de Luta')}
+                                                >
+                                                    Estilos de Luta
+                                                </button>
+                                            )}
                                             <button
                                                 type="button"
                                                 className={`feat-filter-pill ${featCategoryFilter === 'all' ? 'active' : ''}`}
@@ -1413,26 +1628,69 @@ export const LevelUpModal: React.FC<LevelUpModalProps> = ({ character, onUpdate,
                                     <div className="feat-selector">
                                         {availableFeats.map(feat => {
                                             const isOwned = !feat.repeatable && (character.feats || []).some(cf => cf.id === feat.id);
+                                            const prereq = checkFeatPrerequisites(feat, character, newLevel);
+                                            const isLocked = !prereq.met && !isGM;
                                             const isSelected = selectedFeat?.id === feat.id;
+                                            const hpBonusPreview = feat.id === 'tough'
+                                                ? `+${2 * newLevel} PV`
+                                                : feat.id === 'boon_of_fortitude'
+                                                    ? '+40 PV'
+                                                    : null;
+
                                             return (
                                                 <div
                                                     key={feat.id}
-                                                    className={`feat-item ${isSelected ? 'selected' : ''} ${isOwned ? 'owned' : ''}`}
-                                                    onClick={() => !isOwned && handleSelectFeat(feat)}
+                                                    className={`feat-item ${isSelected ? 'selected' : ''} ${isOwned ? 'owned' : ''} ${!prereq.met ? 'locked' : ''}`}
+                                                    title={!prereq.met ? prereq.reason : undefined}
+                                                    onClick={() => !isOwned && !isLocked && handleSelectFeat(feat)}
                                                 >
                                                     <div className="feat-item-top">
                                                         <strong>{feat.name}</strong>
-                                                        {isOwned ? (
-                                                            <span className="feat-badge-owned">Adquirido</span>
-                                                        ) : isSelected ? (
-                                                            <Check size={16} color="#ffd700" />
-                                                        ) : (
-                                                            feat.category && <span className="feat-badge-cat">{feat.category}</span>
-                                                        )}
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
+                                                            {hpBonusPreview && !isOwned && (
+                                                                <span style={{
+                                                                    fontSize: '0.66rem',
+                                                                    color: '#4ade80',
+                                                                    background: 'rgba(74, 222, 128, 0.14)',
+                                                                    border: '1px solid rgba(74, 222, 128, 0.35)',
+                                                                    padding: '1px 5px',
+                                                                    borderRadius: '8px',
+                                                                    fontWeight: 700
+                                                                }}>
+                                                                    {hpBonusPreview}
+                                                                </span>
+                                                            )}
+                                                            {isOwned ? (
+                                                                <span className="feat-badge-owned">Adquirido</span>
+                                                            ) : !prereq.met ? (
+                                                                <span style={{
+                                                                    fontSize: '0.66rem',
+                                                                    color: '#f87171',
+                                                                    background: 'rgba(248, 113, 113, 0.14)',
+                                                                    border: '1px solid rgba(248, 113, 113, 0.35)',
+                                                                    padding: '1px 6px',
+                                                                    borderRadius: '8px',
+                                                                    display: 'inline-flex',
+                                                                    alignItems: 'center',
+                                                                    gap: '3px',
+                                                                    whiteSpace: 'nowrap'
+                                                                }}>
+                                                                    <Lock size={10} /> Bloqueado
+                                                                </span>
+                                                            ) : isSelected ? (
+                                                                <Check size={16} color="#ffd700" />
+                                                            ) : (
+                                                                feat.category && <span className="feat-badge-cat">{feat.category}</span>
+                                                            )}
+                                                        </div>
                                                     </div>
-                                                    {feat.prerequisite && (
-                                                        <div className="feat-prereq">Pré-req: {feat.prerequisite}</div>
-                                                    )}
+                                                    {!prereq.met ? (
+                                                        <div className="feat-prereq" style={{ color: '#f87171', fontWeight: 600 }}>
+                                                            🔒 {prereq.reason || feat.prerequisite}
+                                                        </div>
+                                                    ) : feat.prerequisite ? (
+                                                        <div className="feat-prereq">✓ Pré-req: {feat.prerequisite}</div>
+                                                    ) : null}
                                                     <p>{isSelected && feat.descriptionFull ? feat.descriptionFull : feat.description}</p>
                                                 </div>
                                             );

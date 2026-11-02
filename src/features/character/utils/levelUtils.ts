@@ -389,6 +389,30 @@ export function applyCharacterLevelDown(
     const newXP = getMinXPForLevel(toLevel);
     const nextXP = getMinXPForLevel(toLevel + 1) || newXP;
 
+    const nextHpAppliedFeatIds = nextFeats
+        .filter(f => {
+            const canonical = FEATS.find(cf => cf.id === f.id);
+            const effs = canonical?.effects || f.effects || [];
+            return effs.some(e => e.type === 'hp_per_level' || e.type === 'hp_flat');
+        })
+        .map(f => f.id);
+
+    const nextPendingHpRolls = char.pendingHpRolls ? { ...char.pendingHpRolls } : undefined;
+    if (nextPendingHpRolls) {
+        Object.keys(nextPendingHpRolls).forEach(k => {
+            if (Number(k) > toLevel) {
+                delete nextPendingHpRolls[Number(k)];
+                try {
+                    if (typeof localStorage !== 'undefined' && char.id) {
+                        localStorage.removeItem(`rpg_lvl_hp_roll_${char.id}_${k}`);
+                    }
+                } catch {
+                    // ignore storage errors
+                }
+            }
+        });
+    }
+
     const downgraded: Character = {
         ...char,
         level: toLevel,
@@ -397,6 +421,8 @@ export function applyCharacterLevelDown(
         pendingLevelUp: false,
         levelUpTarget: undefined,
         levelHistory: Object.keys(history).length > 0 ? history : undefined,
+        hpAppliedFeatIds: nextHpAppliedFeatIds,
+        pendingHpRolls: nextPendingHpRolls && Object.keys(nextPendingHpRolls).length > 0 ? nextPendingHpRolls : undefined,
         attributes: nextAttrs,
         feats: nextFeats,
         features: nextFeatures,
