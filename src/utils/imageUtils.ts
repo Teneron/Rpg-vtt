@@ -84,3 +84,60 @@ export const compressImage = (file: File, maxWidth = 2048, quality = 0.7, maxSiz
         reader.onerror = (err) => reject(err);
     });
 };
+
+/**
+ * Compresses a token image (Monster, NPC, or Character) to WebP preserving alpha transparency
+ * while keeping payload compact for real-time Socket.io sync and IndexedDB storage.
+ */
+export const compressTokenImage = (file: File, maxDim = 512, quality = 0.85): Promise<string> => {
+    const MAX_TOKEN_CHARS = Math.floor(1.5 * 1024 * 1024);
+
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = (event) => {
+            const img = new Image();
+            img.src = event.target?.result as string;
+            img.onload = () => {
+                try {
+                    let width = img.width;
+                    let height = img.height;
+
+                    if (width > maxDim || height > maxDim) {
+                        if (width >= height) {
+                            height = Math.max(1, Math.round((maxDim / width) * height));
+                            width = maxDim;
+                        } else {
+                            width = Math.max(1, Math.round((maxDim / height) * width));
+                            height = maxDim;
+                        }
+                    }
+
+                    const encode = (w: number, h: number, q: number): string => {
+                        const canvas = document.createElement('canvas');
+                        canvas.width = Math.max(1, Math.round(w));
+                        canvas.height = Math.max(1, Math.round(h));
+                        const ctx = canvas.getContext('2d');
+                        if (!ctx) throw new Error('Canvas context not available');
+                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                        return canvas.toDataURL('image/webp', q);
+                    };
+
+                    let dataUrl = encode(width, height, quality);
+                    if (dataUrl.length > MAX_TOKEN_CHARS) {
+                        dataUrl = encode(width * 0.75, height * 0.75, 0.72);
+                    }
+                    if (dataUrl.length > MAX_TOKEN_CHARS) {
+                        reject(new Error('A imagem do token excedeu o limite seguro de 1,5 MB mesmo após compressão. Use uma imagem menor ou URL externa.'));
+                        return;
+                    }
+                    resolve(dataUrl);
+                } catch (err) {
+                    reject(err);
+                }
+            };
+            img.onerror = (err) => reject(err);
+        };
+        reader.onerror = (err) => reject(err);
+    });
+};

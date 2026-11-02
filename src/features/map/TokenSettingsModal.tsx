@@ -62,7 +62,7 @@ export const TokenSettingsModal: React.FC<TokenSettingsModalProps> = ({ tokenId,
 
                     if (ctx) {
                         ctx.drawImage(img, 0, 0, width, height);
-                        const dataUrl = canvas.toDataURL('image/png');
+                        const dataUrl = canvas.toDataURL('image/webp', 0.85);
                         resolve(dataUrl);
                     } else {
                         reject(new Error("Canvas context is null"));
@@ -122,10 +122,14 @@ export const TokenSettingsModal: React.FC<TokenSettingsModalProps> = ({ tokenId,
 
             // Only load external character data if we haven't touched the form yet
             if (t.characterId) {
-                let charData = Object.values(connectedPlayersData).find(p => p.character?.id === t.characterId)?.character;
-                // If not found in players, check if it's my own character or saved locally in repository
+                const peerChar = Object.values(connectedPlayersData).find(p => !p.isHost && p.character?.id === t.characterId)?.character;
+                const repoChar = CharacterRepository.load(t.characterId) || undefined;
+                let charData = peerChar;
+                if (repoChar && (!charData || (repoChar.lastModified || 0) > (charData.lastModified || 0))) {
+                    charData = repoChar;
+                }
+                // If not found in players/repo, check if it's my own character
                 if (!charData && myCharacter && myCharacter.id === t.characterId) charData = myCharacter;
-                if (!charData) charData = CharacterRepository.load(t.characterId) || undefined;
 
                 if (charData) {
                     setEditedCharData(JSON.parse(JSON.stringify(charData)));
@@ -235,6 +239,8 @@ export const TokenSettingsModal: React.FC<TokenSettingsModalProps> = ({ tokenId,
             }
 
             updateCombatant(linkedCombatant.id, {
+                name: tokenToSave.name,
+                imageUrl: tokenToSave.imageUrl,
                 hp: { current: hpCurrent, max: hpMax },
                 ac: ac
             });
@@ -256,10 +262,10 @@ export const TokenSettingsModal: React.FC<TokenSettingsModalProps> = ({ tokenId,
             }
             window.dispatchEvent(new CustomEvent('rpg_local_char_save', { detail: updatedChar }));
 
-            const ownerEntry = Object.values(connectedPlayersData).find(p => p.character?.id === token.characterId);
+            const ownerEntry = Object.values(connectedPlayersData).find(p => !p.isHost && p.character?.id === token.characterId);
             const targetPeerId = ownerEntry?.peerId || 'unknown';
 
-            if (myCharacter && myCharacter.id === token.characterId) {
+            if (!isHost && myCharacter && myCharacter.id === token.characterId) {
                 broadcastCharacterUpdate(updatedChar);
             } else if (isHost) {
                 if (targetPeerId && targetPeerId !== 'unknown') {

@@ -6,7 +6,7 @@ export interface Combatant {
     initiative: number;
     characterId?: string; // Links to Character Sheet
     isNPC: boolean;
-    hp?: { current: number; max: number }; // Optional for quick tracking
+    hp?: { current: number; max: number; temp?: number }; // Optional for quick tracking
     monsterId?: string; // Links to Bestiary Monster ID
     ac?: number; // Armor Class or Defense Value
     imageUrl?: string; // Avatar URL

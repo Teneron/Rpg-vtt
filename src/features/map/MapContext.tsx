@@ -489,14 +489,38 @@ export const MapProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const handleCharacterUpdateForTokens = React.useCallback((character: any) => {
         if (!character || !character.id || !character.hp) return;
 
+        const charHp = character.hp.current;
+        const charMax = character.hp.max;
+        const charTemp = character.hp.temp ?? 0;
+        const charAc = character.acOverride ?? character.armorClass;
+        const charImg = character.imageUrl;
+
+        const pendingTokenBroadcasts: Array<{ id: string; updates: Partial<MapToken> }> = [];
+        (tokensRef.current || []).forEach(t => {
+            if (t.characterId !== character.id) return;
+            const hpChanged = t.hp?.current !== charHp || t.hp?.max !== charMax || (t.hp?.temp ?? 0) !== charTemp;
+            const acChanged = charAc !== undefined && t.ac !== charAc;
+            const imgChanged = Boolean(charImg) && t.imageUrl !== charImg;
+
+            if (hpChanged || acChanged || imgChanged) {
+                const updates: Partial<MapToken> = {
+                    hp: { current: charHp, max: charMax, temp: charTemp },
+                    ...(charAc !== undefined ? { ac: charAc } : {}),
+                    ...(charImg ? { imageUrl: charImg } : {})
+                };
+                pendingTokenBroadcasts.push({ id: t.id, updates });
+            }
+        });
+
         setTokens(prevTokens => {
             let hasChanges = false;
             const newTokens = prevTokens.map(t => {
                 if (t.characterId === character.id) {
-                    const charHp = character.hp.current;
-                    const charMax = character.hp.max;
+                    const hpChanged = t.hp?.current !== charHp || t.hp?.max !== charMax || (t.hp?.temp ?? 0) !== charTemp;
+                    const acChanged = charAc !== undefined && t.ac !== charAc;
+                    const imgChanged = Boolean(charImg) && t.imageUrl !== charImg;
 
-                    if (t.hp?.current !== charHp || t.hp?.max !== charMax) {
+                    if (hpChanged || acChanged || imgChanged) {
                         hasChanges = true;
                         console.log(`[MapContext] Syncing Token ${t.name} HP to ${charHp}/${charMax}`);
                         return {
@@ -504,8 +528,10 @@ export const MapProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                             hp: {
                                 current: charHp,
                                 max: charMax,
-                                temp: character.hp.temp
-                            }
+                                temp: charTemp
+                            },
+                            ...(charAc !== undefined ? { ac: charAc } : {}),
+                            ...(charImg ? { imageUrl: charImg } : {})
                         };
                     }
                 }
@@ -514,18 +540,26 @@ export const MapProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
             return hasChanges ? newTokens : prevTokens;
         });
+
+        // Host broadcasts updated token stats so server room state and connected players stay synchronized
+        if (stateRef.current.isHost && pendingTokenBroadcasts.length > 0) {
+            pendingTokenBroadcasts.forEach(({ id, updates }) => {
+                broadcastRef.current({
+                    type: 'MAP_UPDATE',
+                    payload: { type: 'update_token', data: { id, updates } }
+                });
+            });
+        }
     }, []);
 
     useEffect(() => {
-        if (!isHost) return;
-
-        // A. Listen for Local Saves (GM editing Sheet)
+        // A. Listen for Local Saves (GM or Player saving Sheet locally)
         const handleLocalSave = (e: Event) => {
             const char = (e as CustomEvent).detail;
             handleCharacterUpdateForTokens(char);
         };
 
-        // B. Listen for Remote Updates (Player editing Sheet)
+        // B. Listen for Remote Updates (Player or GM sending PLAYER_UPDATE)
         const handleRemoteEvent = (e: Event) => {
             const data = (e as CustomEvent).detail;
             if (data?.type === 'PLAYER_UPDATE' && data.payload?.character) {
@@ -540,7 +574,7 @@ export const MapProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             window.removeEventListener('rpg_local_char_save', handleLocalSave);
             window.removeEventListener('rpg_peer_event', handleRemoteEvent);
         };
-    }, [isHost, handleCharacterUpdateForTokens]);
+    }, [handleCharacterUpdateForTokens]);
 
     return (
         <MapContext.Provider value={{

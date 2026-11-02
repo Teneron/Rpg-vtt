@@ -252,6 +252,30 @@ const authorizeAndStamp = (room, socketId, message) => {
             if (!isPlainObject(payload.character) || jsonSize(payload.character) > LIMITS.characterBytes) return null;
             // Jogador só atualiza a PRÓPRIA ficha; o Mestre pode atualizar a de qualquer um.
             if (!fromHost && payload.peerId !== member.userId) return null;
+
+            // Autoridade de PV do Mestre: impede que auto-saves ou reconexões defasadas do jogador revertam o PV
+            if (!fromHost) {
+                const existingChar = member.character;
+                if (isPlainObject(existingChar) && existingChar.id === payload.character.id && isPlainObject(existingChar.hp)) {
+                    const incomingHp = isPlainObject(payload.character.hp) ? payload.character.hp : null;
+                    const isLevelUpGain = Number(payload.character.level) > Number(existingChar.level || 1);
+                    const isNat20Revive = Number(existingChar.hp.current) <= 0
+                        && incomingHp
+                        && Number(incomingHp.current) === 1
+                        && Number(payload.character.deathSaves?.successes || 0) === 0
+                        && Number(payload.character.deathSaves?.failures || 0) === 0;
+
+                    if (!isLevelUpGain && !isNat20Revive) {
+                        stamped.payload = {
+                            ...payload,
+                            character: {
+                                ...payload.character,
+                                hp: { ...existingChar.hp }
+                            }
+                        };
+                    }
+                }
+            }
             break;
         }
         case 'CHAT_MESSAGE': {
@@ -493,12 +517,26 @@ io.on('connection', (socket) => {
             if (payload.settings) room.settings = sanitizeRoomSettings(payload.settings);
         }
 
+        let resolvedMemberCharacter = safeCharacter || existingCharacter || null;
+        if (!isAuthenticatedHost && isPlainObject(existingCharacter) && isPlainObject(safeCharacter) && existingCharacter.id === safeCharacter.id) {
+            const existingMod = Number(existingCharacter.lastModified) || 0;
+            const incomingMod = Number(safeCharacter.lastModified) || 0;
+            if (existingMod > incomingMod) {
+                resolvedMemberCharacter = existingCharacter;
+            } else if (isPlainObject(existingCharacter.hp) && !(Number(safeCharacter.level) > Number(existingCharacter.level || 1))) {
+                resolvedMemberCharacter = {
+                    ...safeCharacter,
+                    hp: { ...existingCharacter.hp }
+                };
+            }
+        }
+
         const memberData = {
             socketId: socket.id,
             userId: safeUserId || socket.id,
             playerName: safeName || (isAuthenticatedHost ? 'Mestre' : 'Jogador'),
             isHost: isAuthenticatedHost,
-            character: safeCharacter || existingCharacter || null,
+            character: resolvedMemberCharacter,
             isOnline: true
         };
 

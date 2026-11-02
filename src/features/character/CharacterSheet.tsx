@@ -51,25 +51,36 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
 
     // 4. Dirty Flag (To prevent network updates from triggering auto-save loops)
     const dirtyRef = React.useRef(false);
+    const fastSaveRef = React.useRef(false);
 
-    // Helper to update character and mark as dirty (User Interaction)
-    const setCharacterWithDirty = (update: Character | ((prev: Character) => Character)) => {
-        dirtyRef.current = true;
-        setCharacter(update);
-    };
-
-    // 1. Initial Load
+    // 1. Initial Load (escolhe sempre o registro mais recente entre cache local e estado remoto)
     const [character, setCharacter] = useState<Character>(() => {
-        // FIX: Always try to load from Local Cache first, then initialData fallback (e.g. for GM viewing remote player).
-        const loaded = CharacterRepository.load(characterId) || initialData;
-        if (loaded) return regenerateCharacterStats({ ...initialCharacter, ...loaded });
+        const repoLoaded = CharacterRepository.load(characterId);
+        let chosen = repoLoaded || initialData;
+        if (repoLoaded && initialData) {
+            chosen = (initialData.lastModified || 0) > (repoLoaded.lastModified || 0) ? initialData : repoLoaded;
+        }
+        if (chosen) return regenerateCharacterStats({ ...initialCharacter, ...chosen });
 
         return initialCharacter;
     });
 
-    // FIX: Keep a Ref of the current character for safely accessing it in cleanup functions (unmount/switch)
+    // FIX: Keep a Ref of the current character updated synchronously on user edits for instant close/unmount flush
     const characterRef = React.useRef(character);
     useEffect(() => { characterRef.current = character; }, [character]);
+
+    // Helper to update character and mark as dirty (User Interaction)
+    const setCharacterWithDirty = (update: Character | ((prev: Character) => Character), immediateSave: boolean = false) => {
+        dirtyRef.current = true;
+        if (immediateSave) {
+            fastSaveRef.current = true;
+        }
+        setCharacter(prev => {
+            const next = typeof update === 'function' ? update(prev) : update;
+            characterRef.current = next;
+            return next;
+        });
+    };
 
     // 2. React to ID Change
     useEffect(() => {
@@ -94,12 +105,24 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
     useEffect(() => {
         if (!characterId) return;
 
-        const isMe = myCharacter?.id === characterId;
+        const isMe = !isGM && myCharacter?.id === characterId;
 
         if (isMe) {
-            // 2.5a: Sync ME (From Internal Context)
+            // 2.5a: Sync ME (From Internal Context) — preserva edições em andamento mas adota PV autoritativo do Mestre imediatamente
             if (myCharacter && JSON.stringify(myCharacter) !== JSON.stringify(character)) {
-                setCharacter(regenerateCharacterStats(myCharacter));
+                if (dirtyRef.current) {
+                    if (myCharacter.hp && JSON.stringify(myCharacter.hp) !== JSON.stringify(character.hp)) {
+                        setCharacter(prev => {
+                            const next = regenerateCharacterStats({ ...prev, hp: { ...myCharacter.hp } });
+                            characterRef.current = next;
+                            return next;
+                        });
+                    }
+                } else {
+                    const next = regenerateCharacterStats(myCharacter);
+                    characterRef.current = next;
+                    setCharacter(next);
+                }
             }
         } else {
             // 2.5b: Sync OTHERS (From DB/Peers) - THIS IS FOR GM EDITING
@@ -140,19 +163,31 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
         }
     }, [characterId, connectedPlayersData, myCharacter, isGM]);
 
-    // 3. Force Update / Local Sync (e.g. from TokenSettingsModal or InitiativeTracker)
+    // 3. Force Update / Local Sync (e.g. from TokenSettingsModal, GMScreen or InitiativeTracker)
     useEffect(() => {
         const handleForceUpdate = (e: CustomEvent<Character>) => {
             if (e.detail && e.detail.id === characterId) {
-                setCharacter(regenerateCharacterStats(e.detail));
+                if (dirtyRef.current && !isGM && e.detail.hp) {
+                    setCharacter(prev => {
+                        const next = regenerateCharacterStats({ ...prev, hp: { ...e.detail.hp } });
+                        characterRef.current = next;
+                        return next;
+                    });
+                } else {
+                    const next = regenerateCharacterStats(e.detail);
+                    characterRef.current = next;
+                    setCharacter(next);
+                }
             }
         };
         const handleLocalCharSave = (e: Event) => {
             const detail = (e as CustomEvent<Character>).detail;
             if (!detail || detail.id !== characterId || dirtyRef.current) return;
             const currentMod = characterRef.current?.lastModified || 0;
-            if ((detail.lastModified || 0) > currentMod) {
-                setCharacter(regenerateCharacterStats(detail));
+            if ((detail.lastModified || 0) >= currentMod) {
+                const next = regenerateCharacterStats(detail);
+                characterRef.current = next;
+                setCharacter(next);
             }
         };
         window.addEventListener('character_force_update' as any, handleForceUpdate);
@@ -161,20 +196,20 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
             window.removeEventListener('character_force_update' as any, handleForceUpdate);
             window.removeEventListener('rpg_local_char_save', handleLocalCharSave);
         };
-    }, [characterId]);
+    }, [characterId, isGM]);
 
-    // 4. Auto-Save (Debounced)
+    // 4. Auto-Save (150ms fast-save para PV, 800ms padrão para digitação geral)
     useEffect(() => {
         if (!character.id || character.id !== characterId) return;
 
-        // LOOP FIX: Only save if the change came from USER interaction (dirtyRef)
-        // If it came from network (setCharacter without dirty), ignore.
         if (!dirtyRef.current) return;
 
+        const delayMs = fastSaveRef.current ? 150 : 800;
         const timer = setTimeout(() => {
-            handleSave();
-            dirtyRef.current = false; // Reset dirty after save initiated
-        }, 1000);
+            fastSaveRef.current = false;
+            dirtyRef.current = false;
+            handleSave(characterRef.current);
+        }, delayMs);
 
         return () => clearTimeout(timer);
     }, [character, characterId]);
@@ -183,21 +218,20 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
     const handleSaveRef = React.useRef<((charOverride?: Character) => void) | null>(null);
 
     // FIX: Flush Clean Up (Unmount or ID Switch)
-    // This ensures that if the user closes the modal or switches characters while "dirty", we force-save.
     useEffect(() => {
         return () => {
             if (dirtyRef.current && characterRef.current && handleSaveRef.current) {
                 console.log("[CharacterSheet] Unmount/Switch detected with unsaved changes. Force saving...");
-                handleSaveRef.current(characterRef.current);
                 dirtyRef.current = false;
+                fastSaveRef.current = false;
+                handleSaveRef.current(characterRef.current);
             }
         };
-    }, [characterId]); // Run cleanup when ID changes (or component unmounts)
+    }, [characterId]);
 
     // Helper to determine HOW to save
     const handleSave = (charOverride?: Character) => {
-        const base = charOverride || character;
-        // R1: Atualização imutável do timestamp
+        const base = charOverride || characterRef.current || character;
         const charToSave: Character = {
             ...base,
             lastModified: Date.now()
@@ -209,8 +243,8 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
             return;
         }
 
-        // Identity Check: Am I fixing my own character or someone else's?
-        const isMyCharacter = myCharacter?.id === characterId;
+        const ownerPeer = Object.values(connectedPlayersData).find(p => !p.isHost && p.character?.id === characterId);
+        const isMyCharacter = !isGM && myCharacter?.id === characterId;
 
         if (isGM && !isMyCharacter) {
             // GM VIEWING ANOTHER PLAYER:
@@ -222,9 +256,6 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
 
             // 2. Dispatch Local Event so GM's own MapContext tokens and CombatContext combatants update immediately
             window.dispatchEvent(new CustomEvent('rpg_local_char_save', { detail: charToSave }));
-
-            // 3. Find the owner peer ID and sync over network if connected
-            const ownerPeer = Object.values(connectedPlayersData).find(p => p.character?.id === characterId);
 
             if (ownerPeer) {
                 console.log("[DEBUG SAVE] Found Owner Peer:", ownerPeer.name, ownerPeer.peerId);
@@ -302,12 +333,22 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
     const connectionText = isConnected ? 'Online' : 'Offline';
 
     // --- HANDLERS ---
+    const handleCloseSheet = () => {
+        if (dirtyRef.current && characterRef.current) {
+            dirtyRef.current = false;
+            fastSaveRef.current = false;
+            handleSave(characterRef.current);
+        }
+        if (onExit) onExit();
+    };
+
     const updateCharacter = (updates: Partial<Character>) => {
         let sanitizedUpdates = updates;
+        const currentSnap = characterRef.current || character;
         if (!isGM && updates.hp) {
             // Permite apenas recuperação de 1 PV em 20 Natural no teste contra a morte ou durante Level Up
-            const isReviveFromZero = character.hp.current === 0 && updates.hp.current === 1;
-            const isLevelUp = Boolean(character.pendingLevelUp);
+            const isReviveFromZero = currentSnap.hp.current === 0 && updates.hp.current === 1;
+            const isLevelUp = Boolean(currentSnap.pendingLevelUp);
             if (!isReviveFromZero && !isLevelUp) {
                 console.warn('[CharacterSheet] Bloqueada tentativa de alteração de PV pelo jogador:', updates.hp);
                 const { hp: _blockedHp, ...rest } = updates;
@@ -315,11 +356,11 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
             }
         }
 
-        // Safe update with regen
+        const isHpChange = Boolean(sanitizedUpdates.hp);
         setCharacterWithDirty(prev => {
             const next = regenerateCharacterStats({ ...prev, ...sanitizedUpdates });
             return next;
-        });
+        }, isHpChange);
     };
 
     const handleEquipToggle = (itemId: string, equipped: boolean) => {
@@ -813,13 +854,15 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
                         />
                         <button className="btn-save" onClick={() => {
                             setSaveStatus('saving');
-                            handleSave();
+                            dirtyRef.current = false;
+                            fastSaveRef.current = false;
+                            handleSave(characterRef.current);
                             setTimeout(() => setSaveStatus('saved'), 500);
                             alert("Salvo!");
                         }} title="Salvar Ficha">
                             <Save size={16} />
                         </button>
-                        <button className="btn-exit" onClick={onExit} title="Fechar Ficha">
+                        <button className="btn-exit" onClick={handleCloseSheet} title="Fechar Ficha">
                             <X size={16} />
                         </button>
                     </div>
@@ -856,15 +899,21 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
                                 console.warn('[CharacterSheet] Apenas o Mestre (GM) pode alterar o PV.');
                                 return;
                             }
-                            updateCharacter({ hp: { ...character.hp, current: curr, temp: temp } });
-                        }, [character.hp, isGM])}
+                            setCharacterWithDirty(prev => regenerateCharacterStats({
+                                ...prev,
+                                hp: { ...prev.hp, current: curr, temp }
+                            }), true);
+                        }, [isGM])}
                         onUpdateMaxHP={React.useCallback((max: number) => {
                             if (!isGM) {
                                 console.warn('[CharacterSheet] Apenas o Mestre (GM) pode alterar o PV Máximo.');
                                 return;
                             }
-                            updateCharacter({ hp: { ...character.hp, max: max } });
-                        }, [character.hp, isGM])}
+                            setCharacterWithDirty(prev => regenerateCharacterStats({
+                                ...prev,
+                                hp: { ...prev.hp, max: Math.max(1, max) }
+                            }), true);
+                        }, [isGM])}
                         onUpdateAC={React.useCallback((ac: number) => updateCharacter({ armorClass: ac, acOverride: ac }), [])}
 
                         onRollAttack={(name, bonus) => handleRoll(name, bonus)}

@@ -246,6 +246,53 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
         }
     }, []);
 
+    /**
+     * Reconcilia ficha recebida de um jogador com o estado autoritativo salvo no Mestre.
+     * Impede que reconexões ou auto-saves atrasados do cliente revertam o PV ou edições offline feitas pelo Mestre.
+     */
+    const reconcilePlayerCharacterOnHost = useCallback((
+        incomingChar: Character,
+        advIdOverride?: string | null
+    ): { char: Character; needsPushToPlayer: boolean } => {
+        const hostSaved = CharacterRepository.load(incomingChar.id);
+        if (!hostSaved) {
+            mirrorPlayerCharacterForHost(incomingChar, advIdOverride);
+            return { char: incomingChar, needsPushToPlayer: false };
+        }
+
+        const hostMod = hostSaved.lastModified || 0;
+        const incMod = incomingChar.lastModified || 0;
+
+        if (hostMod > incMod) {
+            return { char: hostSaved, needsPushToPlayer: true };
+        }
+
+        const isLevelUpGain = (incomingChar.level || 1) > (hostSaved.level || 1);
+        const isNat20Revive = (hostSaved.hp?.current ?? 0) <= 0
+            && incomingChar.hp?.current === 1
+            && (incomingChar.deathSaves?.successes ?? 0) === 0
+            && (incomingChar.deathSaves?.failures ?? 0) === 0;
+
+        if (!isLevelUpGain && !isNat20Revive && hostSaved.hp) {
+            const hpDiffers = hostSaved.hp.current !== incomingChar.hp?.current
+                || hostSaved.hp.max !== incomingChar.hp?.max
+                || (hostSaved.hp.temp || 0) !== (incomingChar.hp?.temp || 0);
+
+            if (hpDiffers) {
+                const merged: Character = {
+                    ...incomingChar,
+                    hp: { ...hostSaved.hp },
+                    lastModified: Date.now()
+                };
+                mirrorPlayerCharacterForHost(merged, advIdOverride);
+                return { char: merged, needsPushToPlayer: true };
+            }
+        }
+
+        mirrorPlayerCharacterForHost(incomingChar, advIdOverride);
+        return { char: incomingChar, needsPushToPlayer: false };
+    }, [mirrorPlayerCharacterForHost]);
+
     const scheduleHostReconnectedSync = useCallback(() => {
         clearHostReconnectSyncTimer();
         hostReconnectSyncTimerRef.current = setTimeout(() => {
@@ -323,23 +370,61 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
         if (state.members && Array.isArray(state.members)) {
             const mapped: Record<string, any> = {};
+            const pendingHostPushes: Array<{ peerId: string; char: Character }> = [];
+
             state.members.forEach((m: any) => {
+                let effectiveChar = m.character;
+                if (forHost && !m.isHost && m.character) {
+                    const reconciled = reconcilePlayerCharacterOnHost(m.character, roomAdvId);
+                    effectiveChar = reconciled.char;
+                    if (reconciled.needsPushToPlayer && m.userId) {
+                        pendingHostPushes.push({ peerId: m.userId, char: reconciled.char });
+                    }
+                }
                 mapped[m.userId] = {
                     name: m.playerName,
-                    character: m.character,
+                    character: effectiveChar,
                     peerId: m.userId,
                     isOnline: m.isOnline,
                     isHost: !!m.isHost
                 };
-                if (forHost && !m.isHost && m.character) {
-                    mirrorPlayerCharacterForHost(m.character, roomAdvId);
-                }
             });
             setConnectedPlayersData(mapped);
 
-            if (mapped[myId]?.character && !myCharacterRef.current) {
-                myCharacterRef.current = mapped[myId].character;
-                setMyCharacter(mapped[myId].character);
+            if (pendingHostPushes.length > 0 && socketRef.current && roomAdvId) {
+                pendingHostPushes.forEach(({ peerId: targetId, char }) => {
+                    socketRef.current?.emit('peer_message', {
+                        roomId: roomAdvId,
+                        message: JSON.parse(JSON.stringify({
+                            type: 'PLAYER_UPDATE',
+                            payload: { playerName: char.name, character: char, peerId: targetId }
+                        }))
+                    });
+                });
+            }
+
+            const serverMeChar = mapped[myId]?.character;
+            if (serverMeChar && !forHost) {
+                const localChar = myCharacterRef.current;
+                if (!localChar || localChar.id !== serverMeChar.id) {
+                    myCharacterRef.current = serverMeChar;
+                    setMyCharacter(serverMeChar);
+                    CharacterRepository.save(serverMeChar);
+                    window.dispatchEvent(new CustomEvent('rpg_local_char_save', { detail: serverMeChar }));
+                } else {
+                    const serverNewer = (serverMeChar.lastModified || 0) >= (localChar.lastModified || 0);
+                    const hpChanged = JSON.stringify(serverMeChar.hp) !== JSON.stringify(localChar.hp);
+                    if (serverNewer || hpChanged) {
+                        const mergedMe: Character = serverNewer
+                            ? serverMeChar
+                            : { ...localChar, hp: { ...serverMeChar.hp } };
+                        myCharacterRef.current = mergedMe;
+                        setMyCharacter(mergedMe);
+                        CharacterRepository.save(mergedMe);
+                        window.dispatchEvent(new CustomEvent('rpg_local_char_save', { detail: mergedMe }));
+                        window.dispatchEvent(new CustomEvent('character_force_update', { detail: mergedMe }));
+                    }
+                }
             }
         }
 
@@ -358,7 +443,7 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
         if (state.gameState) {
             applyGameState(state.gameState, forHost);
         }
-    }, [myId, applyGameState, mirrorPlayerCharacterForHost]);
+    }, [myId, applyGameState, reconcilePlayerCharacterOnHost]);
 
     // Disconnect & timer cleanup on unmount
     useEffect(() => {
@@ -552,14 +637,25 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
         socket.on('player_joined', (member) => {
             console.log('[Socket] Player joined:', member.playerName);
+            let joinedChar = member.character || null;
             if (isHostRef.current && !member.isHost && member.character) {
-                mirrorPlayerCharacterForHost(member.character);
+                const reconciled = reconcilePlayerCharacterOnHost(member.character);
+                joinedChar = reconciled.char;
+                if (reconciled.needsPushToPlayer && currentAdventureIdRef.current) {
+                    socket.emit('peer_message', {
+                        roomId: currentAdventureIdRef.current,
+                        message: JSON.parse(JSON.stringify({
+                            type: 'PLAYER_UPDATE',
+                            payload: { playerName: joinedChar.name, character: joinedChar, peerId: member.userId }
+                        }))
+                    });
+                }
             }
             setConnectedPlayersData(prev => ({
                 ...prev,
                 [member.userId]: {
                     name: member.playerName,
-                    character: member.character || prev[member.userId]?.character || null,
+                    character: joinedChar || prev[member.userId]?.character || null,
                     peerId: member.userId,
                     isOnline: true,
                     isHost: !!member.isHost
@@ -593,8 +689,6 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
                 return;
             }
 
-            dispatchPeerMessageLocally(msg);
-
             // Handle PLAYER_UPDATE: update connectedPlayersData, mirror on Host DB, and update local myCharacter if targeted
             if (msg.type === 'PLAYER_UPDATE') {
                 const targetPeerId = msg.payload.peerId;
@@ -608,10 +702,36 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
                     return;
                 }
 
-                // Espelha a ficha do jogador no IndexedDB do Mestre para entrar nos Backups .json da campanha
-                if (isHostRef.current && msg.payload.character) {
-                    mirrorPlayerCharacterForHost(msg.payload.character);
+                let effectiveCharacter = msg.payload.character;
+
+                // Reconcilia e espelha a ficha no IndexedDB do Mestre sem deixar o cliente reverter o PV autoritativo
+                if (isHostRef.current && effectiveCharacter) {
+                    if (!senderIsHost) {
+                        const reconciled = reconcilePlayerCharacterOnHost(effectiveCharacter);
+                        effectiveCharacter = reconciled.char;
+                        if (reconciled.needsPushToPlayer && currentAdventureIdRef.current) {
+                            socket.emit('peer_message', {
+                                roomId: currentAdventureIdRef.current,
+                                message: JSON.parse(JSON.stringify({
+                                    type: 'PLAYER_UPDATE',
+                                    payload: {
+                                        playerName: effectiveCharacter.name,
+                                        character: effectiveCharacter,
+                                        peerId: targetPeerId
+                                    }
+                                }))
+                            });
+                        }
+                    } else {
+                        mirrorPlayerCharacterForHost(effectiveCharacter);
+                    }
                 }
+
+                const reconciledMsg: PeerMessage = effectiveCharacter !== msg.payload.character
+                    ? { ...msg, payload: { ...msg.payload, character: effectiveCharacter } }
+                    : msg;
+
+                dispatchPeerMessageLocally(reconciledMsg);
 
                 // 1. Update list of player data for GM and peers (cria entrada caso ainda não exista)
                 setConnectedPlayersData(prev => {
@@ -621,7 +741,7 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
                             ...prev,
                             [targetPeerId]: {
                                 ...existing,
-                                character: msg.payload.character,
+                                character: effectiveCharacter,
                                 name: msg.payload.playerName || existing.name
                             }
                         };
@@ -629,28 +749,36 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
                     return {
                         ...prev,
                         [targetPeerId]: {
-                            name: msg.payload.playerName || msg.payload.character?.name || 'Jogador',
-                            character: msg.payload.character,
+                            name: msg.payload.playerName || effectiveCharacter?.name || 'Jogador',
+                            character: effectiveCharacter,
                             peerId: targetPeerId,
                             isOnline: true
                         }
                     };
                 });
 
+                if (isHostRef.current && effectiveCharacter) {
+                    window.dispatchEvent(new CustomEvent('rpg_local_char_save', { detail: effectiveCharacter }));
+                }
+
                 // 2. Update myCharacter if this update was aimed at me (APENAS se veio do Mestre!)
-                // Se foi edição local minha, já salvamos no momento da edição. Evita que outro jogador sobrescreva minha ficha.
-                const isForMe = targetPeerId === myId || (myCharacterRef.current && msg.payload.character?.id === myCharacterRef.current.id);
-                if (isForMe && msg.payload.character && senderIsHost) {
-                    console.log('[Socket] Updating local character from remote PLAYER_UPDATE (from GM):', msg.payload.character.name);
-                    myCharacterRef.current = msg.payload.character;
-                    setMyCharacter(msg.payload.character);
+                const isForMe = targetPeerId === myId || (myCharacterRef.current && effectiveCharacter?.id === myCharacterRef.current.id);
+                if (isForMe && effectiveCharacter && senderIsHost) {
+                    console.log('[Socket] Updating local character from remote PLAYER_UPDATE (from GM):', effectiveCharacter.name);
+                    myCharacterRef.current = effectiveCharacter;
+                    setMyCharacter(effectiveCharacter);
                     try {
-                        CharacterRepository.save(msg.payload.character);
+                        CharacterRepository.save(effectiveCharacter);
                     } catch (e) {
                         console.error('[Socket] Error saving remote character update:', e);
                     }
+                    window.dispatchEvent(new CustomEvent('rpg_local_char_save', { detail: effectiveCharacter }));
+                    window.dispatchEvent(new CustomEvent('character_force_update', { detail: effectiveCharacter }));
                 }
+                return;
             }
+
+            dispatchPeerMessageLocally(msg);
         });
 
         socket.on('player_kicked', (data: { reason?: string }) => {
@@ -702,7 +830,7 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
         });
 
         return socket;
-    }, [myId, handleRoomState, dispatchPeerMessageLocally, clearRejoinTimer, clearHostReconnectSyncTimer, mirrorPlayerCharacterForHost]);
+    }, [myId, handleRoomState, dispatchPeerMessageLocally, clearRejoinTimer, clearHostReconnectSyncTimer, mirrorPlayerCharacterForHost, reconcilePlayerCharacterOnHost]);
 
     const reconnectNow = useCallback(() => {
         console.log('[Socket] Reconexão manual solicitada.');

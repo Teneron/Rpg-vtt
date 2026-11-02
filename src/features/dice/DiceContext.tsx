@@ -1,13 +1,24 @@
 import React, { createContext, useContext, useState, useRef, useEffect, type ReactNode } from 'react';
 import { useRollHistory } from './RollHistoryContext';
 import { useChat } from '../chat/ChatContext';
+import { getRandomDieValue } from './PhysicsDie';
+
+export interface DiceRollResult {
+    total: number;
+    breakdown: number[];
+    modifier: number;
+}
 
 interface DiceState {
-    rollingDice: Array<{ id: string, type: string, value: number, position?: [number, number, number] }>;
-    // Enhanced Roll Result Type
-    rollResult: { total: number, breakdown: number[], modifier: number } | null;
+    rollingDice: Array<{ id: string; type: string; value: number; position?: [number, number, number] }>;
+    rollResult: DiceRollResult | null;
     isRolling: boolean;
-    triggerRoll: (selectedDice: Record<string, number>, modifier: number, label?: string) => void;
+    triggerRoll: (
+        selectedDice: Record<string, number>,
+        modifier: number,
+        label?: string,
+        onComplete?: (result: DiceRollResult) => void
+    ) => void;
     finishRoll: (results: Record<string, number>) => void;
     clearDice: () => void;
 }
@@ -16,13 +27,11 @@ const DiceContext = createContext<DiceState | undefined>(undefined);
 
 export const DiceProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     const { addRoll } = useRollHistory();
-    // Safe chat usage (optional chaining in case of nesting issues, but App.tsx structure confirms it's ok)
-    // Actually, wrap in try/catch or just assume it's there.
     const chat = useChat();
     const sendMessage = chat.sendMessage;
 
-    const [rollingDice, setRollingDice] = useState<Array<{ id: string, type: string, value: number, position?: [number, number, number] }>>([]);
-    const [rollResult, setRollResult] = useState<{ total: number, breakdown: number[], modifier: number } | null>(null);
+    const [rollingDice, setRollingDice] = useState<Array<{ id: string; type: string; value: number; position?: [number, number, number] }>>([]);
+    const [rollResult, setRollResult] = useState<DiceRollResult | null>(null);
     const [isRolling, setIsRolling] = useState<boolean>(false);
     const [lastModifier, setLastModifier] = useState<number>(0);
     const [lastLabel, setLastLabel] = useState<string>('');
@@ -30,63 +39,77 @@ export const DiceProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const rollingDiceRef = useRef(rollingDice);
     const lastModifierRef = useRef(lastModifier);
     const lastLabelRef = useRef(lastLabel);
+    const onCompleteRef = useRef<((result: DiceRollResult) => void) | null>(null);
+
     useEffect(() => { rollingDiceRef.current = rollingDice; }, [rollingDice]);
     useEffect(() => { lastModifierRef.current = lastModifier; }, [lastModifier]);
     useEffect(() => { lastLabelRef.current = lastLabel; }, [lastLabel]);
 
     // Safety Ref to clear timeout if roll finishes early
-    const failsafeTimer = useRef<NodeJS.Timeout | null>(null);
+    const failsafeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     // Cleanup Ref to prevent old roll cleanups from killing new rolls
-    const cleanupTimer = useRef<NodeJS.Timeout | null>(null);
+    const cleanupTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     // Duplicate Prevention Ref
     const processingRef = useRef(false);
 
-    // Debug Wrapper for State Updates
-    const updateRollingDice = (newDice: any[]) => {
-        console.log(`[DiceContext] setRollingDice called with ${newDice.length} dice.`);
-        if (newDice.length === 0) console.trace("Trace for Empty Dice Set:");
+    const updateRollingDice = (newDice: Array<{ id: string; type: string; value: number; position?: [number, number, number] }>) => {
+        rollingDiceRef.current = newDice;
         setRollingDice(newDice);
-    }
+    };
 
     const finishRoll = React.useCallback((results: Record<string, number>) => {
-        // Prevent double-firing
         if (processingRef.current) {
-            console.warn("[DiceContext] finishRoll called but already processed. Ignoring.");
+            console.warn('[DiceContext] finishRoll called but already processed. Ignoring.');
             return;
         }
-        processingRef.current = true; // Lock
+        processingRef.current = true;
 
-        console.log("[DiceContext] finishRoll called with results:", results);
+        console.log('[DiceContext] finishRoll called with results:', results);
         setIsRolling(false);
         if (failsafeTimer.current) { clearTimeout(failsafeTimer.current); failsafeTimer.current = null; }
         if (cleanupTimer.current) { clearTimeout(cleanupTimer.current); cleanupTimer.current = null; }
 
-        const breakdown = Object.values(results);
-        const diceTotal = breakdown.reduce((a, b) => a + b, 0);
+        const currentDice = rollingDiceRef.current;
+        const orderedBreakdown = currentDice.length > 0
+            ? currentDice.map(d => (results[d.id] !== undefined ? results[d.id] : getRandomDieValue(d.type)))
+            : Object.values(results);
 
-        // Ignore Empty/Zero rolls (Ghost Roll Fix)
-        if (diceTotal === 0 && breakdown.length === 0) {
-            console.warn("[DiceContext] Roll finished with 0 total (Empty?). Ignoring.");
+        const diceTotal = orderedBreakdown.reduce((a, b) => a + b, 0);
+
+        if (orderedBreakdown.length === 0) {
+            console.warn('[DiceContext] Roll finished with empty dice list. Ignoring.');
             return;
         }
 
         const modifier = lastModifierRef.current;
         const label = lastLabelRef.current;
-        const currentDice = rollingDiceRef.current;
         const finalTotal = diceTotal + modifier;
+        const finalResult: DiceRollResult = { total: finalTotal, breakdown: orderedBreakdown, modifier };
 
-        setRollResult({ total: finalTotal, breakdown, modifier });
+        setRollResult(finalResult);
 
-        const formulaStr = breakdown.length > 1
-            ? `${breakdown.join(' + ')} + ${modifier}`
-            : `${currentDice[0]?.type || 'd20'} + ${modifier}`;
+        // Executa callback vinculado (ex: Descanso Curto ou Teste contra a Morte) com o resultado exato do dado 3D
+        const completionCallback = onCompleteRef.current;
+        onCompleteRef.current = null;
+        if (completionCallback) {
+            try {
+                completionCallback(finalResult);
+            } catch (cbErr) {
+                console.error('[DiceContext] Error in onComplete callback:', cbErr);
+            }
+        }
+
+        const modSuffix = modifier === 0 ? '' : (modifier > 0 ? ` + ${modifier}` : ` - ${Math.abs(modifier)}`);
+        const formulaStr = orderedBreakdown.length > 1
+            ? `${orderedBreakdown.join(' + ')}${modSuffix}`
+            : `${currentDice[0]?.type || 'd20'} (${orderedBreakdown[0]})${modSuffix}`;
 
         const rollData = {
-            id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            id: `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
             total: finalTotal,
             formula: formulaStr,
-            rolls: breakdown,
-            dice: currentDice.map(d => ({ ...d, value: results[d.id] || 0 })),
+            rolls: orderedBreakdown,
+            dice: currentDice.map((d, idx) => ({ ...d, value: orderedBreakdown[idx] ?? 0 })),
             modifier,
             label,
             timestamp: Date.now()
@@ -94,7 +117,6 @@ export const DiceProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
         addRoll(rollData);
 
-        // SEND TO CHAT
         if (sendMessage) {
             sendMessage(JSON.stringify({
                 total: finalTotal,
@@ -104,15 +126,12 @@ export const DiceProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             }), 'roll');
         }
 
-        // BROADCAST TO PEERS (For History Sync)
         const broadcastEvent = new CustomEvent('rpg_broadcast_roll', {
             detail: JSON.parse(JSON.stringify(rollData))
         });
         window.dispatchEvent(broadcastEvent);
 
-        // Clear dice after 8 seconds (Visual Cleanup) - Tracked!
         cleanupTimer.current = setTimeout(() => {
-            console.log("[DiceContext] Cleanup Timer fired. Clearing dice.");
             updateRollingDice([]);
             cleanupTimer.current = null;
         }, 8000);
@@ -124,22 +143,14 @@ export const DiceProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             const msg = e.detail;
             if (msg.type === 'ROLL_RESULT') {
                 const { playerName, roll } = msg.payload;
-                console.log("[DiceContext] Received Remote Roll:", roll);
-
-                // Filter invalid ghost rolls
-                if (!roll || roll.total === 0) {
-                    console.warn("[DiceContext] Received invalid/empty roll from peer. Ignoring.");
+                if (!roll || (roll.total === 0 && (!Array.isArray(roll.rolls) || roll.rolls.length === 0))) {
                     return;
                 }
 
-                // Add to history with a name tag?
-                // RollHistoryContext might need updating to support 'playerName', 
-                // OR we just inject it into the roll object for now.
                 addRoll({
                     ...roll,
-                    // CRITICAL FIX: Use original ID to allow de-duplication in HistoryContext
                     id: roll.id || `remote-${Date.now()}-${Math.random()}`,
-                    playerName: playerName
+                    playerName
                 });
             }
         };
@@ -156,43 +167,57 @@ export const DiceProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         };
     }, []);
 
-    const triggerRoll = React.useCallback((selectedDice: Record<string, number>, modifier: number, label?: string) => {
-        console.log("[DiceContext] triggerRoll called. Dice:", selectedDice, "Mod:", modifier, "Label:", label);
+    const triggerRoll = React.useCallback((
+        selectedDice: Record<string, number>,
+        modifier: number,
+        label?: string,
+        onComplete?: (result: DiceRollResult) => void
+    ) => {
+        console.log('[DiceContext] triggerRoll called. Dice:', selectedDice, 'Mod:', modifier, 'Label:', label);
         setRollResult(null);
         setIsRolling(true);
+        lastModifierRef.current = modifier;
+        lastLabelRef.current = label || '';
+        onCompleteRef.current = onComplete || null;
         setLastModifier(modifier);
-        // Store label in a ref or state if needed, but for now lets just capture it in the closure if possible?
-        // Actually, finishRoll is a callback that needs access to it. 
-        // We should add 'lastLabel' state.
         setLastLabel(label || '');
 
-        processingRef.current = false; // Reset Lock
+        processingRef.current = false;
 
         if (failsafeTimer.current) clearTimeout(failsafeTimer.current);
 
-        // CRITICAL FIX: Ensure previous cleanup is cancelled so it doesn't kill THIS roll.
         if (cleanupTimer.current) {
-            console.log(`[DiceContext] Cancelling cleanup timer (ID: ${cleanupTimer.current}) before starting new roll.`);
             clearTimeout(cleanupTimer.current);
             cleanupTimer.current = null;
         }
 
-        const newRolls: Array<{ id: string, type: string, value: number, position?: [number, number, number] }> = [];
+        const newRolls: Array<{ id: string; type: string; value: number; position?: [number, number, number] }> = [];
         let index = 0;
 
-        Object.entries(selectedDice).forEach(([type, count]) => {
+        const pushSingleDie = (dieType: string) => {
+            index++;
+            newRolls.push({
+                id: Math.random().toString(36).slice(2, 11),
+                type: dieType,
+                value: 0,
+                position: [
+                    9 + (Math.random() * 0.5),
+                    5 + (index * 0.5),
+                    (Math.random() - 0.5) * 4
+                ]
+            });
+        };
+
+        Object.entries(selectedDice).forEach(([rawType, count]) => {
+            const cleanType = rawType.toLowerCase();
             for (let i = 0; i < count; i++) {
-                index++;
-                newRolls.push({
-                    id: Math.random().toString(36).substr(2, 9),
-                    type,
-                    value: 0,
-                    position: [
-                        9 + (Math.random() * 0.5),     // X
-                        5 + (index * 0.5),             // Y
-                        (Math.random() - 0.5) * 4      // Z
-                    ]
-                });
+                if (cleanType === 'd100') {
+                    // d100 real: dezena (00..90) + unidade (1..10) = distribuição uniforme exata de 1 a 100
+                    pushSingleDie('d100_tens');
+                    pushSingleDie('d10');
+                } else {
+                    pushSingleDie(cleanType);
+                }
             }
         });
 
@@ -200,23 +225,23 @@ export const DiceProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             updateRollingDice(newRolls);
 
             failsafeTimer.current = setTimeout(() => {
-                console.warn("DiceContext Failsafe Triggered: Rolling timed out (20s).");
-                setIsRolling(false);
-                updateRollingDice([]);
-                setRollResult({ total: 0, breakdown: [], modifier: modifier });
-            }, 20000);
-
+                console.warn('[DiceContext] Failsafe Triggered: Rolling timed out (12s). Resolving safely.');
+                const fallbackMap: Record<string, number> = {};
+                rollingDiceRef.current.forEach(d => {
+                    fallbackMap[d.id] = getRandomDieValue(d.type);
+                });
+                finishRoll(fallbackMap);
+            }, 12000);
         } else {
             setIsRolling(false);
+            onCompleteRef.current = null;
         }
-    }, []);
+    }, [finishRoll]);
 
     const clearDice = React.useCallback(() => {
-        console.log("[DiceContext] ClearDice called.");
         updateRollingDice([]);
     }, []);
 
-    // Memoize the value to prevent unnecessary re-renders of consumers
     const value = React.useMemo(() => ({
         rollingDice, rollResult, isRolling, triggerRoll, finishRoll, clearDice
     }), [rollingDice, rollResult, isRolling, triggerRoll, finishRoll, clearDice]);

@@ -155,6 +155,9 @@ export const Soundboard: React.FC = () => {
                     <button onClick={() => playSfx({ id: 'sfx-arrow', title: 'Flecha', url: '/assets/sfx/arrow.ogg', type: 'sfx', volume: 0.8 })} className="sfx-btn" title="Disparo à Distância">
                         <Crosshair size={13} /> <span>Flecha</span>
                     </button>
+                    <button onClick={() => playSfx({ id: 'sfx-desmoronamento', title: 'Desmoronamento', url: '/assets/sfx/desmoronamento.wav', type: 'sfx', volume: 0.9 })} className="sfx-btn" style={{ borderColor: '#ea580c', color: '#fed7aa' }} title="Desmoronamento / Terremoto">
+                        <Flame size={13} color="#f97316" /> <span>Desabar</span>
+                    </button>
                     <button onClick={() => playSfx({ id: 'sfx-explosion', title: 'Explosão', url: '/assets/sfx/explosion.mp3', type: 'sfx', volume: 0.8 })} className="sfx-btn" title="Impacto Explosivo / Fogo">
                         <Flame size={13} /> <span>Explosão</span>
                     </button>

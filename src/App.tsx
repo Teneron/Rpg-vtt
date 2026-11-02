@@ -350,21 +350,34 @@ function AppContent() {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, [viewMode]);
 
-  // AUTO-SYNC FIX: When character is selected, announce it to the room
+  // AUTO-SYNC FIX: Apenas jogadores anunciam sua própria ficha selecionada (Mestre nunca adota ficha de jogador como myCharacter!)
   const { updateMyCharacter, broadcastCharacterUpdate } = usePeer();
   useEffect(() => {
-    if (selectedCharacterId && isConnected) {
-      // Dynamically load repo to avoid cyclic dependencies if any
+    if (selectedCharacterId && isConnected && !isHost) {
       import('./features/character/characterRepository').then(async ({ CharacterRepository }) => {
         const char = await CharacterRepository.loadAsync(selectedCharacterId);
         if (char) {
+          const serverEntry = peerId ? connectedPlayersData[peerId]?.character : null;
+          if (serverEntry && serverEntry.id === char.id) {
+            const serverMod = serverEntry.lastModified || 0;
+            const localMod = char.lastModified || 0;
+            if (serverMod >= localMod) {
+              updateMyCharacter(serverEntry);
+              CharacterRepository.save(serverEntry);
+              return;
+            }
+            const syncedChar = serverEntry.hp ? { ...char, hp: { ...serverEntry.hp } } : char;
+            updateMyCharacter(syncedChar);
+            broadcastCharacterUpdate(syncedChar);
+            return;
+          }
           console.log("Auto-Syncing Character:", char.name);
           updateMyCharacter(char);
           broadcastCharacterUpdate(char);
         }
       });
     }
-  }, [selectedCharacterId, isConnected]);
+  }, [selectedCharacterId, isConnected, isHost, peerId]);
 
   // Event Listener for "Open Sheet" request (from GM Token Modal)
   useEffect(() => {

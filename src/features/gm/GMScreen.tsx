@@ -221,7 +221,11 @@ export const GMScreen: React.FC = () => {
     React.useEffect(() => {
         const handleUpdate = () => setCacheVersion(v => v + 1);
         window.addEventListener('rpg_characters_updated', handleUpdate);
-        return () => window.removeEventListener('rpg_characters_updated', handleUpdate);
+        window.addEventListener('rpg_local_char_save', handleUpdate);
+        return () => {
+            window.removeEventListener('rpg_characters_updated', handleUpdate);
+            window.removeEventListener('rpg_local_char_save', handleUpdate);
+        };
     }, []);
 
     // Consulta reativa em tempo real de todas as fichas persistidas no banco IndexedDB (Dexie)
@@ -234,7 +238,7 @@ export const GMScreen: React.FC = () => {
     const players = React.useMemo(() => {
         const livePlayers = Object.values(connectedPlayersData).filter(p => p.peerId !== peerId && !p.isHost);
 
-        // Agrupa todas as fichas persistidas em Dexie e no cache de CharacterRepository
+        // Agrupa todas as fichas persistidas em Dexie e no cache síncrono de CharacterRepository (priorizando o mais recente)
         const storedMap = new Map<string, Character>();
         dbCharacters.forEach(c => {
             if (c && c.id) storedMap.set(c.id, c);
@@ -242,9 +246,11 @@ export const GMScreen: React.FC = () => {
 
         const summaries = CharacterRepository.listAll('', currentAdventureId || 'default');
         summaries.forEach(s => {
-            if (!storedMap.has(s.id)) {
-                const loaded = CharacterRepository.load(s.id);
-                if (loaded) storedMap.set(loaded.id, loaded);
+            const loaded = CharacterRepository.load(s.id);
+            if (!loaded) return;
+            const existingStored = storedMap.get(s.id);
+            if (!existingStored || (loaded.lastModified || 0) >= (existingStored.lastModified || 0)) {
+                storedMap.set(loaded.id, loaded);
             }
         });
 
@@ -279,13 +285,13 @@ export const GMScreen: React.FC = () => {
             };
         });
 
-        // 2. Fichas salvas no banco da campanha (IndexedDB / Dexie)
+        // 2. Fichas salvas no banco da campanha (IndexedDB / Dexie) - usa a versão mais recente se editada localmente pelo Mestre
         campaignStoredChars.forEach(char => {
             if (!char || !char.id) return;
             const existing = deduplicatedMap[char.id];
             if (existing) {
                 existing.isStored = true;
-                if (!existing.character) {
+                if (!existing.character || (char.lastModified || 0) > (existing.character.lastModified || 0)) {
                     existing.character = char;
                 }
             } else {
@@ -348,20 +354,32 @@ export const GMScreen: React.FC = () => {
         if (!p.character) return;
         const currentHp = p.character.hp?.current ?? 0;
         const maxHp = p.character.hp?.max ?? 1;
-        const newCurrent = Math.max(0, Math.min(maxHp, currentHp + delta));
+        let newTemp = p.character.hp?.temp ?? 0;
+        let hpDelta = delta;
+        if (delta < 0 && newTemp > 0) {
+            const absorbed = Math.min(newTemp, -delta);
+            newTemp -= absorbed;
+            hpDelta += absorbed;
+        }
+        const newCurrent = Math.max(0, Math.min(maxHp, currentHp + hpDelta));
+        const now = Date.now();
         const updatedChar: Character = {
             ...p.character,
             hp: {
                 ...p.character.hp,
                 current: newCurrent,
-                max: maxHp
+                max: maxHp,
+                temp: newTemp
             },
-            lastModified: Date.now()
+            lastModified: now
         };
 
-        // 1. Salva imediatamente no banco persistente da campanha (Dexie & Cache)
+        // 1. Salva imediatamente no banco persistente da campanha (Dexie & Cache) e marca autoria do Mestre
+        sessionStorage.setItem(`last_gm_edit_${updatedChar.id}`, now.toString());
         CharacterRepository.save(updatedChar);
         db.characters.put(updatedChar).catch(console.error);
+        window.dispatchEvent(new CustomEvent('rpg_local_char_save', { detail: updatedChar }));
+        setCacheVersion(v => v + 1);
 
         // 2. Sincroniza a ficha remota do jogador se estiver conectado
         if (p.peerId && !p.peerId.startsWith('db_')) {
@@ -373,7 +391,7 @@ export const GMScreen: React.FC = () => {
             tokens.forEach(t => {
                 if (t.characterId === p.character?.id) {
                     updateToken(t.id, {
-                        hp: { current: newCurrent, max: maxHp }
+                        hp: { current: newCurrent, max: maxHp, temp: newTemp }
                     });
                 }
             });
@@ -384,7 +402,7 @@ export const GMScreen: React.FC = () => {
             combatState.combatants.forEach(c => {
                 if (c.characterId === p.character?.id) {
                     updateCombatant(c.id, {
-                        hp: { current: newCurrent, max: maxHp }
+                        hp: { current: newCurrent, max: maxHp, temp: newTemp }
                     });
                 }
             });

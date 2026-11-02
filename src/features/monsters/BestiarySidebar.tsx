@@ -1,10 +1,12 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { MonsterRepository } from './MonsterRepository';
 import type { Monster } from './monsterTypes';
 import { useCombat } from '../combat/CombatContext';
+import { useMap } from '../map/MapContext';
 import { MonsterEditor } from './MonsterEditor';
 import { MonsterDetailsModal } from './MonsterDetailsModal';
-import { Edit2, Trash2, Swords, Move, Info } from 'lucide-react';
+import { compressTokenImage } from '../../utils/imageUtils';
+import { Edit2, Trash2, Swords, Move, Info, Camera, MapPin } from 'lucide-react';
 
 import { usePeer } from '../multiplayer/SocketContext';
 import { useAdventure } from '../adventure/AdventureContext';
@@ -28,6 +30,8 @@ const normalizeSystem = (sys?: string | null): string => {
 export const BestiarySidebar: React.FC = () => {
     const { roomSystem, currentAdventureId } = usePeer();
     const { currentAdventure } = useAdventure();
+    const { tokens, addToken, updateToken, config } = useMap();
+    const { addCombatant, combatState, updateCombatant } = useCombat();
 
     const effectiveAdventureId = currentAdventureId || currentAdventure?.id || null;
 
@@ -43,14 +47,15 @@ export const BestiarySidebar: React.FC = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [filterSource, setFilterSource] = useState<string>('All');
     const [sortBy, setSortBy] = useState<'Name' | 'CR'>('Name');
-    const { addCombatant } = useCombat();
     const [editingMonster, setEditingMonster] = useState<Monster | null | undefined>(undefined);
     const [viewingMonster, setViewingMonster] = useState<Monster | null>(null);
+    const quickImageInputRef = useRef<HTMLInputElement>(null);
+    const quickImageTargetRef = useRef<Monster | null>(null);
 
     const loadMonsters = useCallback(() => {
         try {
             const data = MonsterRepository.getAll();
-            if (!Array.isArray(data)) throw new Error("Repository returned non-array");
+            if (!Array.isArray(data)) throw new Error('Repository returned non-array');
             setMonsters([...data]);
             setErrorMsg(null);
 
@@ -60,8 +65,8 @@ export const BestiarySidebar: React.FC = () => {
                 }
             }).catch(console.error);
         } catch (e: any) {
-            console.error("Critical: Failed to load monsters", e);
-            setErrorMsg(e.message || "Unknown error loading monsters");
+            console.error('Critical: Failed to load monsters', e);
+            setErrorMsg(e.message || 'Unknown error loading monsters');
         }
     }, []);
 
@@ -124,8 +129,14 @@ export const BestiarySidebar: React.FC = () => {
 
             let matchSource = filterSource === 'All';
             if (!matchSource) {
-                if (filterSource === '5e') matchSource = m.source === '5e' || m.source === 'DnD5e';
-                else matchSource = m.source === filterSource;
+                const effSource = m.originalSource || m.source;
+                if (filterSource === '5e') {
+                    matchSource = effSource === '5e' || effSource === 'DnD5e';
+                } else if (filterSource === 'Custom') {
+                    matchSource = m.source === 'Custom';
+                } else {
+                    matchSource = effSource === filterSource;
+                }
             }
 
             const isHumanoid = cat.toLowerCase().includes('humanoide') || cat.toLowerCase().includes('humanoid');
@@ -153,21 +164,127 @@ export const BestiarySidebar: React.FC = () => {
             name: monster.name,
             initiative: 0,
             isNPC: true,
+            imageUrl: MonsterRepository.getTokenUrl(monster),
+            ac: monster.ac,
             hp: { current: monster.hp.current, max: monster.hp.max },
             monsterId: monster.id
         });
     };
 
-    const handleDeleteCustom = (id: string, e: React.MouseEvent) => {
+    const handleSpawnOnMap = (monster: Monster) => {
+        const sizeMap: Record<string, number> = { Tiny: 0.5, Small: 1, Medium: 1, Large: 2, Huge: 3, Gargantuan: 4 };
+        const tokenSize = (monster.size && sizeMap[monster.size]) || 1;
+        const occupied = new Set(tokens.map(t => `${t.position.x},${t.position.y}`));
+        let posX = Math.max(1, Math.min((config.width || 20) - 2, 4));
+        let posY = Math.max(1, Math.min((config.height || 20) - 2, 4));
+        while (occupied.has(`${posX},${posY}`)) {
+            posX += 1;
+            if (posX > Math.min((config.width || 20) - 2, 14)) {
+                posX = 4;
+                posY += 1;
+            }
+        }
+
+        const tokenId = generateId('token');
+        const tokenUrl = MonsterRepository.getTokenUrl(monster);
+
+        addToken({
+            id: tokenId,
+            combatantId: tokenId,
+            monsterId: monster.id,
+            name: monster.name,
+            position: { x: posX, y: posY },
+            color: activeTab === 'NPCs' ? '#3b82f6' : '#dd0000',
+            imageUrl: tokenUrl,
+            size: tokenSize,
+            hp: { current: monster.hp.max, max: monster.hp.max },
+            ac: monster.ac,
+            invisible: activeTab !== 'NPCs'
+        });
+
+        addCombatant({
+            id: tokenId,
+            name: monster.name,
+            initiative: Math.floor(Math.random() * 20) + 1,
+            isNPC: true,
+            imageUrl: tokenUrl,
+            ac: monster.ac,
+            hp: { current: monster.hp.max, max: monster.hp.max },
+            monsterId: monster.id
+        });
+    };
+
+    const handleQuickTokenUploadClick = (monster: Monster, e: React.MouseEvent) => {
         e.stopPropagation();
-        if (confirm('Deletar monstro customizado?')) {
-            MonsterRepository.deleteCustomMonster(id);
+        quickImageTargetRef.current = monster;
+        quickImageInputRef.current?.click();
+    };
+
+    const handleQuickTokenFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        const target = quickImageTargetRef.current;
+        if (!file || !target) return;
+
+        try {
+            const compressedUrl = await compressTokenImage(file);
+            const preservedOriginalSource = target.originalSource ||
+                (target.source !== 'Custom' ? target.source : undefined);
+
+            const updatedMonster: Monster = {
+                ...target,
+                imageUrl: compressedUrl,
+                source: 'Custom',
+                ...(preservedOriginalSource ? { originalSource: preservedOriginalSource } : {}),
+                campaignId: target.campaignId || effectiveAdventureId || 'default',
+                system: target.system || activeSystem
+            };
+
+            MonsterRepository.saveCustomMonster(updatedMonster);
+
+            // Sincroniza imediatamente tokens e combatentes desse monstro/NPC já em mesa
+            tokens.forEach(t => {
+                if (t.monsterId === updatedMonster.id) {
+                    updateToken(t.id, { imageUrl: compressedUrl });
+                }
+            });
+            (combatState.combatants || []).forEach(c => {
+                if (c.monsterId === updatedMonster.id) {
+                    updateCombatant(c.id, { imageUrl: compressedUrl });
+                }
+            });
+
+            loadMonsters();
+        } catch (err: any) {
+            console.error('[BestiarySidebar] Erro ao atualizar imagem do token:', err);
+            alert(err?.message || 'Erro ao processar a imagem do token.');
+        } finally {
+            quickImageTargetRef.current = null;
+            e.target.value = '';
+        }
+    };
+
+    const handleDeleteCustom = (monster: Monster, e: React.MouseEvent) => {
+        e.stopPropagation();
+        const isOverride = Boolean(monster.originalSource);
+        const promptMsg = isOverride
+            ? `Restaurar "${monster.name}" para a arte e atributos oficiais padrão?`
+            : `Deletar "${monster.name}" customizado?`;
+        if (confirm(promptMsg)) {
+            MonsterRepository.deleteCustomMonster(monster.id);
             loadMonsters();
         }
     };
 
     return (
         <div style={{ padding: '10px', height: '100%', display: 'flex', flexDirection: 'column', color: '#fff', position: 'relative' }}>
+            <input
+                ref={quickImageInputRef}
+                type="file"
+                accept="image/*"
+                style={{ display: 'none' }}
+                onChange={handleQuickTokenFileChange}
+            />
+
             {errorMsg && (
                 <div style={{ background: '#500', padding: '10px', marginBottom: '10px', borderRadius: '4px', border: '1px solid #f00' }}>
                     <strong>Erro ao carregar bestiário:</strong> {errorMsg}
@@ -184,7 +301,7 @@ export const BestiarySidebar: React.FC = () => {
                         onClick={() => setEditingMonster(null)}
                         style={{ fontSize: '0.8rem', background: '#225522', border: 'none', color: '#fff', cursor: 'pointer', padding: '5px 10px', borderRadius: '4px' }}
                     >
-                        + Novo
+                        + Novo {activeTab === 'NPCs' ? 'NPC' : 'Monstro'}
                     </button>
                 </div>
 
@@ -228,6 +345,7 @@ export const BestiarySidebar: React.FC = () => {
                     existingMonster={editingMonster}
                     campaignId={effectiveAdventureId}
                     system={activeSystem}
+                    defaultCategory={activeTab === 'NPCs' ? 'Humanoide' : 'Monstrosidade'}
                     onSave={() => {
                         setEditingMonster(undefined);
                         loadMonsters();
@@ -248,7 +366,7 @@ export const BestiarySidebar: React.FC = () => {
             <div style={{ display: 'flex', gap: '5px', marginBottom: '10px' }}>
                 <input
                     type="text"
-                    placeholder={activeTab === 'Bestiary' ? "Buscar monstro..." : "Buscar NPC..."}
+                    placeholder={activeTab === 'Bestiary' ? 'Buscar monstro...' : 'Buscar NPC...'}
                     value={searchTerm}
                     onChange={e => setSearchTerm(e.target.value)}
                     style={{ flex: 1, padding: '5px', borderRadius: '4px', border: '1px solid #444', background: '#222', color: '#fff' }}
@@ -279,154 +397,216 @@ export const BestiarySidebar: React.FC = () => {
 
             {/* List */}
             <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {filteredMonsters.map(monster => (
-                    <div key={monster.id} style={{
-                        background: 'rgba(255,255,255,0.05)',
-                        padding: '10px',
-                        borderRadius: '6px',
-                        border: '1px solid rgba(255,255,255,0.1)',
-                        position: 'relative'
-                    }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <img
-                                    src={MonsterRepository.getTokenUrl(monster)}
-                                    alt="Token"
-                                    style={{ width: '32px', height: '32px', borderRadius: '50%', border: '2px solid #555', background: '#222' }}
-                                />
-                                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                        <strong style={{ fontSize: '1.05rem', color: monster.source === 'Custom' ? '#55ff55' : '#f8fafc' }}>{monster.name}</strong>
+                {filteredMonsters.map(monster => {
+                    const hasCustom = monster.source === 'Custom' || MonsterRepository.hasCustomOverride(monster.id);
+                    return (
+                        <div key={monster.id} style={{
+                            background: 'rgba(255,255,255,0.05)',
+                            padding: '10px',
+                            borderRadius: '6px',
+                            border: '1px solid rgba(255,255,255,0.1)',
+                            position: 'relative'
+                        }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <button
+                                        type="button"
+                                        onClick={(e) => handleQuickTokenUploadClick(monster, e)}
+                                        title="Clique para enviar imagem do token (Monstro / NPC)"
+                                        style={{
+                                            position: 'relative',
+                                            width: '38px',
+                                            height: '38px',
+                                            padding: 0,
+                                            borderRadius: '50%',
+                                            border: monster.imageUrl ? '2px solid #c5a059' : '2px solid #555',
+                                            background: '#222',
+                                            cursor: 'pointer',
+                                            overflow: 'hidden',
+                                            flexShrink: 0
+                                        }}
+                                    >
+                                        <img
+                                            src={MonsterRepository.getTokenUrl(monster)}
+                                            alt="Token"
+                                            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                                        />
                                         <span style={{
-                                            fontSize: '0.65rem',
-                                            padding: '1px 5px',
-                                            borderRadius: '8px',
-                                            border: '1px solid',
-                                            borderColor: monster.source === 'Custom' ? '#10b981' : (activeSystem === 'witcher' ? '#c5a059' : '#e11d48'),
-                                            color: monster.source === 'Custom' ? '#34d399' : (activeSystem === 'witcher' ? '#fde047' : '#fb7185'),
-                                            backgroundColor: 'rgba(0,0,0,0.3)',
-                                            fontWeight: 'bold'
+                                            position: 'absolute',
+                                            right: 0,
+                                            bottom: 0,
+                                            background: 'rgba(0,0,0,0.75)',
+                                            borderRadius: '50%',
+                                            padding: '2px',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center'
                                         }}>
-                                            {monster.source === 'Custom' ? 'Custom' : (activeSystem === 'witcher' ? 'Witcher' : '5.5e')}
+                                            <Camera size={9} color="#c5a059" />
                                         </span>
+                                    </button>
+                                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                            <strong style={{ fontSize: '1rem', color: monster.source === 'Custom' && !monster.originalSource ? '#55ff55' : '#f8fafc' }}>
+                                                {monster.name}
+                                            </strong>
+                                            <span style={{
+                                                fontSize: '0.65rem',
+                                                padding: '1px 5px',
+                                                borderRadius: '8px',
+                                                border: '1px solid',
+                                                borderColor: monster.source === 'Custom' && !monster.originalSource ? '#10b981' : (activeSystem === 'witcher' ? '#c5a059' : '#e11d48'),
+                                                color: monster.source === 'Custom' && !monster.originalSource ? '#34d399' : (activeSystem === 'witcher' ? '#fde047' : '#fb7185'),
+                                                backgroundColor: 'rgba(0,0,0,0.3)',
+                                                fontWeight: 'bold'
+                                            }}>
+                                                {monster.source === 'Custom' && !monster.originalSource ? 'Custom' : (activeSystem === 'witcher' ? 'Witcher' : '5.5e')}
+                                            </span>
+                                        </div>
                                     </div>
+                                    <button
+                                        onClick={() => setViewingMonster(monster)}
+                                        title="Ver Detalhes"
+                                        style={{
+                                            cursor: 'pointer',
+                                            background: 'none',
+                                            border: '1px solid #555',
+                                            color: '#fff',
+                                            borderRadius: '50%',
+                                            width: '20px',
+                                            height: '20px',
+                                            fontSize: '0.7rem',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            marginLeft: '2px'
+                                        }}
+                                    >
+                                        <Info size={12} color="#aaa" />
+                                    </button>
                                 </div>
+                                <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                                    <span style={{ fontSize: '0.78rem', background: '#333', padding: '2px 6px', borderRadius: '4px' }}>
+                                        CR {monster.cr}
+                                    </span>
+                                    <button
+                                        onClick={() => setEditingMonster(monster)}
+                                        title="Editar ficha ou imagem do token"
+                                        style={{ cursor: 'pointer', background: 'none', border: 'none', color: '#cbd5e1', padding: '2px' }}
+                                    >
+                                        <Edit2 size={13} />
+                                    </button>
+                                    {hasCustom && (
+                                        <button
+                                            onClick={(e) => handleDeleteCustom(monster, e)}
+                                            title={monster.originalSource ? 'Restaurar padrão oficial' : 'Deletar customizado'}
+                                            style={{ cursor: 'pointer', background: 'none', border: 'none', color: '#f55', padding: '2px' }}
+                                        >
+                                            <Trash2 size={13} />
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div style={{ fontSize: '0.85rem', color: '#aaa', margin: '4px 0' }}>
+                                {monster.category} • AC {monster.ac} • HP {monster.hp.max}
+                            </div>
+
+                            <div style={{ fontSize: '0.8rem', fontStyle: 'italic', marginBottom: '8px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {monster.description || 'Sem descrição.'}
+                            </div>
+
+                            {/* Actions Preview */}
+                            <div style={{ marginBottom: '8px' }}>
+                                {monster.actions.slice(0, 2).map((action, idx) => (
+                                    <div key={idx} style={{ fontSize: '0.8rem', color: '#ddd' }}>
+                                        • <strong style={{ color: '#fff' }}>{action.name}:</strong> {action.damage || (action.description ? action.description.substring(0, 30) + '...' : '')}
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div style={{ display: 'flex', gap: '5px' }}>
                                 <button
-                                    onClick={() => setViewingMonster(monster)}
-                                    title="Ver Detalhes"
+                                    onClick={() => handleAdd(monster)}
                                     style={{
+                                        flex: 1,
+                                        background: '#442222',
+                                        border: '1px solid #666',
+                                        color: '#ffaaaa',
+                                        borderRadius: '4px',
                                         cursor: 'pointer',
-                                        background: 'none',
-                                        border: '1px solid #555',
-                                        color: '#fff',
-                                        borderRadius: '50%',
-                                        width: '20px',
-                                        height: '20px',
-                                        fontSize: '0.7rem',
+                                        padding: '5px',
                                         display: 'flex',
                                         alignItems: 'center',
                                         justifyContent: 'center',
-                                        marginLeft: '5px'
+                                        gap: '4px',
+                                        fontSize: '0.78rem'
                                     }}
+                                    title="Adicionar somente à Iniciativa"
                                 >
-                                    <Info size={12} color="#aaa" />
+                                    <Swords size={13} />
+                                    <span>Combate</span>
+                                </button>
+                                <button
+                                    onClick={() => handleSpawnOnMap(monster)}
+                                    style={{
+                                        flex: 1,
+                                        background: '#1e3a5f',
+                                        border: '1px solid #3b82f6',
+                                        color: '#bfdbfe',
+                                        borderRadius: '4px',
+                                        cursor: 'pointer',
+                                        padding: '5px',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: '4px',
+                                        fontSize: '0.78rem'
+                                    }}
+                                    title="Colocar token direto no Mapa e na Iniciativa"
+                                >
+                                    <MapPin size={13} />
+                                    <span>No Mapa</span>
+                                </button>
+                                <button
+                                    draggable
+                                    onDragStart={(e) => {
+                                        e.dataTransfer.setData('monster_data', JSON.stringify({
+                                            id: monster.id,
+                                            name: monster.name,
+                                            imageUrl: MonsterRepository.getTokenUrl(monster),
+                                            size: monster.size,
+                                            hp: monster.hp,
+                                            ac: monster.ac
+                                        }));
+                                    }}
+                                    style={{
+                                        flex: 1,
+                                        background: '#224422',
+                                        border: '1px solid #666',
+                                        color: '#aaffaa',
+                                        borderRadius: '4px',
+                                        cursor: 'pointer',
+                                        padding: '5px',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: '4px',
+                                        fontSize: '0.78rem'
+                                    }}
+                                    title="Arraste para escolher a posição no mapa"
+                                >
+                                    <Move size={13} />
+                                    <span>Arrastar</span>
                                 </button>
                             </div>
-                            <div style={{ display: 'flex', gap: '5px' }}>
-                                <span style={{ fontSize: '0.8rem', background: '#333', padding: '2px 6px', borderRadius: '4px' }}>
-                                    CR {monster.cr}
-                                </span>
-                                {monster.source === 'Custom' && (
-                                    <>
-                                        <button onClick={() => setEditingMonster(monster)} title="Editar" style={{ cursor: 'pointer', background: 'none', border: 'none', color: '#aaa', padding: '2px' }}>
-                                            <Edit2 size={13} />
-                                        </button>
-                                        <button onClick={(e) => handleDeleteCustom(monster.id, e)} title="Deletar" style={{ cursor: 'pointer', background: 'none', border: 'none', color: '#f55', padding: '2px' }}>
-                                            <Trash2 size={13} />
-                                        </button>
-                                    </>
-                                )}
-                            </div>
                         </div>
-
-                        <div style={{ fontSize: '0.85rem', color: '#aaa', margin: '4px 0' }}>
-                            {monster.category} • AC {monster.ac} • HP {monster.hp.max}
-                        </div>
-
-                        <div style={{ fontSize: '0.8rem', fontStyle: 'italic', marginBottom: '8px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            {monster.description || 'Sem descrição.'}
-                        </div>
-
-                        {/* Actions Preview */}
-                        <div style={{ marginBottom: '8px' }}>
-                            {monster.actions.slice(0, 2).map((action, idx) => (
-                                <div key={idx} style={{ fontSize: '0.8rem', color: '#ddd' }}>
-                                    • <strong style={{ color: '#fff' }}>{action.name}:</strong> {action.damage || (action.description ? action.description.substring(0, 30) + '...' : '')}
-                                </div>
-                            ))}
-                        </div>
-
-                        <div style={{ display: 'flex', gap: '5px' }}>
-                            <button
-                                onClick={() => handleAdd(monster)}
-                                style={{
-                                    flex: 1,
-                                    background: '#442222',
-                                    border: '1px solid #666',
-                                    color: '#ffaaaa',
-                                    borderRadius: '4px',
-                                    cursor: 'pointer',
-                                    padding: '5px',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    gap: '5px',
-                                    fontSize: '0.8rem'
-                                }}
-                            >
-                                <Swords size={13} />
-                                <span>Combate</span>
-                            </button>
-                            <button
-                                draggable
-                                onDragStart={(e) => {
-                                    // Make sure we send the data format BattleMap expects
-                                    e.dataTransfer.setData('monster_data', JSON.stringify({
-                                        id: monster.id, // Added ID
-                                        name: monster.name,
-                                        imageUrl: MonsterRepository.getTokenUrl(monster),
-                                        size: monster.size, // 'Medium', 'Large', etc. or handle mapping
-                                        // Pass stats so BattleMap can init the token with them
-                                        hp: monster.hp,
-                                        ac: monster.ac
-                                    }));
-                                }}
-                                style={{
-                                    flex: 1,
-                                    background: '#224422',
-                                    border: '1px solid #666',
-                                    color: '#aaffaa',
-                                    borderRadius: '4px',
-                                    cursor: 'pointer',
-                                    padding: '5px',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    gap: '5px',
-                                    fontSize: '0.8rem'
-                                }}
-                                title="Arraste para o mapa"
-                            >
-                                <Move size={13} />
-                                <span>Arrastar</span>
-                            </button>
-                        </div>
-                    </div>
-                ))}
+                    );
+                })}
 
                 {filteredMonsters.length === 0 && (
                     <div style={{ textAlign: 'center', color: '#666', marginTop: '20px' }}>
-                        Nenhum monstro encontrado.
+                        Nenhum {activeTab === 'NPCs' ? 'NPC' : 'monstro'} encontrado.
                     </div>
                 )}
             </div>

@@ -18,6 +18,7 @@ export interface Monster {
     name: string;
     category: string; // e.g. "Necrophage", "Humanoid", "Aberration", "Dragon"
     source: 'DnD5e' | 'Witcher' | 'PF2e' | 'Daggerheart' | 'Custom' | (string & {});
+    originalSource?: string; // Preserves base source ('5e', 'DnD5e', 'Witcher') when customizing an official monster/NPC
     campaignId?: string; // Optional: Scope monster to a specific adventure
     system?: string; // Optional: System tag (e.g. "dnd5e", "witcher", "pf2e", "daggerheart")
     description?: string;

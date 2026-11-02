@@ -12,6 +12,51 @@ interface MapSettingsModalProps {
 
 const MAX_LOCAL_VIDEO_BYTES = Math.floor(4.5 * 1024 * 1024); // 4.5 MB raw (~6 MB Base64, safely < 10 MB Socket.io limit)
 
+export const CAMPAIGN_MAP_PRESETS = [
+    {
+        name: '❄️ Encruzilhada da Neve',
+        url: '/assets/maps/battlemap_encruzilhada_neve.jpg',
+        width: 25,
+        height: 25,
+        desc: '4 caminhos convergentes, monólito rúnico e carruagem destroçada'
+    },
+    {
+        name: '🏔️ Templo na Montanha',
+        url: '/assets/maps/battlemap_mountain_pass_sanctuary_1793329055036.jpg',
+        width: 30,
+        height: 20,
+        desc: 'Desfiladeiro rochoso e entrada do santuário ancestral'
+    },
+    {
+        name: '🏛️ Hipogeu (5 Câmaras)',
+        url: '/assets/maps/battlemap_hipogeu_cinco_camaras.jpg',
+        width: 32,
+        height: 18,
+        desc: 'Masmorra subterrânea com as 5 câmaras isoladas e nexo central'
+    },
+    {
+        name: '👁️ Salão dos Ecos (Ato II)',
+        url: '/assets/maps/battlemap_sessao2_salao_dos_ecos.jpg',
+        width: 20,
+        height: 30,
+        desc: 'Galeria subterrânea com o enigma do Olho Místico, fossos e pilares'
+    },
+    {
+        name: '⛓️ Abismo das Correntes (Ato II)',
+        url: '/assets/maps/battlemap_sessao2_abismo_correntes.jpg',
+        width: 32,
+        height: 18,
+        desc: 'Abismo subterrâneo com plataformas suspensas e correntes gigantes'
+    },
+    {
+        name: '❤️ Coração da Pedra (Ato III)',
+        url: '/assets/maps/battlemap_sessao3_coracao_da_pedra.jpg',
+        width: 32,
+        height: 18,
+        desc: 'Grande santuário subterrâneo com o cristal rubro do Coração da Pedra e o altar final'
+    }
+];
+
 export const MapSettingsModal: React.FC<MapSettingsModalProps> = ({ isOpen, onClose }) => {
     const { config, setConfig } = useMap();
     const [activeTab, setActiveTab] = useState<'general' | 'grid' | 'lighting'>('general');
@@ -156,6 +201,52 @@ export const MapSettingsModal: React.FC<MapSettingsModalProps> = ({ isOpen, onCl
                             <div className="form-group">
                                 <label>Imagem/Vídeo de Fundo</label>
                                 <div style={{ display: 'flex', gap: '10px', flexDirection: 'column' }}>
+                                    {/* Campaign Presets */}
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '5px' }}>
+                                        <label style={{ fontSize: '0.8rem', color: '#c5a059', fontWeight: 600 }}>
+                                            🗺️ Mapas Prontos da Campanha (Clique para Carregar):
+                                        </label>
+                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(135px, 1fr))', gap: '8px' }}>
+                                            {CAMPAIGN_MAP_PRESETS.map((preset) => {
+                                                const isSelected = draft.backgroundImage === preset.url;
+                                                return (
+                                                    <button
+                                                        key={preset.url}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            updateImmediate({
+                                                                backgroundImage: preset.url,
+                                                                backgroundImageType: 'image',
+                                                                width: preset.width,
+                                                                height: preset.height
+                                                            });
+                                                        }}
+                                                        style={{
+                                                            display: 'flex',
+                                                            flexDirection: 'column',
+                                                            alignItems: 'flex-start',
+                                                            padding: '8px 10px',
+                                                            background: isSelected ? 'rgba(197, 160, 89, 0.25)' : 'rgba(255, 255, 255, 0.05)',
+                                                            border: isSelected ? '1px solid #c5a059' : '1px solid rgba(255, 255, 255, 0.12)',
+                                                            borderRadius: '6px',
+                                                            cursor: 'pointer',
+                                                            textAlign: 'left',
+                                                            transition: 'all 0.2s ease'
+                                                        }}
+                                                        title={preset.desc}
+                                                    >
+                                                        <span style={{ fontSize: '0.8rem', fontWeight: 600, color: isSelected ? '#ffd700' : '#eee' }}>
+                                                            {preset.name}
+                                                        </span>
+                                                        <span style={{ fontSize: '0.68rem', color: '#999', marginTop: '2px' }}>
+                                                            {preset.width}x{preset.height} células
+                                                        </span>
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+
                                     {/* URL Input */}
                                     <input
                                         className="glass-input"

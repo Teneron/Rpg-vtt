@@ -6,6 +6,9 @@ import { Play, Pause, Square, Music, Volume2, Trash2, VolumeX, Upload, ChevronDo
 import { AudioRepository } from './AudioRepository';
 
 const DEFAULT_MUSIC: AudioTrack[] = [
+    { id: 'c1', title: '🏔️ Vento da Montanha', url: '/assets/music/vento_montanha.wav', type: 'music', loop: true },
+    { id: 'c2', title: '⚔️ Tambores de Guerra', url: '/assets/music/tambores_guerra.wav', type: 'music', loop: true },
+    { id: 'c3', title: '🌀 Hipogeu dos Sussurros', url: '/assets/music/hipogeu_sussurros.wav', type: 'music', loop: true },
     { id: 'm1', title: 'Taverna (Minstrels)', url: '/assets/music/tavern.ogg', type: 'music', loop: true },
     { id: 'm2', title: 'Batalha (Frantic)', url: '/assets/music/battle.ogg', type: 'music', loop: true },
     { id: 'm3', title: 'Floresta (Elf Land)', url: '/assets/music/forest.ogg', type: 'music', loop: true },

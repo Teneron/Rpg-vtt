@@ -44,6 +44,13 @@ export const CombatPanel: React.FC<CombatPanelProps> = React.memo(({
     const [customAmount, setCustomAmount] = useState('');
     const [showConditionsModal, setShowConditionsModal] = useState(false);
 
+    const latestCharRef = React.useRef(character);
+    const onUpdateCharacterRef = React.useRef(onUpdateCharacter);
+    React.useEffect(() => {
+        latestCharRef.current = character;
+        onUpdateCharacterRef.current = onUpdateCharacter;
+    }, [character, onUpdateCharacter]);
+
     // Quick HP Damage / Heal adjustments
     const applyDelta = (delta: number) => {
         if (!isGM) {
@@ -121,68 +128,67 @@ export const CombatPanel: React.FC<CombatPanelProps> = React.memo(({
     };
 
     const rollDeathSave = () => {
-        const roll = Math.floor(Math.random() * 20) + 1;
-        triggerRoll({ d20: 1 }, 0, 'Teste contra a Morte');
+        triggerRoll({ d20: 1 }, 0, 'Teste contra a Morte', (res) => {
+            const roll = res.breakdown[0] ?? res.total;
+            const curChar = latestCharRef.current;
+            const updateFn = onUpdateCharacterRef.current;
 
-        if (roll === 20) {
-            // Nat 20: Character regains 1 HP immediately and revives
-            if (onUpdateCharacter) {
-                onUpdateCharacter({
-                    hp: {
-                        ...character.hp,
-                        current: 1
-                    },
-                    deathSaves: { successes: 0, failures: 0 }
-                });
+            if (roll === 20) {
+                if (updateFn) {
+                    updateFn({
+                        hp: {
+                            ...curChar.hp,
+                            current: 1
+                        },
+                        deathSaves: { successes: 0, failures: 0 }
+                    });
+                }
+                playSynthSound('crit');
+                alert('20 Natural no Teste contra a Morte! O personagem recupera 1 PV e recobra a consciência!');
+            } else if (roll >= 10) {
+                const nextSuccesses = (curChar.deathSaves?.successes || 0) + 1;
+                playSynthSound('heal');
+                if (updateFn) {
+                    updateFn({
+                        deathSaves: {
+                            successes: Math.min(3, nextSuccesses),
+                            failures: curChar.deathSaves?.failures || 0
+                        }
+                    });
+                }
+                if (nextSuccesses >= 3) {
+                    alert('Sucesso! O personagem estabilizou com 3 sucessos!');
+                }
+            } else if (roll === 1) {
+                const nextFailures = (curChar.deathSaves?.failures || 0) + 2;
+                playSynthSound('fumble');
+                if (updateFn) {
+                    updateFn({
+                        deathSaves: {
+                            successes: curChar.deathSaves?.successes || 0,
+                            failures: Math.min(3, nextFailures)
+                        }
+                    });
+                }
+                if (nextFailures >= 3) {
+                    alert('Falha Crítica! 3 falhas acumuladas. O personagem sucumbiu.');
+                }
+            } else {
+                const nextFailures = (curChar.deathSaves?.failures || 0) + 1;
+                playSynthSound('fumble');
+                if (updateFn) {
+                    updateFn({
+                        deathSaves: {
+                            successes: curChar.deathSaves?.successes || 0,
+                            failures: Math.min(3, nextFailures)
+                        }
+                    });
+                }
+                if (nextFailures >= 3) {
+                    alert('3 falhas acumuladas nos Testes contra a Morte. O personagem sucumbiu.');
+                }
             }
-            playSynthSound('crit');
-            alert('20 Natural no Teste contra a Morte! O personagem recupera 1 PV e recobra a consciência!');
-        } else if (roll >= 10) {
-            // Success
-            const nextSuccesses = (character.deathSaves?.successes || 0) + 1;
-            playSynthSound('heal');
-            if (onUpdateCharacter) {
-                onUpdateCharacter({
-                    deathSaves: {
-                        successes: Math.min(3, nextSuccesses),
-                        failures: character.deathSaves?.failures || 0
-                    }
-                });
-            }
-            if (nextSuccesses >= 3) {
-                alert('Sucesso! O personagem estabilizou com 3 sucessos!');
-            }
-        } else if (roll === 1) {
-            // Nat 1: Two failures
-            const nextFailures = (character.deathSaves?.failures || 0) + 2;
-            playSynthSound('fumble');
-            if (onUpdateCharacter) {
-                onUpdateCharacter({
-                    deathSaves: {
-                        successes: character.deathSaves?.successes || 0,
-                        failures: Math.min(3, nextFailures)
-                    }
-                });
-            }
-            if (nextFailures >= 3) {
-                alert('Falha Crítica! 3 falhas acumuladas. O personagem sucumbiu.');
-            }
-        } else {
-            // 2-9: One failure
-            const nextFailures = (character.deathSaves?.failures || 0) + 1;
-            playSynthSound('fumble');
-            if (onUpdateCharacter) {
-                onUpdateCharacter({
-                    deathSaves: {
-                        successes: character.deathSaves?.successes || 0,
-                        failures: Math.min(3, nextFailures)
-                    }
-                });
-            }
-            if (nextFailures >= 3) {
-                alert('3 falhas acumuladas nos Testes contra a Morte. O personagem sucumbiu.');
-            }
-        }
+        });
     };
 
     // Short Rest (Spend 1 Hit Die to Heal)
@@ -197,22 +203,32 @@ export const CombatPanel: React.FC<CombatPanelProps> = React.memo(({
             return;
         }
 
-        const dieFace = parseInt((character.hitDice?.dieFace || 'd8').replace('d', ''), 10) || 8;
         const conMod = character.attributes.con.modifier;
-        const roll = Math.floor(Math.random() * dieFace) + 1;
-        const healTotal = Math.max(1, roll + conMod);
-        const dieKey = character.hitDice?.dieFace || 'd8';
-        triggerRoll({ [dieKey]: 1 }, conMod, 'Descanso Curto (Dado de Vida)');
-        applyDelta(healTotal);
+        const dieKey = (character.hitDice?.dieFace || 'd8').toLowerCase();
 
-        if (onUpdateCharacter) {
-            onUpdateCharacter({
-                hitDice: {
-                    ...character.hitDice,
-                    current: Math.max(0, curHd - 1)
-                }
-            });
-        }
+        // Consome o Dado de Vida e rola o dado 3D real aplicando o valor exato obtido na mesa
+        triggerRoll({ [dieKey]: 1 }, conMod, 'Descanso Curto (Dado de Vida)', (res) => {
+            const curChar = latestCharRef.current;
+            const updateFn = onUpdateCharacterRef.current;
+            const latestHd = curChar.hitDice?.current ?? 0;
+            const healTotal = Math.max(1, res.total);
+            const newCurrentHp = Math.min(curChar.hp.max, curChar.hp.current + healTotal);
+            playSynthSound('heal');
+
+            if (updateFn) {
+                updateFn({
+                    hp: {
+                        ...curChar.hp,
+                        current: newCurrentHp
+                    },
+                    hitDice: {
+                        ...curChar.hitDice,
+                        current: Math.max(0, latestHd - 1)
+                    },
+                    ...(curChar.hp.current === 0 ? { deathSaves: { successes: 0, failures: 0 } } : {})
+                });
+            }
+        });
     };
 
     // Long Rest (Full Recovery per 2024 Rules)

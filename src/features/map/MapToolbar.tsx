@@ -119,7 +119,7 @@ export const MapHeaderControls: React.FC = () => {
                         <button
                             className={`glass-button small`}
                             onClick={() => setIsAssetModalOpen(true)}
-                            title="Adicionar Asset / Imagem"
+                            title="Adicionar Token (Monstro / NPC) ou Asset"
                             style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                         >
                             <Image size={14} />

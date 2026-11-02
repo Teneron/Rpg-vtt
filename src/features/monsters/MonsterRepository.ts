@@ -209,6 +209,10 @@ export class MonsterRepository {
         await db.customMonsters.delete(id);
     }
 
+    static hasCustomOverride(id: string): boolean {
+        return customMonstersCache.some(m => m.id === id);
+    }
+
     static getAll(filter?: { source?: string; campaignId?: string; system?: string }): Monster[] {
         const custom = this.getCustomMonsters(filter?.campaignId);
         const base5e: Monster[] = MONSTERS_5E || [];
@@ -216,9 +220,21 @@ export class MonsterRepository {
         const basePf2e: Monster[] = MONSTERS_PF2E || [];
         const baseDaggerheart: Monster[] = MONSTERS_DAGGERHEART || [];
 
-        let all = [...base5e, ...baseWitcher, ...basePf2e, ...baseDaggerheart, ...custom];
+        // Deduplicate by ID so custom edits/token images on official monsters override cleanly in-place
+        const byId = new Map<string, Monster>();
+        for (const m of [...base5e, ...baseWitcher, ...basePf2e, ...baseDaggerheart]) {
+            if (m && m.id) byId.set(m.id, m);
+        }
+        for (const m of custom) {
+            if (m && m.id) {
+                const base = byId.get(m.id);
+                byId.set(m.id, base ? { ...m, originalSource: m.originalSource || base.source } : m);
+            }
+        }
+
+        let all = Array.from(byId.values());
         if (filter?.source) {
-            all = all.filter(m => m.source === filter.source);
+            all = all.filter(m => m.source === filter.source || m.originalSource === filter.source);
         }
         if (filter?.system) {
             const normTarget = normalizeMonsterSystem(filter.system);

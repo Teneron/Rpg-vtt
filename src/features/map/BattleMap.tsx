@@ -12,6 +12,7 @@ import { TokenSettingsModal } from './TokenSettingsModal';
 import { AssetSettingsModal } from './AssetSettingsModal';
 import { MonsterRepository } from '../monsters/MonsterRepository';
 import { EditableMonsterSheet } from '../monsters/EditableMonsterSheet';
+import { CharacterRepository } from '../character/characterRepository';
 import { playSynthSound } from '../audio/audioSynth';
 import { Ruler, Plus, Minus } from 'lucide-react';
 import type { MapPing } from './mapTypes';
@@ -449,21 +450,39 @@ export const BattleMap: React.FC = () => {
     ]);
 
     // --- MEMOIZED TOKENS FOR PERFORMANCE ---
+    const [charSyncTick, setCharSyncTick] = useState(0);
+    useEffect(() => {
+        const bump = () => setCharSyncTick(v => v + 1);
+        window.addEventListener('rpg_local_char_save', bump);
+        window.addEventListener('rpg_characters_updated', bump);
+        return () => {
+            window.removeEventListener('rpg_local_char_save', bump);
+            window.removeEventListener('rpg_characters_updated', bump);
+        };
+    }, []);
+
     // Prepare display tokens only when dependencies change
     const displayTokens = React.useMemo(() => {
+        void charSyncTick;
         return (tokens || []).map((item) => {
             const isDragging = draggingTokenId === item.id;
 
-            // Sync with peer data OR local myCharacter (for instant feedback)
-            const isMe = myCharacter?.id === item.characterId;
-            const linkedPeer = Object.values(connectedPlayersData).find(p => p.character?.id === item.characterId);
-            const sourceChar = isMe ? myCharacter : linkedPeer?.character;
+            // Sync with peer data, local myCharacter, or GM CharacterRepository (supports offline players & newer GM edits)
+            const isMe = !isHost && myCharacter?.id === item.characterId;
+            const linkedPeer = item.characterId
+                ? Object.values(connectedPlayersData).find(p => !p.isHost && p.character?.id === item.characterId)
+                : undefined;
+            const repoChar = (isHost && item.characterId) ? CharacterRepository.load(item.characterId) : null;
+            let sourceChar = isMe ? myCharacter : linkedPeer?.character;
+            if (repoChar && (!sourceChar || (repoChar.lastModified || 0) > (sourceChar.lastModified || 0))) {
+                sourceChar = repoChar;
+            }
 
             return {
                 ...item,
                 ...(sourceChar && {
                     hp: sourceChar.hp || item.hp || { current: 10, max: 10, temp: 0 },
-                    ac: sourceChar.armorClass || item.ac || 10,
+                    ac: sourceChar.acOverride ?? sourceChar.armorClass ?? item.ac ?? 10,
                     name: sourceChar.name || item.name || 'Unknown',
                     imageUrl: sourceChar.imageUrl || item.imageUrl
                 }),
@@ -474,7 +493,7 @@ export const BattleMap: React.FC = () => {
                 isDragging // Explicit flag for the component
             };
         });
-    }, [tokens, connectedPlayersData, myCharacter, draggingTokenId, tempTokenPos.x, tempTokenPos.y, config.gridSize]);
+    }, [tokens, connectedPlayersData, myCharacter, isHost, charSyncTick, draggingTokenId, tempTokenPos.x, tempTokenPos.y, config.gridSize]);
 
     const isFogRestrictingPlayerSight = !isHost && config.fogEnabled !== false && config.globalLight !== 'bright';
 

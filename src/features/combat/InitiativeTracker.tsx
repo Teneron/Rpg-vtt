@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useCombat } from './CombatContext';
 import { usePeer } from '../multiplayer/SocketContext';
 import { useMap } from '../map/MapContext';
 import { useChat } from '../chat/ChatContext';
+import { CharacterRepository } from '../character/characterRepository';
 import { rollInitiative } from './combatUtils';
 import type { TacticalStatus } from './combatTypes';
 import { Shield, FastForward, Eye, Users, SkipForward, Dices, Swords, Crosshair, X } from 'lucide-react';
@@ -30,6 +31,17 @@ export const InitiativeTracker: React.FC = () => {
     const [npcInit, setNpcInit] = useState('');
     const [npcHp, setNpcHp] = useState('10');
     const [isEndingTurn, setIsEndingTurn] = useState(false);
+    const [, setCharSyncTick] = useState(0);
+
+    useEffect(() => {
+        const bump = () => setCharSyncTick(v => v + 1);
+        window.addEventListener('rpg_local_char_save', bump);
+        window.addEventListener('rpg_characters_updated', bump);
+        return () => {
+            window.removeEventListener('rpg_local_char_save', bump);
+            window.removeEventListener('rpg_characters_updated', bump);
+        };
+    }, []);
 
     // Check if my character is already in combat
     const isMyCharacter = !!myCharacter;
@@ -64,31 +76,52 @@ export const InitiativeTracker: React.FC = () => {
 
     const handleCombatantHpDelta = (c: any, delta: number) => {
         const linkedPlayer = c.characterId
-            ? Object.values(connectedPlayersData).find(p => p.character?.id === c.characterId)
+            ? Object.values(connectedPlayersData).find(p => !p.isHost && p.character?.id === c.characterId)
             : null;
-        const linkedChar = linkedPlayer?.character || (myCharacter?.id === c.characterId ? myCharacter : null);
-        // P1: Prioriza o PV ao vivo da ficha vinculada para não usar valor estagnado de c.hp
+        const repoChar = (isHost && c.characterId) ? CharacterRepository.load(c.characterId) : null;
+        let linkedChar = linkedPlayer?.character || (!isHost && myCharacter?.id === c.characterId ? myCharacter : null);
+        if (repoChar && (!linkedChar || (repoChar.lastModified || 0) > (linkedChar.lastModified || 0))) {
+            linkedChar = repoChar;
+        }
+
+        // Prioriza o PV ao vivo da ficha vinculada para não usar valor estagnado de c.hp
         const max = linkedChar?.hp?.max ?? c.hp?.max ?? 10;
         const cur = linkedChar?.hp?.current ?? c.hp?.current ?? max;
-        const newCurrent = Math.max(0, Math.min(max, cur + delta));
+        let newTemp = linkedChar?.hp?.temp ?? c.hp?.temp ?? 0;
+        let hpDelta = delta;
+        if (delta < 0 && newTemp > 0) {
+            const absorbed = Math.min(newTemp, -delta);
+            newTemp -= absorbed;
+            hpDelta += absorbed;
+        }
+        const newCurrent = Math.max(0, Math.min(max, cur + hpDelta));
 
         // 1. Atualiza combatente no rastreador (sincroniza COMBAT_UPDATE para todos)
         updateCombatant(c.id, {
-            hp: { current: newCurrent, max }
+            hp: { current: newCurrent, max, temp: newTemp }
         });
 
-        // 2. Se for personagem de jogador, atualiza a ficha remota (sincroniza PLAYER_UPDATE)
-        if (linkedPlayer && linkedPlayer.character) {
+        // 2. Se for personagem de jogador (online ou offline), persiste localmente e sincroniza PLAYER_UPDATE
+        if (c.characterId && linkedChar) {
+            const now = Date.now();
             const updatedChar = {
-                ...linkedPlayer.character,
+                ...linkedChar,
                 hp: {
-                    ...linkedPlayer.character.hp,
+                    ...linkedChar.hp,
                     current: newCurrent,
-                    max
+                    max,
+                    temp: newTemp
                 },
-                lastModified: Date.now()
+                lastModified: now
             };
-            updateRemotePlayerCharacter(linkedPlayer.peerId, updatedChar as any);
+            if (isHost) {
+                sessionStorage.setItem(`last_gm_edit_${updatedChar.id}`, now.toString());
+            }
+            CharacterRepository.save(updatedChar as any);
+            window.dispatchEvent(new CustomEvent('rpg_local_char_save', { detail: updatedChar }));
+            if (linkedPlayer?.peerId) {
+                updateRemotePlayerCharacter(linkedPlayer.peerId, updatedChar as any);
+            }
         }
 
         // 3. Se houver token correspondente no mapa de batalha, sincroniza PV do token
@@ -100,7 +133,7 @@ export const InitiativeTracker: React.FC = () => {
             );
             if (matchingToken) {
                 updateToken(matchingToken.id, {
-                    hp: { current: newCurrent, max }
+                    hp: { current: newCurrent, max, temp: newTemp }
                 });
             }
         }
@@ -254,9 +287,13 @@ export const InitiativeTracker: React.FC = () => {
 
                             {(() => {
                                 const linkedPlayer = c.characterId
-                                    ? Object.values(connectedPlayersData).find(p => p.character?.id === c.characterId)
+                                    ? Object.values(connectedPlayersData).find(p => !p.isHost && p.character?.id === c.characterId)
                                     : null;
-                                const linkedChar = linkedPlayer?.character || (myCharacter?.id === c.characterId ? myCharacter : null);
+                                const repoChar = (isHost && c.characterId) ? CharacterRepository.load(c.characterId) : null;
+                                let linkedChar = linkedPlayer?.character || (!isHost && myCharacter?.id === c.characterId ? myCharacter : null);
+                                if (repoChar && (!linkedChar || (repoChar.lastModified || 0) > (linkedChar.lastModified || 0))) {
+                                    linkedChar = repoChar;
+                                }
                                 const hpCurrent = linkedChar?.hp?.current ?? c.hp?.current;
                                 const hpMax = linkedChar?.hp?.max ?? c.hp?.max;
                                 const hasHp = hpCurrent !== undefined && hpMax !== undefined && hpMax > 0;
