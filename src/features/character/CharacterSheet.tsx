@@ -3,9 +3,7 @@ import { createPortal } from 'react-dom';
 import {
     initialCharacter,
     regenerateCharacterStats,
-    getLevel,
-    getMinXPForLevel,
-    calculateModifier
+    getLevel
 } from './characterTypes';
 import type {
     Character
@@ -31,6 +29,7 @@ import { FeatsPanel } from './components/FeatsPanel';
 import { AbilitiesPanel } from './components/AbilitiesPanel';
 import { ManageInvocationsModal } from './components/ManageInvocationsModal';
 import { LevelUpModal } from './components/LevelUpModal';
+import { LevelDownModal } from './components/LevelDownModal';
 import { InventoryPanel } from './components/InventoryPanel';
 import { CompanionModal } from './components/CompanionModal';
 import { PlayerBestiaryPanel } from './components/PlayerBestiaryPanel';
@@ -546,6 +545,7 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
     const [showManageSpells, setShowManageSpells] = useState(false);
     const [showManageInvocations, setShowManageInvocations] = useState(false);
     const [showProgressionModal, setShowProgressionModal] = useState(false);
+    const [showLevelAdjustModal, setShowLevelAdjustModal] = useState(false);
 
     const currentClassData = React.useMemo(() => {
         if (!character.class) return CLASSES[0];
@@ -722,96 +722,21 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
                             </div>
                             {isGM && (
                                 <button
+                                    type="button"
                                     className="gm-lvl-btn"
-                                    onClick={() => {
-                                        const input = prompt("Definir Nível do personagem (1-20):", String(character.level));
-                                        if (input === null) return;
-
-                                        const newLevel = parseInt(input, 10);
-                                        if (isNaN(newLevel) || newLevel < 1 || newLevel > 20) {
-                                            alert("Por favor insira um nível válido entre 1 e 20.");
-                                            return;
-                                        }
-
-                                        if (newLevel === character.level) return;
-
-                                        if (confirm(`Alterar nível de ${character.level} para ${newLevel}?\n\nO XP será ajustado para o mínimo deste nível.`)) {
-                                            // 1. Calculate new XP
-                                            const newXP = getMinXPForLevel(newLevel);
-                                            const nextXP = getMinXPForLevel(newLevel + 1) || newXP;
-
-                                            // 2. Prepare Base Update
-                                            const nextChar: Character = {
-                                                ...character,
-                                                level: newLevel,
-                                                experience: newXP,
-                                                nextLevelExperience: nextXP,
-                                                pendingLevelUp: newLevel > character.level,
-                                                hitDice: {
-                                                    ...character.hitDice,
-                                                    max: newLevel,
-                                                    current: newLevel > character.level
-                                                        ? Math.min(newLevel, (character.hitDice?.current || 1) + (newLevel - character.level))
-                                                        : Math.min(newLevel, character.hitDice?.current || 1)
-                                                }
-                                            };
-
-                                            // 3. Level Down HP Logic
-                                            if (newLevel < character.level) {
-                                                const diff = character.level - newLevel;
-                                                const faces = parseInt(character.hitDice?.dieFace.replace('d', '') || '8');
-                                                const avg = (faces / 2) + 1;
-                                                const conMod = calculateModifier(character.attributes.con.value);
-                                                const hpReduction = Math.floor((avg + conMod) * diff);
-
-                                                if (hpReduction > 0) {
-                                                    if (confirm(`DESEJA REDUZIR O HP?\n\nDetectado Downgrade de ${diff} níveis.\nValor sugerido de redução: -${hpReduction} PV\n(Baseado em ${diff}x Média do Dado d${faces} + CON)`)) {
-                                                        nextChar.hp.max = Math.max(1, nextChar.hp.max - hpReduction);
-                                                        nextChar.hp.current = Math.min(nextChar.hp.current, nextChar.hp.max);
-                                                    }
-                                                }
-
-                                                // 3b. Remove Higher Level Features
-                                                const lostFeatures = (character.features || []).filter(f => f.level > newLevel);
-                                                if (lostFeatures.length > 0) {
-                                                    if (confirm(`Remover ${lostFeatures.length} Habilidades de Nível Superior?\n\nElas foram obtidas após o nível ${newLevel}.\n\nLista: ${lostFeatures.map(f => f.name).join(', ')}`)) {
-                                                        nextChar.features = (character.features || []).filter(f => f.level <= newLevel);
-                                                    }
-                                                }
-
-                                                // 3c. ASI/Feat Warning
-                                                const asiLevels = [4, 8, 12, 16, 19];
-                                                const passedASIs = asiLevels.filter(l => l > newLevel && l <= character.level);
-                                                if (passedASIs.length > 0) {
-                                                    alert(`ATENÇÃO: Você reduziu através de patamares de Talento/Atributo (Níveis: ${passedASIs.join(', ')}).\n\nO sistema NÃO sabe qual atributo ou talento foi escolhido nesses níveis.\n\nPor favor, REMOVA MANUALMENTE quaisquer talentos ou pontos de atributo ganhos indevidamente.`);
-                                                }
-
-                                                // 3d. Spell Warning
-                                                if (character.spells && character.spells.length > 0) {
-                                                    const likelyMaxSpellLevel = Math.ceil(newLevel / 2);
-                                                    const highLevelSpells = character.spells.filter(s => s.level > likelyMaxSpellLevel);
-                                                    if (highLevelSpells.length > 0) {
-                                                        alert(`ATENÇÃO: Existem magias conhecidas de círculo superior ao esperado para o nível ${newLevel} (Possivelmente Círculos: ${highLevelSpells.map(s => s.level).filter((v, i, a) => a.indexOf(v) === i).join(', ')}).\n\nVerifique e remova magias inválidas na aba Magias.`);
-                                                    }
-                                                }
-                                            }
-
-                                            // 4. Update Local & Regen
-                                            const regenedChar = regenerateCharacterStats(nextChar);
-                                            dirtyRef.current = false;
-                                            setCharacter(regenedChar);
-
-                                            // 5. Save & Sync Immediately (Local Repo + Map/Combat Event + Remote Peer)
-                                            handleSave(regenedChar);
-                                        }
-                                    }}
+                                    onClick={() => setShowLevelAdjustModal(true)}
+                                    title="Subir ou reduzir o nível da ficha (com reversão de PV, atributos e talentos)"
                                 >
                                     <Settings size={13} style={{ marginRight: '4px' }} />
                                     Nível
                                 </button>
                             )}
-                            {!isGM && character.pendingLevelUp && (
-                                <button className="lvl-pending-btn animate-pulse" onClick={() => setShowLevelModal(true)}>
+                            {character.pendingLevelUp && (
+                                <button
+                                    type="button"
+                                    className="lvl-pending-btn animate-pulse"
+                                    onClick={() => setShowLevelModal(true)}
+                                >
                                     <Sparkles size={13} style={{ marginRight: '4px' }} />
                                     Configurar Nível {character.level}!
                                 </button>
@@ -996,14 +921,12 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
                         >
                             Habilidades
                         </button>
-                        {character.feats && character.feats.length > 0 && (
-                            <button
-                                className={`tab-btn ${activeTab === 'feats' ? 'active' : ''}`}
-                                onClick={() => setActiveTab('feats')}
-                            >
-                                Talentos
-                            </button>
-                        )}
+                        <button
+                            className={`tab-btn ${activeTab === 'feats' ? 'active' : ''}`}
+                            onClick={() => setActiveTab('feats')}
+                        >
+                            Talentos{character.feats && character.feats.length > 0 ? ` (${character.feats.length})` : ''}
+                        </button>
                     </div>
 
                     <div className="tab-content" style={{ marginTop: '15px' }}>
@@ -1028,7 +951,11 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
                             />
                         )}
                         {activeTab === 'feats' && (
-                            <FeatsPanel character={character} />
+                            <FeatsPanel
+                                character={character}
+                                canEdit={isGM || isOwner}
+                                onUpdateCharacter={updateCharacter}
+                            />
                         )}
                     </div>
                 </div>
@@ -1191,6 +1118,26 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ characterId, ini
                         }
                     }}
                     onClose={() => setShowBuilder(false)}
+                />
+            )}
+
+            {showLevelAdjustModal && (
+                <LevelDownModal
+                    character={character}
+                    onApply={(updatedChar, openLevelUpWizard) => {
+                        const stampedChar: Character = { ...updatedChar, lastModified: Date.now() };
+                        dirtyRef.current = false;
+                        fastSaveRef.current = false;
+                        characterRef.current = stampedChar;
+                        setCharacter(stampedChar);
+                        handleSave(stampedChar);
+                        window.dispatchEvent(new CustomEvent('character_update', { detail: stampedChar }));
+                        setShowLevelAdjustModal(false);
+                        if (openLevelUpWizard) {
+                            setShowLevelModal(true);
+                        }
+                    }}
+                    onClose={() => setShowLevelAdjustModal(false)}
                 />
             )}
 

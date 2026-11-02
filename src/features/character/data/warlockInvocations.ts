@@ -166,26 +166,87 @@ export const WARLOCK_INVOCATIONS: WarlockInvocation[] = [
 
     // --- NÍVEL 5+ ---
     {
+        id: 'thirsting_blade',
+        name: 'Lâmina Sedenta (Thirsting Blade)',
+        nameEn: 'Thirsting Blade',
+        minLevel: 5,
+        prerequisite: 'Nível 5+, Pacto da Lâmina',
+        description: 'Você ganha o benefício Ataque Extra exclusivamente para a sua arma do pacto: você pode atacar duas vezes com ela em vez de uma sempre que realizar a ação Atacar no seu turno.'
+    },
+    {
+        id: 'eldritch_smite',
+        name: 'Destruição Mística (Eldritch Smite)',
+        nameEn: 'Eldritch Smite',
+        minLevel: 5,
+        prerequisite: 'Nível 5+, Pacto da Lâmina',
+        description: '1x por turno ao acertar com sua arma do pacto, gaste um espaço de Magia de Pacto para causar +1d8 de dano de Força extra (mais +1d8 por círculo do espaço) e derrubar o alvo Caído (se Enorme ou menor).'
+    },
+    {
+        id: 'investment_of_the_chain_master',
+        name: 'Investidura do Mestre da Corrente (Investment of the Chain Master)',
+        nameEn: 'Investment of the Chain Master',
+        minLevel: 5,
+        prerequisite: 'Nível 5+, Pacto da Corrente',
+        description: 'Seu familiar ganha deslocamento de Voo ou Natação de 12m, pode atacar usando sua Ação Bônus, causa dano Radiante ou Necrótico, usa a sua CD de magia e você pode usar Reação para dar Resistência a dano a ele.'
+    },
+    {
+        id: 'master_of_myriad_forms',
+        name: 'Mestre de Miríades de Formas (Master of Myriad Forms)',
+        nameEn: 'Master of Myriad Forms',
+        minLevel: 5,
+        prerequisite: 'Nível 5+',
+        grantsSpellId: 'alter_self',
+        description: 'Você pode conjurar Alterar-se (Alter Self) sobre si mesmo à vontade, sem gastar espaços de magia.'
+    },
+    {
         id: 'one_with_shadows',
         name: 'Um com as Sombras (One with Shadows)',
         nameEn: 'One with Shadows',
         minLevel: 5,
-        description: 'Quando você estiver em uma área de penumbra ou escuridão, pode usar sua ação para ficar invisível até se mover ou realizar uma ação.'
+        prerequisite: 'Nível 5+',
+        description: 'Quando você estiver em uma área de penumbra ou escuridão, pode conjurar Invisibilidade sobre si mesmo à vontade sem gastar espaços de magia.'
     },
     {
         id: 'gaze_of_two_minds',
         name: 'Olhar de Duas Mentes (Gaze of Two Minds)',
         nameEn: 'Gaze of Two Minds',
         minLevel: 5,
+        prerequisite: 'Nível 5+',
         description: 'Você pode usar sua ação bônus para tocar um aliado voluntário e perceber através de seus sentidos e conjurar magias partindo do espaço dele.'
     },
 
     // --- NÍVEL 9+ ---
     {
+        id: 'lifedrinker',
+        name: 'Sugador de Vida (Lifedrinker)',
+        nameEn: 'Lifedrinker',
+        minLevel: 9,
+        prerequisite: 'Nível 9+, Pacto da Lâmina',
+        description: '1x por turno ao acertar uma criatura com sua arma do pacto, cause +1d6 de dano extra Necrótico, Psíquico ou Radiante e você pode gastar 1 Dado de Vida para recuperar PV iguais ao dado + CON (mín. 1).'
+    },
+    {
+        id: 'gift_of_the_protectors',
+        name: 'Dádiva dos Protetores (Gift of the Protectors)',
+        nameEn: 'Gift of the Protectors',
+        minLevel: 9,
+        prerequisite: 'Nível 9+, Pacto do Tomo',
+        description: 'Uma nova página surge em seu Livro das Sombras: criaturas que escreverem o próprio nome nela (até seu PB), ao serem reduzidas a 0 PV, caem para 1 PV em vez disso (1x por Descanso Longo).'
+    },
+    {
+        id: 'visions_of_distant_realms',
+        name: 'Visões de Reinos Distantes (Visions of Distant Realms)',
+        nameEn: 'Visions of Distant Realms',
+        minLevel: 9,
+        prerequisite: 'Nível 9+',
+        grantsSpellId: 'arcane_eye',
+        description: 'Você pode conjurar Olho Arcano (Arcane Eye) à vontade, sem gastar espaços de magia.'
+    },
+    {
         id: 'ascendant_step',
         name: 'Passo Ascendente (Ascendant Step)',
         nameEn: 'Ascendant Step',
         minLevel: 9,
+        prerequisite: 'Nível 9+',
         grantsSpellId: 'levitate',
         description: 'Você pode conjurar Levitação sobre si mesmo à vontade, sem gastar espaços de magia ou componentes materiais.'
     },
@@ -194,8 +255,27 @@ export const WARLOCK_INVOCATIONS: WarlockInvocation[] = [
         name: 'Sussurros do Túmulo (Whispers of the Grave)',
         nameEn: 'Whispers of the Grave',
         minLevel: 9,
+        prerequisite: 'Nível 9+',
         grantsSpellId: 'speak_with_dead',
         description: 'Você pode conjurar Falar com os Mortos à vontade, sem gastar espaços de magia.'
+    },
+
+    // --- NÍVEL 12+ & 15+ ---
+    {
+        id: 'devouring_blade',
+        name: 'Lâmina Devoradora (Devouring Blade)',
+        nameEn: 'Devouring Blade',
+        minLevel: 12,
+        prerequisite: 'Nível 12+, Lâmina Sedenta',
+        description: 'O Ataque Extra da sua Lâmina Sedenta confere dois ataques adicionais em vez de um: você ataca três vezes com sua arma do pacto na ação Atacar!'
+    },
+    {
+        id: 'witch_sight',
+        name: 'Visão da Bruxa (Witch Sight)',
+        nameEn: 'Witch Sight',
+        minLevel: 15,
+        prerequisite: 'Nível 15+',
+        description: 'Você adquire Visão Verdadeira permanente com alcance de 9 metros (30 pés), enxergando através de ilusões, escuridão mágica, invisibilidade e metamorfos.'
     }
 ];
 

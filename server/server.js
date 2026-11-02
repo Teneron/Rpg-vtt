@@ -258,14 +258,25 @@ const authorizeAndStamp = (room, socketId, message) => {
                 const existingChar = member.character;
                 if (isPlainObject(existingChar) && existingChar.id === payload.character.id && isPlainObject(existingChar.hp)) {
                     const incomingHp = isPlainObject(payload.character.hp) ? payload.character.hp : null;
-                    const isLevelUpGain = Number(payload.character.level) > Number(existingChar.level || 1);
+                    const completedPendingLevelUp = Boolean(existingChar.pendingLevelUp) && !payload.character.pendingLevelUp;
+                    const isLevelChange = Number(payload.character.level || 1) !== Number(existingChar.level || 1) || completedPendingLevelUp;
                     const isNat20Revive = Number(existingChar.hp.current) <= 0
                         && incomingHp
                         && Number(incomingHp.current) === 1
                         && Number(payload.character.deathSaves?.successes || 0) === 0
                         && Number(payload.character.deathSaves?.failures || 0) === 0;
+                    const isShortRestHeal = Boolean(incomingHp)
+                        && Number(payload.character.hitDice?.current ?? 0) < Number(existingChar.hitDice?.current ?? 0)
+                        && Number(incomingHp.current) > Number(existingChar.hp.current || 0)
+                        && Number(incomingHp.max) === Number(existingChar.hp.max || 0);
+                    const isMaxHpStructuralChange = Boolean(incomingHp)
+                        && Number(incomingHp.max) !== Number(existingChar.hp.max)
+                        && (
+                            Number(payload.character.attributes?.con?.value ?? 10) !== Number(existingChar.attributes?.con?.value ?? 10)
+                            || (Array.isArray(payload.character.feats) ? payload.character.feats.length : 0) !== (Array.isArray(existingChar.feats) ? existingChar.feats.length : 0)
+                        );
 
-                    if (!isLevelUpGain && !isNat20Revive) {
+                    if (!isLevelChange && !isNat20Revive && !isShortRestHeal && !isMaxHpStructuralChange) {
                         stamped.payload = {
                             ...payload,
                             character: {
@@ -523,7 +534,11 @@ io.on('connection', (socket) => {
             const incomingMod = Number(safeCharacter.lastModified) || 0;
             if (existingMod > incomingMod) {
                 resolvedMemberCharacter = existingCharacter;
-            } else if (isPlainObject(existingCharacter.hp) && !(Number(safeCharacter.level) > Number(existingCharacter.level || 1))) {
+            } else if (
+                isPlainObject(existingCharacter.hp)
+                && Number(safeCharacter.level || 1) === Number(existingCharacter.level || 1)
+                && !(Boolean(existingCharacter.pendingLevelUp) && !safeCharacter.pendingLevelUp)
+            ) {
                 resolvedMemberCharacter = {
                     ...safeCharacter,
                     hp: { ...existingCharacter.hp }

@@ -3,7 +3,9 @@ import { CLASSES } from './classes';
 import { BACKGROUNDS } from './backgrounds';
 import { FEATS } from './feats';
 import { RACES } from './races';
+import { WARLOCK_INVOCATIONS } from './warlockInvocations';
 import { regenerateCharacterStats, initialCharacter, type Character } from '../characterTypes';
+import { applyCharacterLevelDown } from '../utils/levelUtils';
 import {
     normalizeClassId,
     getProficiencyBonus,
@@ -11,6 +13,7 @@ import {
     isAsiLevel,
     getSubclassLevel,
     getSpellSlotsForLevel,
+    getMaxSpellCircleForLevel,
     getCantripsKnownCount,
     getSpellsPreparedCount,
     getClassResourcesForLevel,
@@ -269,5 +272,128 @@ describe('progression.ts - 1 to 20 rules engine', () => {
         const vengeanceSpells = getSubclassGrantedSpells('Juramento da Vingança', 3);
         expect(vengeanceSpells.some(s => s.id === 'bane')).toBe(true);
         expect(vengeanceSpells.some(s => s.id === 'hunter_mark')).toBe(true);
+    });
+
+    it('contains complete D&D 5.5e (2024) Feats & Warlock Invocations catalog', () => {
+        const originFeats = FEATS.filter(f => f.category === 'Origem');
+        const generalFeats = FEATS.filter(f => f.category === 'Geral');
+        const fightingStyles = FEATS.filter(f => f.category === 'Estilo de Luta');
+        const epicBoons = FEATS.filter(f => f.category === 'Dádiva Épica');
+
+        expect(originFeats.length).toBeGreaterThanOrEqual(10);
+        expect(generalFeats.length).toBeGreaterThanOrEqual(35);
+        expect(fightingStyles.length).toBe(10);
+        expect(epicBoons.length).toBe(12);
+
+        // Every General Feat in D&D 2024 is a half-feat (+1 ability score up to 20)
+        for (const gf of generalFeats) {
+            expect(gf.abilityBonusOptions).toBeDefined();
+            expect(gf.abilityBonusAmount ?? 1).toBe(1);
+        }
+
+        // Every Epic Boon raises an ability score up to 30 and requires level 19+
+        for (const boon of epicBoons) {
+            expect(boon.prerequisite).toContain('19');
+            expect(boon.maxAttributeCap).toBe(30);
+        }
+
+        // Key Warlock Invocations exist
+        expect(WARLOCK_INVOCATIONS.some(i => i.id === 'thirsting_blade')).toBe(true);
+        expect(WARLOCK_INVOCATIONS.some(i => i.id === 'eldritch_smite')).toBe(true);
+        expect(WARLOCK_INVOCATIONS.some(i => i.id === 'lifedrinker')).toBe(true);
+        expect(WARLOCK_INVOCATIONS.some(i => i.id === 'devouring_blade')).toBe(true);
+    });
+
+    it('derives accurate max unlocked spell circles and rich Lv 6-20 feature descriptions', () => {
+        // Half-casters at Lv 4 only have 1st-circle slots (2nd circle unlocks at Lv 5)
+        expect(getMaxSpellCircleForLevel('Paladino', 4)).toBe(1);
+        expect(getMaxSpellCircleForLevel('Paladino', 5)).toBe(2);
+        expect(getMaxSpellCircleForLevel('Mago', 4)).toBe(2);
+        expect(getMaxSpellCircleForLevel('Bruxo', 11)).toBe(6);
+
+        // Lv 6+ features pull real Portuguese rules instead of generic placeholders
+        const paladinLv6 = getFeaturesForLevel('Paladino', 6);
+        const aura = paladinLv6.find(f => f.name.includes('Aura de Proteção'));
+        expect(aura).toBeDefined();
+        expect(aura?.description.toLowerCase()).toContain('carisma');
+
+        // Downgrading below resource unlock level removes the locked resource
+        const fighterLv2Res = getClassResourcesForLevel('Guerreiro', 2);
+        expect(fighterLv2Res.some(r => r.id === 'action_surge')).toBe(true);
+        const fighterLv1Res = getClassResourcesForLevel('Guerreiro', 1, fighterLv2Res);
+        expect(fighterLv1Res.some(r => r.id === 'action_surge')).toBe(false);
+    });
+
+    it('reverts HP, ASI attributes, and Feats cleanly when downgrading from Level 4 to Level 3 (snapshot & legacy)', () => {
+        // 1. Exact snapshot reversal (Level 4 -> Level 3 after +2 STR ASI and +9 HP gain)
+        const charWithSnapshot: Character = regenerateCharacterStats({
+            ...initialCharacter,
+            class: 'Guerreiro',
+            level: 4,
+            hp: { current: 37, max: 37, temp: 0 },
+            hitDice: { current: 4, max: 4, dieFace: '1d10' },
+            attributes: {
+                ...initialCharacter.attributes,
+                str: { ...initialCharacter.attributes.str, value: 18, modifier: 4 },
+                con: { ...initialCharacter.attributes.con, value: 14, modifier: 2 }
+            },
+            feats: [
+                { id: 'alert', name: 'Alerta (Alert)', description: '', category: 'Origem', acquiredAtLevel: 1 },
+                { id: 'asi_4', name: 'Aumento no Valor de Atributo (+2 FOR)', description: '', acquiredAtLevel: 4 }
+            ],
+            levelHistory: {
+                4: {
+                    level: 4,
+                    hpGained: 9,
+                    previousHpMax: 28,
+                    previousAttributes: {
+                        ...initialCharacter.attributes,
+                        str: { ...initialCharacter.attributes.str, value: 16, modifier: 3 },
+                        con: { ...initialCharacter.attributes.con, value: 14, modifier: 2 }
+                    },
+                    previousFeatIds: ['alert'],
+                    previousFeatureNames: [],
+                    previousSpellIds: [],
+                    previousSkillExpertises: []
+                }
+            }
+        });
+
+        const revertedSnapshot = applyCharacterLevelDown(charWithSnapshot, 3);
+        expect(revertedSnapshot.level).toBe(3);
+        expect(revertedSnapshot.hp.max).toBe(28);
+        expect(revertedSnapshot.hp.current).toBe(28);
+        expect(revertedSnapshot.attributes.str.value).toBe(16);
+        expect(revertedSnapshot.feats.some(f => f.id === 'asi_4')).toBe(false);
+        expect(revertedSnapshot.feats.some(f => f.id === 'alert')).toBe(true);
+        expect(revertedSnapshot.levelHistory?.[4]).toBeUndefined();
+
+        // 2. Legacy sheet reversal without levelHistory (Level 4 -> Level 3 removing General half-feat +1 CON and average HP)
+        const legacyLvl4: Character = regenerateCharacterStats({
+            ...initialCharacter,
+            class: 'Guerreiro',
+            level: 4,
+            hp: { current: 40, max: 40, temp: 0 },
+            hitDice: { current: 4, max: 4, dieFace: '1d10' },
+            attributes: {
+                ...initialCharacter.attributes,
+                str: { ...initialCharacter.attributes.str, value: 16, modifier: 3 },
+                con: { ...initialCharacter.attributes.con, value: 16, modifier: 3 }
+            },
+            feats: [
+                { id: 'alert', name: 'Alerta (Alert)', description: '', category: 'Origem' },
+                { id: 'durable', name: 'Durável (Durable)', description: '', category: 'Geral', chosenAbilityBonus: 'con' }
+            ]
+        });
+
+        // Fighter d10 (avg 6) + CON +3 = 9 HP for Lv4, plus removing Durable drops CON 16->15 (mod +3 -> +2, so -3 HP across remaining 3 levels) -> 40 - 9 - 3 = 28!
+        const revertedLegacy = applyCharacterLevelDown(legacyLvl4, 3, {
+            legacyHpReduction: 9,
+            featIndicesToRemove: [1]
+        });
+        expect(revertedLegacy.level).toBe(3);
+        expect(revertedLegacy.attributes.con.value).toBe(15);
+        expect(revertedLegacy.hp.max).toBe(28);
+        expect(revertedLegacy.feats).toHaveLength(1);
     });
 });

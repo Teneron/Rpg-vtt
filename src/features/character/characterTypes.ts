@@ -143,6 +143,18 @@ export interface CharacterAttributes {
     cha: Attribute;
 }
 
+export interface LevelUpSnapshot {
+    level: number;
+    previousHpMax: number;
+    hpGained: number;
+    previousAttributes: CharacterAttributes;
+    previousFeatIds: string[];
+    previousFeatureNames: string[];
+    previousSpellIds: string[];
+    previousSubclass?: string;
+    previousSkillExpertises: string[];
+}
+
 export interface Character {
     id: string;
     owner: string; // Creates isolation by username
@@ -243,6 +255,7 @@ export interface Character {
     };
     pendingLevelUp?: boolean;
     levelUpTarget?: number;
+    levelHistory?: Record<number, LevelUpSnapshot>;
     lastModified?: number; // Timestamp for Conflict Resolution
     system?: string; // Optional game system identifier (e.g. "dnd5e", "witcher", "cyberpunk")
 }
@@ -664,7 +677,13 @@ export const regenerateCharacterStats = (char: Character): Character => {
             } else if (isArmor) {
                 const thisBaseAc = item.ac ?? def?.ac ?? 10;
                 const allowsDex = item.acDexBonus ?? def?.acDexBonus ?? false;
-                const maxDex = item.acMaxDex ?? def?.acMaxDex;
+                let maxDex = item.acMaxDex ?? def?.acMaxDex;
+                const hasMediumArmorMaster = Array.isArray(char.feats) && char.feats.some(
+                    f => f.id === 'medium_armor_master' || /armaduras m[ée]dias|medium armor master/i.test(f.name || '')
+                );
+                if (maxDex === 2 && hasMediumArmorMaster && newAttrs.dex.value >= 16) {
+                    maxDex = 3;
+                }
 
                 let thisDexBonus = 0;
                 if (allowsDex) {
@@ -830,10 +849,26 @@ export const regenerateCharacterStats = (char: Character): Character => {
     }
 
     // Standard Unarmed Strike (Ataque Desarmado) available to all characters
+    const hasTavernBrawler = Array.isArray(char.feats) && char.feats.some(
+        f => f.id === 'tavern_brawler' || /valent[ãa]o de taverna|tavern brawler/i.test(f.name || '')
+    );
+    const hasUnarmedFightingStyle = (
+        (Array.isArray(char.feats) && char.feats.some(f => f.id === 'fighting_style_unarmed' || /combate desarmado|unarmed fighting/i.test(f.name || ''))) ||
+        (Array.isArray(char.features) && char.features.some(f => /combate desarmado|unarmed fighting/i.test(f.name || '')))
+    );
+    const hasEquippedWeaponOrShield = shieldBonus > 0 || newAttacks.length > 0;
     const unarmedAttrMod = isMonk ? Math.max(newAttrs.str.modifier, newAttrs.dex.modifier) : newAttrs.str.modifier;
     const unarmedModStr = unarmedAttrMod >= 0 ? `+ ${unarmedAttrMod}` : `- ${Math.abs(unarmedAttrMod)}`;
-    const unarmedDamage = isMonk
-        ? (unarmedAttrMod === 0 ? '1d6' : `1d6 ${unarmedModStr}`)
+    let unarmedBaseDie = '';
+    if (isMonk) {
+        unarmedBaseDie = safeLevel >= 17 ? '1d12' : safeLevel >= 11 ? '1d10' : safeLevel >= 5 ? '1d8' : '1d6';
+    } else if (hasUnarmedFightingStyle) {
+        unarmedBaseDie = hasEquippedWeaponOrShield ? '1d6' : '1d8';
+    } else if (hasTavernBrawler) {
+        unarmedBaseDie = '1d4';
+    }
+    const unarmedDamage = unarmedBaseDie
+        ? (unarmedAttrMod === 0 ? unarmedBaseDie : `${unarmedBaseDie} ${unarmedModStr}`)
         : `${Math.max(1, 1 + unarmedAttrMod)}`;
     const escapeDC = 8 + profBonus + unarmedAttrMod;
     newAttacks.push({
@@ -1094,7 +1129,8 @@ export const regenerateCharacterStats = (char: Character): Character => {
         spellSaveDC: newSpellSaveDC,
         spellAttackBonus: newSpellAttackBonus,
         pendingLevelUp: char.pendingLevelUp || false,
-        levelUpTarget: char.levelUpTarget
+        levelUpTarget: char.levelUpTarget,
+        levelHistory: char.levelHistory ? { ...char.levelHistory } : undefined
     };
 };
 

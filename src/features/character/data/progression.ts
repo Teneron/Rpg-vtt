@@ -1,5 +1,6 @@
 import { CLASS_PROGRESSIONS, type FullClassProgression } from './classProgressions';
 import { CLASSES } from './classes';
+import { CLASS_FEATURE_DESCRIPTIONS, type FeatureRuleInfo } from './classFeatureDescriptions';
 import { SPELLS, type Spell } from './spells';
 import type { ClassFeature, ClassResource } from '../characterTypes';
 
@@ -142,9 +143,39 @@ export function getSpellSlotsForLevel(
 }
 
 /**
+ * Maior círculo de magia desbloqueado pela classe no nível (0 se não conjurador).
+ */
+export function getMaxSpellCircleForLevel(classIdOrName: string | null | undefined, level: number): number {
+    const classId = normalizeClassId(classIdOrName);
+    const prog = getClassProgression(classId);
+    if (!prog.hasSpellcasting) return 0;
+
+    const safeLvl = Math.max(1, Math.min(20, Math.floor(level || 1)));
+    const slots = getSpellSlotsForLevel(classId, safeLvl);
+
+    let maxCircle = 0;
+    for (let circle = 1; circle <= 9; circle++) {
+        if ((slots[circle]?.max || 0) > 0) {
+            maxCircle = circle;
+        }
+    }
+
+    // Arcana Mística (Bruxo) desbloqueia círculos 6..9 nos níveis 11, 13, 15 e 17
+    if (classId === 'warlock') {
+        if (safeLvl >= 17) maxCircle = Math.max(maxCircle, 9);
+        else if (safeLvl >= 15) maxCircle = Math.max(maxCircle, 8);
+        else if (safeLvl >= 13) maxCircle = Math.max(maxCircle, 7);
+        else if (safeLvl >= 11) maxCircle = Math.max(maxCircle, 6);
+    }
+
+    return maxCircle;
+}
+
+/**
  * Quantidade de Truques (Cantrips) conhecidos pela classe no nível.
  */
 export function getCantripsKnownCount(classIdOrName: string | null | undefined, level: number): number {
+    if (level <= 0) return 0;
     const classId = normalizeClassId(classIdOrName);
     const prog = getClassProgression(classId);
     const safeLvl = Math.max(1, Math.min(20, Math.floor(level || 1)));
@@ -157,6 +188,7 @@ export function getCantripsKnownCount(classIdOrName: string | null | undefined, 
  * Quantidade de Magias Preparadas/Conhecidas no nível.
  */
 export function getSpellsPreparedCount(classIdOrName: string | null | undefined, level: number): number {
+    if (level <= 0) return 0;
     const classId = normalizeClassId(classIdOrName);
     const prog = getClassProgression(classId);
     const safeLvl = Math.max(1, Math.min(20, Math.floor(level || 1)));
@@ -204,6 +236,13 @@ export function getClassResourcesForLevel(
         }
     };
 
+    const removeResource = (id: string) => {
+        const idx = resources.findIndex(r => r.id === id);
+        if (idx >= 0) {
+            resources.splice(idx, 1);
+        }
+    };
+
     if (!row) return resources;
 
     switch (classId) {
@@ -215,20 +254,24 @@ export function getClassResourcesForLevel(
         case 'bard': {
             const die = row.values['bardicDie'] || 'd6';
             const count = Math.max(1, chaModifier);
-            upsertResource('bardic_inspiration', `Inspiração de Bardo (${die})`, count, 'short');
+            upsertResource('bardic_inspiration', `Inspiração de Bardo (${die})`, count, safeLvl >= 5 ? 'short' : 'long');
             break;
         }
         case 'cleric': {
             const uses = parseInt(row.values['channelDivinity'] || '0', 10) || (safeLvl >= 2 ? 2 : 0);
-            if (uses > 0) {
+            if (uses > 0 && safeLvl >= 2) {
                 upsertResource('channel_divinity', 'Canalizar Divindade', uses, 'short');
+            } else {
+                removeResource('channel_divinity');
             }
             break;
         }
         case 'druid': {
             const ws = parseInt(row.values['wildShape'] || '0', 10) || (safeLvl >= 2 ? 2 : 0);
-            if (ws > 0) {
+            if (ws > 0 && safeLvl >= 2) {
                 upsertResource('wild_shape', 'Forma Selvagem (Wild Shape)', ws, 'short');
+            } else {
+                removeResource('wild_shape');
             }
             break;
         }
@@ -236,18 +279,26 @@ export function getClassResourcesForLevel(
             if (safeLvl >= 2) {
                 const actionSurgeUses = safeLvl >= 17 ? 2 : 1;
                 upsertResource('action_surge', 'Surto de Ação (Action Surge)', actionSurgeUses, 'short');
+            } else {
+                removeResource('action_surge');
             }
             const secondWindUses = parseInt(row.values['secondWind'] || '2', 10) || 2;
             upsertResource('second_wind', 'Retomar o Fôlego (Second Wind)', secondWindUses, 'short');
             if (safeLvl >= 9) {
                 const indomitableUses = parseInt(row.values['indomitable'] || '1', 10) || 1;
                 upsertResource('indomitable', 'Indomável (Indomitable)', indomitableUses, 'long');
+            } else {
+                removeResource('indomitable');
             }
             break;
         }
         case 'monk': {
-            const focus = parseInt(row.values['focusPoints'] || String(safeLvl), 10) || safeLvl;
-            upsertResource('focus_points', 'Pontos de Foco (Ki)', focus, 'short');
+            if (safeLvl >= 2) {
+                const focus = parseInt(row.values['focusPoints'] || String(safeLvl), 10) || safeLvl;
+                upsertResource('focus_points', 'Pontos de Foco (Ki)', focus, 'short');
+            } else {
+                removeResource('focus_points');
+            }
             break;
         }
         case 'paladin': {
@@ -255,6 +306,8 @@ export function getClassResourcesForLevel(
             if (safeLvl >= 2) {
                 const cdUses = parseInt(row.values['channelDivinity'] || '2', 10) || 2;
                 upsertResource('channel_divinity', 'Canalizar Divindade', cdUses, 'short');
+            } else {
+                removeResource('channel_divinity');
             }
             break;
         }
@@ -262,6 +315,8 @@ export function getClassResourcesForLevel(
             if (safeLvl >= 2) {
                 const sp = parseInt(row.values['sorceryPoints'] || String(safeLvl), 10) || safeLvl;
                 upsertResource('sorcery_points', 'Pontos de Feitiçaria (Fonte de Magia)', sp, 'long');
+            } else {
+                removeResource('sorcery_points');
             }
             break;
         }
@@ -269,6 +324,8 @@ export function getClassResourcesForLevel(
             const invocations = parseInt(row.values['invocations'] || '0', 10) || 0;
             if (invocations > 0) {
                 upsertResource('invocations', 'Invocações Místicas Ativas', invocations, 'long');
+            } else {
+                removeResource('invocations');
             }
             break;
         }
@@ -283,7 +340,7 @@ export function getClassResourcesForLevel(
     }
 
     // --- Subclass Specific Resources ---
-    if (subclassIdOrName) {
+    if (subclassIdOrName && safeLvl >= getSubclassLevel(classId)) {
         const subLower = subclassIdOrName.toLowerCase();
         if (subLower.includes('battle') || subLower.includes('batalha')) {
             const count = safeLvl >= 15 ? 6 : (safeLvl >= 7 ? 5 : 4);
@@ -299,6 +356,11 @@ export function getClassResourcesForLevel(
             const count = safeLvl >= 5 ? 6 : 4;
             upsertResource('psionic_dice', 'Dados de Energia Psiônica', count, 'short');
         }
+    } else {
+        removeResource('combat_superiority');
+        removeResource('steps_of_the_fey');
+        removeResource('healing_light');
+        removeResource('psionic_dice');
     }
 
     return resources;
@@ -376,6 +438,28 @@ export function getSubclassGrantedSpells(
         .filter((s): s is Spell => s !== undefined);
 }
 
+function findFeatureRuleDescription(featName: string): FeatureRuleInfo | undefined {
+    if (CLASS_FEATURE_DESCRIPTIONS[featName]) {
+        return CLASS_FEATURE_DESCRIPTIONS[featName];
+    }
+    const lower = featName.trim().toLowerCase();
+    const baseWithoutParens = featName.replace(/\s*\([^)]*\)\s*/g, '').trim().toLowerCase();
+
+    for (const [key, info] of Object.entries(CLASS_FEATURE_DESCRIPTIONS)) {
+        const keyLower = key.toLowerCase();
+        const keyBase = key.replace(/\s*\([^)]*\)\s*/g, '').trim().toLowerCase();
+        if (
+            keyLower === lower ||
+            keyBase === baseWithoutParens ||
+            info.name.toLowerCase() === lower ||
+            (baseWithoutParens.length >= 5 && (keyLower.startsWith(baseWithoutParens) || baseWithoutParens.startsWith(keyBase)))
+        ) {
+            return info;
+        }
+    }
+    return undefined;
+}
+
 export function getFeaturesForLevel(
     classIdOrName: string | null | undefined,
     level: number
@@ -386,19 +470,26 @@ export function getFeaturesForLevel(
         .filter(f => f.level === level)
         .map(f => ({ ...f, type: f.type || 'passive' } as ClassFeature));
 
-    // Também complementa com nomes de features presentes em CLASS_PROGRESSIONS se não existirem
+    // Complementa com features presentes em CLASS_PROGRESSIONS puxando descrições reais de CLASS_FEATURE_DESCRIPTIONS
     const prog = getClassProgression(classId);
     const safeLvl = Math.max(1, Math.min(20, Math.floor(level || 1)));
     const row = prog.rows[safeLvl - 1];
 
     if (row && Array.isArray(row.features)) {
         for (const featName of row.features) {
-            if (!clsFeatures.some(cf => cf.name.toLowerCase() === featName.toLowerCase())) {
+            const featBase = featName.replace(/\s*\([^)]*\)\s*/g, '').trim().toLowerCase();
+            const alreadyPresent = clsFeatures.some(cf => {
+                const cfLower = cf.name.toLowerCase();
+                const cfBase = cf.name.replace(/\s*\([^)]*\)\s*/g, '').trim().toLowerCase();
+                return cfLower === featName.toLowerCase() || (featBase.length >= 4 && cfBase === featBase);
+            });
+            if (!alreadyPresent) {
+                const ruleInfo = findFeatureRuleDescription(featName);
                 clsFeatures.push({
-                    name: featName,
-                    description: `Característica concedida no Nível ${safeLvl} da classe ${prog.className}.`,
+                    name: ruleInfo?.name && featName.length < ruleInfo.name.length ? ruleInfo.name : featName,
+                    description: ruleInfo?.description || `Característica concedida no Nível ${safeLvl} da classe ${prog.className}.`,
                     level: safeLvl,
-                    type: 'passive'
+                    type: ruleInfo?.type || 'passive'
                 });
             }
         }

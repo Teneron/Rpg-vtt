@@ -6,7 +6,9 @@ import { CharacterRepository } from '../character/characterRepository';
 import { usePeer } from '../multiplayer/SocketContext';
 import { Soundboard } from '../audio/Soundboard';
 import { RefreshCw, Shield, Copy, Check, Link2, Trash2, FileText, Users, UserCheck, MapPin, TrendingUp, BookOpen, Download, ChevronDown, ChevronUp, Minus, Plus, X } from 'lucide-react';
-import { getMinXPForLevel, regenerateCharacterStats, type Character } from '../character/characterTypes';
+import type { Character } from '../character/characterTypes';
+import { LevelDownModal } from '../character/components/LevelDownModal';
+import { prepareCharacterLevelUp } from '../character/utils/levelUtils';
 import { playSynthSound } from '../audio/audioSynth';
 
 import { ErrorBoundary } from '../../components/ErrorBoundary';
@@ -195,6 +197,12 @@ export const GMScreen: React.FC = () => {
     const { connectedPlayersData, removePlayer, peerId, triggerForceRefresh, currentAdventureId, updateRemotePlayerCharacter, roomSettings, updateRoomSettings } = usePeer();
     const { currentAdventure, updateAdventureJournal, downloadCampaignBackup, updateAdventurePatch } = useAdventure();
     const [editingPlayer, setEditingPlayer] = React.useState<{ peerId: string; name: string; character: any } | null>(null);
+    const [levelDownTargetPlayer, setLevelDownTargetPlayer] = React.useState<{
+        peerId: string;
+        name: string;
+        character: Character;
+        initialTargetLevel: number;
+    } | null>(null);
     const [copiedCode, setCopiedCode] = React.useState(false);
     const [copiedLink, setCopiedLink] = React.useState(false);
 
@@ -416,55 +424,70 @@ export const GMScreen: React.FC = () => {
         handleQuickHp(p, maxHp - currentHp);
     };
 
+    const persistAndSyncUpdatedCharacter = (targetPeerId: string, updatedChar: Character) => {
+        const now = Date.now();
+        const stampedChar: Character = {
+            ...updatedChar,
+            lastModified: now
+        };
+
+        // 1. Salva imediatamente no banco persistente da campanha (Dexie & Cache) e marca autoria do Mestre
+        sessionStorage.setItem(`last_gm_edit_${stampedChar.id}`, now.toString());
+        CharacterRepository.save(stampedChar);
+        db.characters.put(stampedChar).catch(console.error);
+        window.dispatchEvent(new CustomEvent('rpg_local_char_save', { detail: stampedChar }));
+        setCacheVersion(v => v + 1);
+
+        // 2. Sincroniza a ficha remota do jogador se estiver conectado
+        if (targetPeerId && !targetPeerId.startsWith('db_')) {
+            updateRemotePlayerCharacter(targetPeerId, stampedChar as any);
+        }
+
+        // 3. Sincroniza tokens correspondentes no tabuleiro de batalha
+        if (tokens && updateToken) {
+            tokens.forEach(t => {
+                if (t.characterId === stampedChar.id) {
+                    updateToken(t.id, {
+                        hp: { ...stampedChar.hp }
+                    });
+                }
+            });
+        }
+
+        // 4. Sincroniza combatente na iniciativa se houver combate ativo
+        if (combatState?.combatants && updateCombatant) {
+            combatState.combatants.forEach(c => {
+                if (c.characterId === stampedChar.id) {
+                    updateCombatant(c.id, {
+                        hp: { ...stampedChar.hp }
+                    });
+                }
+            });
+        }
+    };
+
     const handleLevelChange = (p: typeof players[0], delta: number) => {
         if (!p.character) return;
         const currentLvl = p.character.level || 1;
         const nextLvl = Math.max(1, Math.min(20, currentLvl + delta));
         if (nextLvl === currentLvl) return;
 
-        const actionText = delta > 0
-            ? `Subir nível de "${p.character.name || p.name}" para o Nível ${nextLvl}?\n\nO jogador receberá aviso para configurar seus novos Pontos de Vida, Perícias e Habilidades de Classe.`
-            : `Reduzir nível de "${p.character.name || p.name}" para o Nível ${nextLvl}?`;
+        if (delta < 0) {
+            setLevelDownTargetPlayer({
+                peerId: p.peerId,
+                name: p.name,
+                character: p.character,
+                initialTargetLevel: nextLvl
+            });
+            return;
+        }
+
+        const actionText = `Subir nível de "${p.character.name || p.name}" para o Nível ${nextLvl}?\n\nO jogador (ou o Mestre, abrindo a ficha) poderá configurar seus novos Pontos de Vida, Talentos/Atributos e Habilidades de Classe.`;
         if (!confirm(actionText)) return;
 
-        const newXP = getMinXPForLevel(nextLvl);
-        const nextXP = getMinXPForLevel(nextLvl + 1) || newXP;
-
-        const updatedChar: Character = {
-            ...p.character,
-            level: nextLvl,
-            experience: newXP,
-            nextLevelExperience: nextXP,
-            pendingLevelUp: delta > 0,
-            hitDice: {
-                ...p.character.hitDice,
-                max: nextLvl,
-                current: delta > 0 ? Math.min(nextLvl, (p.character.hitDice?.current || 1) + 1) : Math.min(nextLvl, p.character.hitDice?.current || 1)
-            }
-        };
-
-        const regened = regenerateCharacterStats(updatedChar);
-
-        // 1. Salva imediatamente no banco persistente da campanha (Dexie & Cache)
-        CharacterRepository.save(regened);
-        db.characters.put(regened).catch(console.error);
-
-        // 2. Sincroniza a ficha remota do jogador se estiver conectado
-        if (p.peerId && !p.peerId.startsWith('db_')) {
-            updateRemotePlayerCharacter(p.peerId, regened as any);
-        }
-
-        if (tokens && updateToken) {
-            tokens.forEach(t => {
-                if (t.characterId === p.character?.id) {
-                    updateToken(t.id, {
-                        hp: regened.hp
-                    });
-                }
-            });
-        }
-
-        playSynthSound(delta > 0 ? 'crit' : 'dice');
+        const regened = prepareCharacterLevelUp(p.character, nextLvl);
+        persistAndSyncUpdatedCharacter(p.peerId, regened);
+        playSynthSound('crit');
     };
 
     const handleClearOffline = () => {
@@ -1105,6 +1128,19 @@ export const GMScreen: React.FC = () => {
                     </div>
                 </div>,
                 document.body
+            )}
+
+            {levelDownTargetPlayer && (
+                <LevelDownModal
+                    character={levelDownTargetPlayer.character}
+                    initialTargetLevel={levelDownTargetPlayer.initialTargetLevel}
+                    onClose={() => setLevelDownTargetPlayer(null)}
+                    onApply={(updatedChar, openLevelUpWizard) => {
+                        persistAndSyncUpdatedCharacter(levelDownTargetPlayer.peerId, updatedChar);
+                        playSynthSound(openLevelUpWizard ? 'crit' : 'dice');
+                        setLevelDownTargetPlayer(null);
+                    }}
+                />
             )}
         </div>
     );

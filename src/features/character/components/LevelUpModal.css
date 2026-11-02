@@ -532,3 +532,413 @@
     transform: none;
     box-shadow: none;
 }
+
+/* Step 6: Feat & ASI Progression */
+.lvl-feat-step-container {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.feat-type-selector {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.fts-btn {
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    color: #cbd5e1;
+    padding: 12px 16px;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.fts-btn:hover {
+    border-color: rgba(255, 215, 0, 0.45);
+    color: #fff;
+}
+
+.fts-btn.active {
+    background: linear-gradient(135deg, rgba(197, 160, 89, 0.22) 0%, rgba(40, 32, 16, 0.75) 100%);
+    border-color: #ffd700;
+    color: #ffd700;
+    box-shadow: 0 0 14px rgba(255, 215, 0, 0.18);
+}
+
+.feat-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+}
+
+.feat-filter-bar {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.feat-filter-pill {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: #94a3b8;
+    border-radius: 16px;
+    padding: 5px 12px;
+    font-size: 0.76rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.feat-filter-pill:hover {
+    color: #f8fafc;
+    border-color: rgba(255, 215, 0, 0.4);
+}
+
+.feat-filter-pill.active {
+    background: rgba(255, 215, 0, 0.18);
+    border-color: #ffd700;
+    color: #ffd700;
+}
+
+.feat-search-box {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(0, 0, 0, 0.45);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 6px;
+    padding: 5px 10px;
+    min-width: 220px;
+}
+
+.feat-search-box input {
+    background: transparent;
+    border: none;
+    outline: none;
+    color: #f8fafc;
+    font-size: 0.82rem;
+    width: 100%;
+}
+
+/* Half-Feat +1 Ability Score Picker */
+.feat-bonus-picker {
+    background: linear-gradient(135deg, rgba(197, 160, 89, 0.14) 0%, rgba(20, 22, 32, 0.85) 100%);
+    border: 1px solid rgba(255, 215, 0, 0.5);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 12px;
+}
+
+.feat-bonus-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+    font-size: 0.84rem;
+}
+
+.feat-bonus-header strong {
+    color: #ffd700;
+}
+
+.feat-bonus-header span {
+    color: #4ade80;
+    font-weight: 600;
+    font-size: 0.8rem;
+}
+
+.feat-bonus-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.feat-bonus-attr-btn {
+    background: rgba(0, 0, 0, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    color: #e2e8f0;
+    border-radius: 6px;
+    padding: 7px 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    font-size: 0.82rem;
+    transition: all 0.15s ease;
+}
+
+.feat-bonus-attr-btn:hover:not(:disabled) {
+    border-color: #ffd700;
+    background: rgba(255, 215, 0, 0.08);
+}
+
+.feat-bonus-attr-btn.selected {
+    background: rgba(255, 215, 0, 0.2);
+    border-color: #ffd700;
+    color: #fff;
+    box-shadow: 0 0 10px rgba(255, 215, 0, 0.25);
+}
+
+.feat-bonus-attr-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.feat-bonus-attr-btn .attr-code {
+    font-weight: 800;
+    color: #ffd700;
+}
+
+.feat-bonus-attr-btn .attr-save-tag {
+    background: rgba(74, 222, 128, 0.2);
+    color: #4ade80;
+    border: 1px solid rgba(74, 222, 128, 0.4);
+    border-radius: 4px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    padding: 1px 5px;
+}
+
+/* Feat Cards Grid */
+.feat-selector {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(255px, 1fr));
+    gap: 10px;
+    max-height: 360px;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.feat-item {
+    background: rgba(0, 0, 0, 0.38);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 12px 14px;
+    cursor: pointer;
+    transition: all 0.18s ease;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.feat-item:hover:not(.owned) {
+    border-color: rgba(255, 215, 0, 0.45);
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.feat-item.selected {
+    border-color: #ffd700;
+    background: rgba(197, 160, 89, 0.14);
+    box-shadow: 0 0 12px rgba(255, 215, 0, 0.18);
+}
+
+.feat-item.owned {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.feat-item-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 8px;
+}
+
+.feat-item-top strong {
+    color: #f8fafc;
+    font-size: 0.9rem;
+    line-height: 1.25;
+}
+
+.feat-item.selected .feat-item-top strong {
+    color: #ffd700;
+}
+
+.feat-badge-cat {
+    font-size: 0.66rem;
+    color: #cbd5e1;
+    background: rgba(255, 255, 255, 0.08);
+    padding: 2px 6px;
+    border-radius: 10px;
+    white-space: nowrap;
+}
+
+.feat-badge-owned {
+    font-size: 0.68rem;
+    color: #94a3b8;
+    background: rgba(148, 163, 184, 0.15);
+    padding: 2px 6px;
+    border-radius: 10px;
+    white-space: nowrap;
+}
+
+.feat-prereq {
+    font-size: 0.72rem;
+    color: #eab308;
+}
+
+.feat-item p {
+    margin: 2px 0 0 0;
+    font-size: 0.8rem;
+    color: #94a3b8;
+    line-height: 1.42;
+}
+
+/* ASI Selector */
+.asi-selector {
+    display: flex;
+    flex-direction: column;
+}
+
+.asi-mode-cards {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.asi-mode-card {
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 8px;
+    padding: 12px 14px;
+    cursor: pointer;
+    transition: all 0.18s ease;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.asi-mode-card:hover {
+    border-color: rgba(255, 215, 0, 0.45);
+}
+
+.asi-mode-card.selected {
+    border-color: #ffd700;
+    background: rgba(197, 160, 89, 0.14);
+}
+
+.asi-mode-card strong {
+    color: #f8fafc;
+    font-size: 0.92rem;
+}
+
+.asi-mode-card.selected strong {
+    color: #ffd700;
+}
+
+.asi-mode-card span {
+    font-size: 0.78rem;
+    color: #94a3b8;
+}
+
+.asi-attr-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+}
+
+@media (max-width: 640px) {
+    .asi-attr-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    .feat-type-selector,
+    .asi-mode-cards {
+        grid-template-columns: 1fr;
+    }
+}
+
+.asi-attr-card {
+    background: rgba(0, 0, 0, 0.4);
+    border: 2px solid rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    padding: 14px;
+    color: #e2e8f0;
+    text-align: left;
+    cursor: pointer;
+    transition: all 0.18s ease;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.asi-attr-card:hover:not(:disabled) {
+    border-color: rgba(255, 215, 0, 0.5);
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.asi-attr-card.selected {
+    border-color: #ffd700;
+    background: rgba(197, 160, 89, 0.16);
+    box-shadow: 0 0 14px rgba(255, 215, 0, 0.2);
+}
+
+.asi-attr-card.maxed {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.asi-attr-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.asi-attr-short {
+    font-size: 1.05rem;
+    font-weight: 800;
+    color: #ffd700;
+}
+
+.asi-attr-badge {
+    font-size: 0.72rem;
+    font-weight: 800;
+    padding: 2px 8px;
+    border-radius: 10px;
+}
+
+.asi-attr-badge.active {
+    background: #ffd700;
+    color: #000;
+}
+
+.asi-attr-badge.max {
+    background: rgba(148, 163, 184, 0.2);
+    color: #94a3b8;
+}
+
+.asi-attr-fullname {
+    font-size: 0.78rem;
+    color: #94a3b8;
+}
+
+.asi-attr-values {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 6px;
+    font-size: 0.92rem;
+    font-weight: 700;
+}
+
+.asi-attr-values .cur {
+    color: #cbd5e1;
+}
+
+.asi-attr-values .next {
+    color: #4ade80;
+    font-size: 1rem;
+}

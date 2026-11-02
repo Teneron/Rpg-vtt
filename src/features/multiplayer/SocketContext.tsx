@@ -267,13 +267,22 @@ export const MultiplayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
             return { char: hostSaved, needsPushToPlayer: true };
         }
 
-        const isLevelUpGain = (incomingChar.level || 1) > (hostSaved.level || 1);
+        const completedPendingLevelUp = Boolean(hostSaved.pendingLevelUp) && !incomingChar.pendingLevelUp;
+        const isLevelChange = (incomingChar.level || 1) !== (hostSaved.level || 1) || completedPendingLevelUp;
         const isNat20Revive = (hostSaved.hp?.current ?? 0) <= 0
             && incomingChar.hp?.current === 1
             && (incomingChar.deathSaves?.successes ?? 0) === 0
             && (incomingChar.deathSaves?.failures ?? 0) === 0;
+        const isShortRestHeal = (incomingChar.hitDice?.current ?? 0) < (hostSaved.hitDice?.current ?? 0)
+            && (incomingChar.hp?.current ?? 0) > (hostSaved.hp?.current ?? 0)
+            && (incomingChar.hp?.max ?? 0) === (hostSaved.hp?.max ?? 0);
+        const isMaxHpStructuralChange = (incomingChar.hp?.max ?? 0) !== (hostSaved.hp?.max ?? 0)
+            && (
+                (incomingChar.attributes?.con?.value ?? 10) !== (hostSaved.attributes?.con?.value ?? 10)
+                || (incomingChar.feats?.length ?? 0) !== (hostSaved.feats?.length ?? 0)
+            );
 
-        if (!isLevelUpGain && !isNat20Revive && hostSaved.hp) {
+        if (!isLevelChange && !isNat20Revive && !isShortRestHeal && !isMaxHpStructuralChange && hostSaved.hp) {
             const hpDiffers = hostSaved.hp.current !== incomingChar.hp?.current
                 || hostSaved.hp.max !== incomingChar.hp?.max
                 || (hostSaved.hp.temp || 0) !== (incomingChar.hp?.temp || 0);
