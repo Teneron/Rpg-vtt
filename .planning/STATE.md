@@ -91,6 +91,7 @@ None yet.
 | 261102-ppj | travas de dados de vida limite de talentos vs asi calculo de vigoroso e permissoes | 2026-11-02 | pending | [261102-ppj-travas-dados-talentos-vigoroso-e-permiss](./quick/261102-ppj-travas-dados-talentos-vigoroso-e-permiss/) |
 | 261115-mav | ato 3 sequencia le frey mapas tokens e bestiario no VTT | 2026-11-15 | 5268e79 | [261115-mav-ato-3-sequencia-le-frey-mapas-tokens-bes](./quick/261115-mav-ato-3-sequencia-le-frey-mapas-tokens-bes/) |
 | 261115-pe8 | mapa cidade livre de valecorvo | 2026-11-15 | 8a1f061 | [261115-pe8-mapa-cidade-livre-de-valecorvo](./quick/261115-pe8-mapa-cidade-livre-de-valecorvo/) |
+| 261115-qqg | mapa invasao dormitorios valecorvo | 2026-11-15 | 4b6bc88 | [261115-qqg-mapa-invasao-dormitorios-valecorvo](./quick/261115-qqg-mapa-invasao-dormitorios-valecorvo/) |
 
 ## Deferred Items
 
@@ -101,5 +102,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-11-15
-Stopped at: Quick task 261115-pe8 complete (Free City of Valecorvo city map and VTT preset).
+Stopped at: Quick task 261115-qqg complete (O Corvo Dourado 2nd-floor dormitories ambush battlemap and VTT preset).
 Resume file: None
