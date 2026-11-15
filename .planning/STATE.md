@@ -89,6 +89,7 @@ None yet.
 | 261102-s8a | dados 3d d10 real sincronizacao de pv e imagem de token monstros/npcs | 2026-11-02 | fa693ed | [261102-s8a-dados-3d-e-sincronizacao-hp](./quick/261102-s8a-dados-3d-e-sincronizacao-hp/) |
 | 261102-oo0 | nivel 4 downgrade completo e catalogo oficial de talentos 5.5e | 2026-11-02 | 6cd95e6 | [261102-oo0-nivel-4-downgrade-e-talentos-completos](./quick/261102-oo0-nivel-4-downgrade-e-talentos-completos/) |
 | 261102-ppj | travas de dados de vida limite de talentos vs asi calculo de vigoroso e permissoes | 2026-11-02 | pending | [261102-ppj-travas-dados-talentos-vigoroso-e-permiss](./quick/261102-ppj-travas-dados-talentos-vigoroso-e-permiss/) |
+| 261115-mav | ato 3 sequencia le frey mapas tokens e bestiario no VTT | 2026-11-15 | 5268e79 | [261115-mav-ato-3-sequencia-le-frey-mapas-tokens-bes](./quick/261115-mav-ato-3-sequencia-le-frey-mapas-tokens-bes/) |
 
 ## Deferred Items
 
@@ -98,6 +99,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-30 20:40
-Stopped at: Project initialization complete. Ready for Phase 1 planning.
+Last session: 2026-11-15
+Stopped at: Quick task 261115-mav complete (Act III maps, tokens, presets, and bestiary).
 Resume file: None
