@@ -77,6 +77,13 @@ export const CAMPAIGN_MAP_PRESETS = [
         desc: 'Estalagem O Corvo Dourado com pátio da forja anã para compras e encaixe de Quartzo Vivo'
     },
     {
+        name: '🌙 Dormitórios (Valecorvo)',
+        url: '/assets/maps/battlemap_dormitorios_valecorvo.jpg',
+        width: 32,
+        height: 18,
+        desc: '2º andar da estalagem O Corvo Dourado à meia-noite: 5 quartos, corredor, escadaria e sacadas nevadas'
+    },
+    {
         name: '🏰 Banquete Mansão Alistair',
         url: '/assets/maps/battlemap_mansao_alistair.jpg',
         width: 32,
@@ -181,7 +188,7 @@ export const MapSettingsModal: React.FC<MapSettingsModalProps> = ({ isOpen, onCl
             background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)',
             display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3000
         }}>
-            <div className="glass-panel" style={{ width: '500px', maxWidth: '94vw', flexDirection: 'column', gap: '20px' }}>
+            <div className="glass-panel" style={{ width: '500px', maxWidth: '94vw', maxHeight: '90vh', overflowY: 'auto', flexDirection: 'column', gap: '20px' }}>
                 <h2 style={{ borderBottom: '1px solid var(--glass-border)', paddingBottom: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <Settings size={18} color="#c5a059" />
