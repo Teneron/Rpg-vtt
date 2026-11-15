@@ -90,6 +90,7 @@ None yet.
 | 261102-oo0 | nivel 4 downgrade completo e catalogo oficial de talentos 5.5e | 2026-11-02 | 6cd95e6 | [261102-oo0-nivel-4-downgrade-e-talentos-completos](./quick/261102-oo0-nivel-4-downgrade-e-talentos-completos/) |
 | 261102-ppj | travas de dados de vida limite de talentos vs asi calculo de vigoroso e permissoes | 2026-11-02 | pending | [261102-ppj-travas-dados-talentos-vigoroso-e-permiss](./quick/261102-ppj-travas-dados-talentos-vigoroso-e-permiss/) |
 | 261115-mav | ato 3 sequencia le frey mapas tokens e bestiario no VTT | 2026-11-15 | 5268e79 | [261115-mav-ato-3-sequencia-le-frey-mapas-tokens-bes](./quick/261115-mav-ato-3-sequencia-le-frey-mapas-tokens-bes/) |
+| 261115-pe8 | mapa cidade livre de valecorvo | 2026-11-15 | 8a1f061 | [261115-pe8-mapa-cidade-livre-de-valecorvo](./quick/261115-pe8-mapa-cidade-livre-de-valecorvo/) |
 
 ## Deferred Items
 
@@ -100,5 +101,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-11-15
-Stopped at: Quick task 261115-mav complete (Act III maps, tokens, presets, and bestiary).
+Stopped at: Quick task 261115-pe8 complete (Free City of Valecorvo city map and VTT preset).
 Resume file: None
