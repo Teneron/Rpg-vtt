@@ -63,6 +63,13 @@ export const CAMPAIGN_MAP_PRESETS = [
         desc: 'Ponte de pedra na garganta, carroça destroçada e emboscada dos mercenários do Falcão'
     },
     {
+        name: '🏘️ Cidade Livre de Valecorvo',
+        url: '/assets/maps/battlemap_cidade_valecorvo.jpg',
+        width: 32,
+        height: 18,
+        desc: 'Mapa urbano de Valecorvo: Portão Norte, Mercado, Estalagem O Corvo Dourado, Forja Anã, Estábulos e Portão Leste'
+    },
+    {
         name: '🍺 Taverna & Forja (Valecorvo)',
         url: '/assets/maps/battlemap_taverna_valecorvo.jpg',
         width: 32,
