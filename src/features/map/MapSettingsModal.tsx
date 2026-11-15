@@ -54,6 +54,27 @@ export const CAMPAIGN_MAP_PRESETS = [
         width: 32,
         height: 18,
         desc: 'Grande santuário subterrâneo com o cristal rubro do Coração da Pedra e o altar final'
+    },
+    {
+        name: '🌉 Ponte da Garganta (Ato III)',
+        url: '/assets/maps/battlemap_estrada_emboscada.jpg',
+        width: 32,
+        height: 18,
+        desc: 'Ponte de pedra na garganta, carroça destroçada e emboscada dos mercenários do Falcão'
+    },
+    {
+        name: '🍺 Taverna & Forja (Valecorvo)',
+        url: '/assets/maps/battlemap_taverna_valecorvo.jpg',
+        width: 32,
+        height: 18,
+        desc: 'Estalagem O Corvo Dourado com pátio da forja anã para compras e encaixe de Quartzo Vivo'
+    },
+    {
+        name: '🏰 Banquete Mansão Alistair',
+        url: '/assets/maps/battlemap_mansao_alistair.jpg',
+        width: 32,
+        height: 18,
+        desc: 'Salão nobre de mármore com colunas e estrado do Barão Cedric Alistair em Penedo Alto'
     }
 ];
 

@@ -1435,5 +1435,341 @@ export const MONSTERS_5E: Monster[] = [
                 range: '1,5 m'
             }
         ]
+    },
+    {
+        id: 'avatar_pacto_sangue',
+        name: 'O Avatar do Pacto de Sangue',
+        category: 'Constructo',
+        description: 'Titã de basalto negro, ferro e quartzo carmesim nascido do Coração da Pedra — Chefe Final da masmorra. Salvaguardas: FOR +7, CON +6, SAB +4.',
+        cr: 5,
+        size: 'Huge',
+        imageUrl: '/assets/tokens/token_enemy_avatar_pacto_sangue.jpg',
+        hp: { current: 95, max: 95 },
+        ac: 15,
+        speed: 9,
+        initiativeModifier: 0,
+        attributes: {
+            str: { value: 19, modifier: 4 },
+            dex: { value: 10, modifier: 0 },
+            con: { value: 17, modifier: 3 },
+            int: { value: 10, modifier: 0 },
+            wis: { value: 12, modifier: 1 },
+            cha: { value: 14, modifier: 2 }
+        },
+        skills: ['Atletismo +7', 'Intimidação +5'],
+        senses: ['Visão no Escuro 36m', 'Percepção Passiva 11'],
+        damageResistances: ['Cortante e Perfurante de armas não-mágicas', 'Fogo', 'Necrótico'],
+        damageVulnerabilities: ['Radiante', 'Concussão mágica'],
+        conditionImmunities: ['Amedrontado', 'Enfeitiçado', 'Envenenado', 'Paralisado'],
+        visionRange: 36,
+        source: 'DnD5e',
+        system: 'dnd5e',
+        actions: [
+            {
+                id: 'avatar_multiattack',
+                name: 'Ataque Múltiplo',
+                type: 'ability',
+                description: 'O Avatar realiza dois ataques com Punhos Sísmicos de Basalto ou um Punho Sísmico e uma Descarga de Quartzo Carmesim.'
+            },
+            {
+                id: 'avatar_punho_sismico',
+                name: 'Punho Sísmico de Basalto',
+                type: 'melee',
+                description: 'Ataque corpo a corpo: +7 para acertar, alcance 3 m, um alvo. Dano: 2d8 + 4 concussão. Salvaguarda de FOR CD 14 ou cai Caído.',
+                damage: '2d8 + 4',
+                toHit: 7,
+                range: '3 m'
+            },
+            {
+                id: 'avatar_descarga_quartzo',
+                name: 'Descarga de Quartzo Carmesim',
+                type: 'ranged',
+                description: 'Ataque à distância: +5 para acertar, alcance 18 m, um alvo. Dano: 2d10 necrótico/força.',
+                damage: '2d10',
+                toHit: 5,
+                range: '18 m'
+            },
+            {
+                id: 'avatar_tracos_aura',
+                name: 'Coração Pulsante & Vozes do Sacrifício',
+                type: 'ability',
+                description: 'Início da rodada (3m): FOR CD 13 ou repelido 3m. Início do turno: 1 herói aleatório faz SAB CD 12 ou sofre 1d6 psíquico.'
+            },
+            {
+                id: 'avatar_acoes_lendarias',
+                name: 'Ações Lendárias (2/Rodada)',
+                type: 'ability',
+                description: 'Onda Sísmica (1 Ação): 3m, DES CD 13 ou Caído. Correntes Espectrais (2 Ações): 9m, FOR CD 13 ou Imobilizado até o próximo turno.'
+            }
+        ]
+    },
+    {
+        id: 'barao_cedric_alistair',
+        name: 'Barão Cedric Alistair',
+        category: 'Humanoide',
+        description: 'Nobre regente de Penedo Alto e herdeiro do pacto de 300 anos, armado com o Anel do Sinete do Falcão. Fraqueza Narrativa: exibir o Livro Negro aos Guardas de Elite (CD 12) faz os guardas o abandonarem e deixa o Barão em Pânico.',
+        cr: 4,
+        size: 'Medium',
+        imageUrl: '/tokens/token_npc_barao_alistair.jpg',
+        hp: { current: 65, max: 65 },
+        ac: 16,
+        speed: 9,
+        initiativeModifier: 3,
+        attributes: {
+            str: { value: 10, modifier: 0 },
+            dex: { value: 16, modifier: 3 },
+            con: { value: 14, modifier: 2 },
+            int: { value: 14, modifier: 2 },
+            wis: { value: 12, modifier: 1 },
+            cha: { value: 17, modifier: 3 }
+        },
+        skills: ['Enganação +7', 'Persuasão +7', 'Intimidação +5', 'Intuição +3'],
+        senses: ['Percepção Passiva 11'],
+        visionRange: 18,
+        source: 'DnD5e',
+        system: 'dnd5e',
+        actions: [
+            {
+                id: 'barao_multiattack',
+                name: 'Ataque Múltiplo',
+                type: 'ability',
+                description: 'Realiza dois ataques com a Rapieira do Pacto de Sinete, ou um golpe de Rapieira e um Orbe de Sangue.'
+            },
+            {
+                id: 'barao_rapieira',
+                name: 'Rapieira do Pacto de Sinete',
+                type: 'melee',
+                description: '+6 para acertar, alcance 1,5 m, um alvo. Dano: 1d8 + 3 perfurante + 1d6 necrótico.',
+                damage: '1d8 + 3 + 1d6',
+                toHit: 6,
+                range: '1,5 m'
+            },
+            {
+                id: 'barao_orbe_sangue',
+                name: 'Orbe de Sangue do Falcão',
+                type: 'ranged',
+                description: '+6 para acertar, alcance 18 m, um alvo. Dano: 2d10 necrótico (disparado pelo anel rachado).',
+                damage: '2d10',
+                toHit: 6,
+                range: '18 m'
+            },
+            {
+                id: 'barao_fraqueza_livro',
+                name: 'Pânico do Livro Negro (Fraqueza Narrativa)',
+                type: 'ability',
+                description: 'Se os heróis revelarem o Livro Negro dos Alistair aos guardas com Persuasão/Intimidação CD 12, o Barão entra em Pânico (Desvantagem em ataques até recuperar a compostura) e tenta fugir pelos fundos.'
+            }
+        ],
+        reactions: [
+            {
+                id: 'barao_aparar_sinete',
+                name: 'Aparar com Anel do Sinete (3/Dia)',
+                type: 'reaction',
+                description: 'Adiciona +3 na CA contra um ataque que o acertaria ao ativar o escudo carmesim do anel.'
+            }
+        ]
+    },
+    {
+        id: 'capitao_kaelen_falcao',
+        name: 'Capitão Kaelen (Falcão)',
+        category: 'Humanoide',
+        description: 'Comandante mercenário de armadura negra com o brasão do Falcão dourado, encarregado da emboscada na Ponte da Garganta Velha e da caçada pelo Livro Negro.',
+        cr: 3,
+        size: 'Medium',
+        imageUrl: '/tokens/token_enemy_capitao_falcao.jpg',
+        hp: { current: 58, max: 58 },
+        ac: 17,
+        speed: 9,
+        initiativeModifier: 1,
+        attributes: {
+            str: { value: 16, modifier: 3 },
+            dex: { value: 12, modifier: 1 },
+            con: { value: 15, modifier: 2 },
+            int: { value: 11, modifier: 0 },
+            wis: { value: 12, modifier: 1 },
+            cha: { value: 13, modifier: 1 }
+        },
+        skills: ['Atletismo +5', 'Intimidação +3', 'Percepção +3'],
+        senses: ['Percepção Passiva 13'],
+        visionRange: 18,
+        source: 'DnD5e',
+        system: 'dnd5e',
+        actions: [
+            {
+                id: 'kaelen_multiattack',
+                name: 'Ataque Múltiplo',
+                type: 'ability',
+                description: 'Faz dois ataques com a Alabarda Pesada.'
+            },
+            {
+                id: 'kaelen_alabarda',
+                name: 'Alabarda Pesada',
+                type: 'melee',
+                description: '+6 para acertar, alcance 3 m, um alvo. Dano: 1d10 + 3 cortante.',
+                damage: '1d10 + 3',
+                toHit: 6,
+                range: '3 m'
+            },
+            {
+                id: 'kaelen_besta',
+                name: 'Besta Pesada',
+                type: 'ranged',
+                description: '+4 para acertar, alcance 30/120 m, um alvo. Dano: 1d10 + 1 perfurante.',
+                damage: '1d10 + 1',
+                toHit: 4,
+                range: '30/120 m'
+            },
+            {
+                id: 'kaelen_ordem',
+                name: 'Ordem de Execução (Recarrega 5-6)',
+                type: 'ability',
+                description: 'Ação Bônus: ordena que um Caçador ou Guarda aliado a até 9 m realize imediatamente 1 ataque usando a Reação dele.'
+            }
+        ]
+    },
+    {
+        id: 'guarda_elite_penedo',
+        name: 'Guarda de Elite de Penedo Alto',
+        category: 'Humanoide',
+        description: 'Vanguarda da Mansão Alistair equipada com cota de malha e escudo do Falcão (CA 18 em formação adjacente). Podem abaixar as lanças diante do Livro Negro (Persuasão/Intimidação CD 12).',
+        cr: 1,
+        size: 'Medium',
+        imageUrl: '/tokens/token_enemy_guarda_elite.jpg',
+        hp: { current: 26, max: 26 },
+        ac: 16,
+        speed: 9,
+        initiativeModifier: 1,
+        attributes: {
+            str: { value: 14, modifier: 2 },
+            dex: { value: 12, modifier: 1 },
+            con: { value: 14, modifier: 2 },
+            int: { value: 10, modifier: 0 },
+            wis: { value: 11, modifier: 0 },
+            cha: { value: 10, modifier: 0 }
+        },
+        skills: ['Atletismo +4', 'Percepção +2'],
+        senses: ['Percepção Passiva 12'],
+        visionRange: 18,
+        source: 'DnD5e',
+        system: 'dnd5e',
+        actions: [
+            {
+                id: 'guarda_lanca',
+                name: 'Lança Pesada de Penedo',
+                type: 'melee',
+                description: '+4 para acertar, alcance 1,5 m (ou arremesso 6/18 m), um alvo. Dano: 1d8 + 2 perfurante.',
+                damage: '1d8 + 2',
+                toHit: 4,
+                range: '1,5 m'
+            },
+            {
+                id: 'guarda_falange',
+                name: 'Formação de Escudos (CA 18)',
+                type: 'ability',
+                description: 'Enquanto estiver adjacente a outro Guarda de Elite, sua CA sobe de 16 para 18.'
+            }
+        ]
+    },
+    {
+        id: 'cacador_falcao',
+        name: 'Caçador do Falcão',
+        category: 'Humanoide',
+        description: 'Emboscador da estrada e assassino noturno contratado pelo Barão para silenciar testemunhas nas montanhas ou invadir quartos em Valecorvo.',
+        cr: 0.5,
+        size: 'Medium',
+        imageUrl: '/tokens/token_enemy_batedor_falcao.jpg',
+        hp: { current: 19, max: 19 },
+        ac: 14,
+        speed: 10.5,
+        initiativeModifier: 3,
+        attributes: {
+            str: { value: 11, modifier: 0 },
+            dex: { value: 16, modifier: 3 },
+            con: { value: 12, modifier: 1 },
+            int: { value: 11, modifier: 0 },
+            wis: { value: 13, modifier: 1 },
+            cha: { value: 10, modifier: 0 }
+        },
+        skills: ['Furtividade +5', 'Percepção +3', 'Sobrevivência +3'],
+        senses: ['Percepção Passiva 13'],
+        visionRange: 18,
+        source: 'DnD5e',
+        system: 'dnd5e',
+        actions: [
+            {
+                id: 'cacador_besta',
+                name: 'Besta de Caça',
+                type: 'ranged',
+                description: '+5 para acertar, alcance 24/96 m, um alvo. Dano: 1d8 + 3 perfurante (+1d6 se houver aliado a até 1,5 m do alvo).',
+                damage: '1d8 + 3',
+                toHit: 5,
+                range: '24/96 m'
+            },
+            {
+                id: 'cacador_adaga',
+                name: 'Adaga Envenenada',
+                type: 'melee',
+                description: '+5 para acertar, alcance 1,5 m, um alvo. Dano: 1d4 + 3 perfurante + 1d4 veneno.',
+                damage: '1d4 + 3 + 1d4',
+                toHit: 5,
+                range: '1,5 m'
+            },
+            {
+                id: 'cacador_tatica',
+                name: 'Tática Ardilosa (Ação Bônus)',
+                type: 'ability',
+                description: 'Pode Desengajar ou Esconder-se entre rochas, pinheiros ou mesas.'
+            }
+        ]
+    },
+    {
+        id: 'dama_espinhos_negros',
+        name: 'Dama dos Espinhos Negros (Patrona)',
+        category: 'Fada',
+        description: 'Patrona Arquifada de Le Freyyy. Surge em névoa violeta para selar o pulso da bruxa com a Marca do Espinho Negro após a fuga do chefe, e retorna em pétalas prateadas na redenção.',
+        cr: 5,
+        size: 'Medium',
+        imageUrl: '/tokens/token_npc_patrona_arquifada.jpg',
+        hp: { current: 84, max: 84 },
+        ac: 16,
+        speed: 9,
+        initiativeModifier: 4,
+        attributes: {
+            str: { value: 10, modifier: 0 },
+            dex: { value: 18, modifier: 4 },
+            con: { value: 14, modifier: 2 },
+            int: { value: 16, modifier: 3 },
+            wis: { value: 15, modifier: 2 },
+            cha: { value: 20, modifier: 5 }
+        },
+        skills: ['Arcanismo +7', 'Enganação +9', 'Intimidação +9', 'Percepção +6'],
+        senses: ['Visão no Escuro 36m', 'Percepção Passiva 16'],
+        conditionImmunities: ['Enfeitiçado', 'Amedrontado'],
+        visionRange: 36,
+        source: 'DnD5e',
+        system: 'dnd5e',
+        actions: [
+            {
+                id: 'dama_marca_espinho',
+                name: 'Marca do Espinho Negro (Maldição de Le Freyyy)',
+                type: 'ability',
+                description: 'Bloqueia os 3 usos gratuitos de Passos Feéricos até Le Freyyy lutar firme até o fim em uma batalha ou humilhar o Barão Alistair. Abandonar outro combate causa 1d6 psíquico por turno.'
+            },
+            {
+                id: 'dama_chicote_rosas',
+                name: 'Chicote de Rosas Sombrias',
+                type: 'melee',
+                description: '+8 para acertar, alcance 3 m, um alvo. Dano: 2d6 + 4 cortante + 2d6 psíquico.',
+                damage: '2d6 + 4 + 2d6',
+                toHit: 8,
+                range: '3 m'
+            },
+            {
+                id: 'dama_passo_brumas',
+                name: 'Passo das Brumas Lunares',
+                type: 'ability',
+                description: 'Teleporta-se até 18 m envolta em névoa violeta ou pétalas de prata.'
+            }
+        ]
     }
 ];
